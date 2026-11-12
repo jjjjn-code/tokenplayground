@@ -30,7 +30,7 @@ If you have already created it, open it again from **Settings**, **Developer set
 2. Fill in:
    - **GitHub App name**: any name, for example `jn token tool`. It must be unique on GitHub. The tool does not depend on the name.
    - **Homepage URL**: your Vercel address.
-   - **Callback URL**: this is a text box, not a column. Scroll down to the heading **Identifying and authorizing users**; Callback URL is the first box under it. Enter your Vercel address followed by `/api/auth/callback`, for example `https://tokenplayground.vercel.app/api/auth/callback`. To also use the tool on your computer, press **Add Callback URL** and add `http://localhost:3000/api/auth/callback`.
+   - **Redirect URI** (called **Callback URL** in older versions of the GitHub page): a text box under the heading **Identifying and authorizing users**. Enter your Vercel address followed by `/api/auth/callback`, exactly, with no slash at the end, for example `https://tokenplayground.vercel.app/api/auth/callback`. To also use the tool on your computer, add a second one: `http://localhost:3000/api/auth/callback`.
    - **Expire user authorization tokens** (same section): leave ticked.
    - **Request user authorization (OAuth) during installation** (same section): leave unticked.
    - **Webhook**: untick **Active**.
@@ -75,7 +75,7 @@ Then go to **Deployments**, open the menu on the latest deployment and choose **
 ## If something goes wrong
 
 - **"GitHub refused access (403 or 404)"**: the app is not installed on that repo, or is missing a permission from step 3. Check **Install App** and the repository permissions.
-- **Sign-in returns to the tool with no change**: the callback URL in step 3 does not match the address you are using exactly.
+- **Sign-in returns to the tool with no change, or GitHub shows a redirect error**: the Redirect URI in step 3 does not match the address you are using exactly.
 - **"... is empty"**: the repo has no files yet; ask Claude to fill it (step 1).
 - **Someone else changed this**: another person saved first. Your edits are reapplied on top of theirs; check the tokens it lists and save again.
 
