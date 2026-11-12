@@ -24,28 +24,39 @@ The tool works straight away in local mode (edits kept in your browser) until st
 
 ## 3. Create the GitHub App
 
-If you have already created it, open it again from **Settings**, **Developer settings**, **GitHub Apps**, **Edit**, and check each setting below on the **General** tab, then press **Save changes** at the bottom.
+Go to github.com, your profile picture, **Settings**, **Developer settings**, **GitHub Apps**, **New GitHub App** (or **Edit** next to an app you already made). The app's settings are split over several pages, listed in the left menu.
 
-1. Go to github.com, your profile picture, **Settings**, **Developer settings**, **GitHub Apps**, **New GitHub App**.
-2. Fill in:
-   - **GitHub App name**: any name, for example `jn token tool`. It must be unique on GitHub. The tool does not depend on the name.
-   - **Homepage URL**: your Vercel address.
-   - **Redirect URI** (called **Callback URL** in older versions of the GitHub page): a text box under the heading **Identifying and authorizing users**. Enter your Vercel address followed by `/api/auth/callback`, exactly, with no slash at the end, for example `https://tokenplayground.vercel.app/api/auth/callback`. To also use the tool on your computer, add a second one: `http://localhost:3000/api/auth/callback`.
-   - **Expire user authorization tokens** (same section): leave ticked.
-   - **Request user authorization (OAuth) during installation** (same section): leave unticked.
-   - **Webhook**: untick **Active**.
-3. Under **Permissions**, **Repository permissions**, set:
-   - **Contents**: Read and write
-   - **Pull requests**: Read and write
-   - (Metadata is set to Read-only automatically.)
-   Leave everything else as No access.
-4. **Where can this GitHub App be installed?**: Only on this account.
-5. Press **Create GitHub App**.
-6. On the page that opens, copy the **Client ID**. Then press **Generate a new client secret** and copy the secret straight away; GitHub only shows it once.
+**General**
+
+- **GitHub App name**: any name, for example `jn token tool`. It must be unique on GitHub. The tool does not depend on the name.
+- **Homepage URL**: your Vercel address.
+- **Redirect URI** (called **Callback URL** on older versions of the page), under the heading **Identifying and authorizing users**: your Vercel address followed by `/api/auth/callback`, exactly, with no slash at the end, for example `https://tokenplayground.vercel.app/api/auth/callback`. To also use the tool on your computer, add a second one: `http://localhost:3000/api/auth/callback`.
+- **Expire user authorization tokens**: leave ticked.
+- **Request user authorization (OAuth) during installation**: leave unticked.
+- **Webhook**: untick **Active**.
+- **Where can this GitHub App be installed?**: Only on this account.
+
+Press **Save changes** (or **Create GitHub App** the first time).
+
+**Permissions & events**
+
+Under **Repository permissions**, set:
+
+- **Contents**: Read and write
+- **Pull requests**: Read and write
+- Metadata is set to Read-only automatically.
+
+Leave everything else as No access, and press **Save changes**.
+
+**Credentials**
+
+- **Client ID**: shown on the General page. Copy it.
+- **Client secrets** tab: press **New secret** and copy the secret straight away. GitHub shows it only once; if you lose it, make another. Keep it private: it only goes into Vercel.
+- **Key pairs** tab: if GitHub asks for a private key before you can install the app, generate one here. Keep the downloaded file on your computer; do not upload or share it. The tool does not use it.
 
 ## 4. Install the app on the 2 repos
 
-1. On the app's page, choose **Install App** in the left menu, then **Install** next to your account.
+1. In the app's left menu, choose **Install App**, then **Install** next to your account.
 2. Pick **Only select repositories** and choose `ual-tokens-data` and `ual-tokens-sandbox`. Do not include any other repo.
 3. Press **Install**.
 
@@ -57,8 +68,8 @@ In Vercel: your project, **Settings**, **Environment Variables**. Add each of th
 
 | Name | Value |
 | --- | --- |
-| `GITHUB_APP_CLIENT_ID` | The Client ID from step 3 |
-| `GITHUB_APP_CLIENT_SECRET` | The client secret from step 3 |
+| `GITHUB_APP_CLIENT_ID` | The Client ID from step 3 (General page) |
+| `GITHUB_APP_CLIENT_SECRET` | The client secret from step 3 (Credentials page) |
 | `SESSION_SECRET` | A long random string. On a Mac, run `openssl rand -base64 32` in Terminal and paste the result |
 | `TOKENS_DATA_REPO` | `jjjjn-code/ual-tokens-data` |
 | `TOKENS_CODE_REPO` | `jjjjn-code/ual-tokens-sandbox` |
@@ -74,7 +85,7 @@ Then go to **Deployments**, open the menu on the latest deployment and choose **
 
 ## If something goes wrong
 
-- **"GitHub refused access (403 or 404)"**: the app is not installed on that repo, or is missing a permission from step 3. Check **Install App** and the repository permissions.
+- **"GitHub refused access (403 or 404)"**: the app is not installed on that repo, or is missing a permission from step 3. Check **Install App** and **Permissions & events**.
 - **Sign-in returns to the tool with no change, or GitHub shows a redirect error**: the Redirect URI in step 3 does not match the address you are using exactly.
 - **"... is empty"**: the repo has no files yet; ask Claude to fill it (step 1).
 - **Someone else changed this**: another person saved first. Your edits are reapplied on top of theirs; check the tokens it lists and save again.

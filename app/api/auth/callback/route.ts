@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { mode } from "@/src/lib/server/config";
-import { cookieOptions, requestToken, seal, sessionFromToken, SESSION_COOKIE, STATE_COOKIE } from "@/src/lib/server/session";
+import { cookieOptions, requestToken, seal, sessionFromToken, SESSION_COOKIE, STATE_COOKIE, VERIFIER_COOKIE } from "@/src/lib/server/session";
 
 /** GitHub sends the person back here after they approve sign-in. */
 export async function GET(req: NextRequest) {
@@ -9,16 +9,18 @@ export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get("code");
   const state = req.nextUrl.searchParams.get("state");
   const expected = req.cookies.get(STATE_COOKIE)?.value;
+  const verifier = req.cookies.get(VERIFIER_COOKIE)?.value;
   const fail = (reason: string) => {
     const url = new URL("/", req.url);
     url.searchParams.set("signin", reason);
     const res = NextResponse.redirect(url);
     res.cookies.delete(STATE_COOKIE);
+    res.cookies.delete(VERIFIER_COOKIE);
     return res;
   };
-  if (!code || !state || state !== expected) return fail("state");
+  if (!code || !state || state !== expected || !verifier) return fail("state");
 
-  const token = await requestToken({ code, redirect_uri: new URL("/api/auth/callback", req.url).toString() });
+  const token = await requestToken({ code, code_verifier: verifier, redirect_uri: new URL("/api/auth/callback", req.url).toString() });
   if (!token.access_token) return fail("token");
 
   const userRes = await fetch("https://api.github.com/user", {
@@ -30,6 +32,7 @@ export async function GET(req: NextRequest) {
 
   const res = NextResponse.redirect(home);
   res.cookies.delete(STATE_COOKIE);
+  res.cookies.delete(VERIFIER_COOKIE);
   res.cookies.set(
     SESSION_COOKIE,
     seal(sessionFromToken(token, { login: user.login, name: user.name || user.login, avatar: user.avatar_url })),

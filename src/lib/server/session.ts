@@ -6,6 +6,8 @@ import { demoHost, mode } from "./config";
 
 export const SESSION_COOKIE = "tt_session";
 export const STATE_COOKIE = "tt_oauth_state";
+/** PKCE code verifier, kept until GitHub sends the person back. */
+export const VERIFIER_COOKIE = "tt_oauth_verifier";
 
 export interface Session {
   token: string;
