@@ -1,0 +1,31 @@
+[
+  {
+    "id": "h-0001",
+    "token": "button-surface-primary-hover",
+    "action": "created",
+    "at": "2026-11-12T10:00:00Z",
+    "by": "dummy-designer",
+    "reason": "New hover state for the primary button.",
+    "after": { "values": { "light": { "ref": "orange-700-aa" }, "dark": { "ref": "orange-400" } }, "status": "draft" }
+  },
+  {
+    "id": "h-0002",
+    "token": "button-surface-primary-hover",
+    "action": "edited",
+    "at": "2026-11-12T10:30:00Z",
+    "by": "dummy-designer",
+    "reason": "Marked active after design review.",
+    "before": { "values": { "light": { "ref": "orange-700-aa" }, "dark": { "ref": "orange-400" } }, "status": "draft" },
+    "after": { "values": { "light": { "ref": "orange-700-aa" }, "dark": { "ref": "orange-400" } }, "status": "active" }
+  },
+  {
+    "id": "h-0003",
+    "token": "purple-400",
+    "action": "deprecated",
+    "at": "2026-11-12T11:00:00Z",
+    "by": "dummy-owner",
+    "reason": "Dummy entry to test deprecation in the timeline.",
+    "before": { "values": { "light": "#7A00FF" }, "status": "active" },
+    "after": { "values": { "light": "#7A00FF" }, "status": "deprecated" }
+  }
+]

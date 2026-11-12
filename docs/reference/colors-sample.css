@@ -1,0 +1,49 @@
+@theme{
+    --color-white: #FFFFFF;
+    --color-neutral-100: #F6F6F6;
+    --color-neutral-200: #D1D1D1;
+    --color-neutral-400: #808080;
+    --color-neutral-600: #3B3B3B;
+    --color-neutral-700: #171717;
+    --color-neutral-800: #0A0A0A;
+    --color-black: #000000;
+    --color-yellow-400: #FFB400;
+    --color-orange-400: #FF8500;
+    --color-orange-700: #FF5000;
+    --color-green-400: #1AEB25;
+    --color-green-700: #008400;
+    --color-red-400: #FF3737;
+    --color-red-700: #FF3737;
+    --color-blue-400: #0000FF;
+    --color-surface-default: var(--color-neutral-100);
+    --color-surface-elevated: var(--color-white);
+    --color-surface-inverse: var(--color-black);
+    --color-content-default: var(--color-black);
+    --color-content-primary: var(--color-neutral-700);
+    --color-content-secondary: var(--color-neutral-600);
+    --color-content-disabled:  var(--color-neutral-400);
+    --color-content-on-inverse: var(--color-white);
+    --color-content-success: var(--color-green-700);
+    --color-content-danger: var(--color-red-700);
+    --color-content-success-on-inverse: var(--color-green-400);
+    --color-content-danger-on-inverse: var(--color-red-400);
+    --line-default: var(--color-neutral-700);
+    --color-hover: var(--color-orange-700);
+    --color-active: var(--color-orange-400);
+}
+
+.dark{
+    --color-surface-default: var(--color-neutral-700);
+    --color-surface-elevated: var(--color-neutral-800);
+    --color-surface-inverse: var(--color-white);
+    --color-content-default: var(--color-white);
+    --color-content-primary: var(--color-neutral-100);
+    --color-content-secondary: var(--color-neutral-200);
+    --color-content-disabled: var(--color-neutral-400);
+    --color-content-on-inverse: var(--color-black);
+    --color-content-success: var(--color-green-400);
+    --color-content-danger: var(--color-red-400);
+    --color-content-success-on-inverse: var(--color-green-700);
+    --color-content-danger-on-inverse: var(--color-red-700);
+    --line-default: var(--color-neutral-100);
+  }

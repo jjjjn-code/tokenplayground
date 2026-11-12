@@ -1,0 +1,9 @@
+{
+  "$description": "Simulated result of scanning component CSS for token usage (F10). Used to test the 'never a mix' rule. tag deliberately breaks it; card deliberately uses a primitive.",
+  "usage": {
+    "button": ["button-surface-primary-default", "button-surface-primary-hover", "button-content-primary-default"],
+    "tag": ["tag-surface-default", "tag-line-default", "content-default"],
+    "card": ["surface-elevated", "content-default", "line-default", "neutral-200"],
+    "alert": ["surface-default", "content-danger", "line-danger"]
+  }
+}

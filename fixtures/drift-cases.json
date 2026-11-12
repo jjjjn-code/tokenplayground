@@ -1,0 +1,11 @@
+{
+  "$description": "The 6 drift cases from the PRD. The tool's dummy set holds the design system values; fixtures/release-branch/colors.css holds the code sample. Pull review (F6, phase 4) must find cases 01 to 05. Case 06 is a Figma page problem, checked in phase 5.",
+  "cases": [
+    { "id": "01", "type": "changed-value", "token": "red-700", "tool": "#A80000", "code": "#FF3737", "checkedIn": "phase 4" },
+    { "id": "02", "type": "missing-in-code", "token": "orange-700-aa", "checkedIn": "phase 4" },
+    { "id": "03", "type": "missing-in-code", "tokens": ["line-inverse", "line-disabled", "line-danger"], "checkedIn": "phase 4" },
+    { "id": "04", "type": "wrong-prefix", "token": "line-default", "code": "--line-default", "expected": "--color-line-default", "checkedIn": "phase 4" },
+    { "id": "05", "type": "code-only", "code": ["--color-hover", "--color-active"], "checkedIn": "phase 4" },
+    { "id": "06", "type": "figma-label", "note": "Colour page light column repeats the dark references. Swatches are right, labels are wrong.", "checkedIn": "phase 5" }
+  ]
+}

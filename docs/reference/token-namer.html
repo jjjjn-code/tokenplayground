@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Component token namer</title>
+<style>
+  :root{
+    --ink:#0A0A0A;
+    --ink-2:#3B3B3B;
+    --ink-3:#808080;
+    --line:#D1D1D1;
+    --paper:#F6F6F6;
+    --white:#FFFFFF;
+    --accent:#FF5000;
+    --accent-aa:#D33704;
+    --ok:#008400;
+    --warn:#A80000;
+    --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.45}
+  header{border-bottom:2px solid var(--ink);background:var(--white);padding:18px 24px;display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap}
+  h1{margin:0;font-size:16px;font-weight:600;letter-spacing:-0.01em}
+  .sub{color:var(--ink-3);font-size:12px}
+  .wrap{display:grid;grid-template-columns:340px 1fr;gap:0;align-items:start}
+  @media(max-width:900px){.wrap{grid-template-columns:1fr}}
+  .panel{padding:20px 24px}
+  .left{border-right:1px solid var(--line);background:var(--white);min-height:calc(100vh - 60px)}
+  @media(max-width:900px){.left{border-right:none;border-bottom:1px solid var(--line);min-height:0}}
+  fieldset{border:none;padding:0;margin:0 0 22px}
+  legend, .lbl{font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--ink-2);font-weight:600;margin-bottom:8px;display:block}
+  .hint{font-size:12px;color:var(--ink-3);margin:0 0 10px}
+  input[type=text]{width:100%;padding:9px 10px;border:1px solid var(--line);background:var(--white);font-family:var(--mono);font-size:13px;border-radius:2px}
+  input[type=text]:focus-visible,button:focus-visible,select:focus-visible{outline:2px solid var(--accent-aa);outline-offset:1px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{border:1px solid var(--line);background:var(--white);padding:6px 10px;border-radius:2px;font-family:var(--mono);font-size:12px;cursor:pointer;color:var(--ink-2)}
+  .chip[aria-pressed=true]{background:var(--ink);color:var(--white);border-color:var(--ink)}
+  .chip.custom{border-style:dashed}
+  .row{display:flex;gap:6px;margin-top:8px}
+  .row input{flex:1}
+  button.ghost{border:1px solid var(--line);background:var(--white);padding:8px 12px;font-size:12px;cursor:pointer;border-radius:2px;font-family:var(--sans)}
+  button.ghost:hover{border-color:var(--ink)}
+  button.primary{background:var(--ink);color:var(--white);border:1px solid var(--ink);padding:9px 14px;font-size:13px;cursor:pointer;border-radius:2px}
+  button.primary:hover{background:var(--accent-aa);border-color:var(--accent-aa)}
+  .count{background:var(--ink);color:var(--white);font-family:var(--mono);font-size:11px;padding:2px 6px;border-radius:2px}
+  .tabs{display:flex;gap:0;border-bottom:1px solid var(--line);margin-bottom:18px;flex-wrap:wrap}
+  .tab{border:none;background:none;padding:10px 14px;font-size:13px;cursor:pointer;color:var(--ink-3);border-bottom:2px solid transparent;font-family:var(--sans)}
+  .tab[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+  table{border-collapse:collapse;width:100%;font-size:12px}
+  th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:middle}
+  th{background:var(--white);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:var(--ink-2)}
+  td.axis{font-family:var(--mono);background:var(--white);white-space:nowrap}
+  .cell{text-align:center;background:var(--white);cursor:pointer;user-select:none}
+  .cell.on{background:var(--ink);color:var(--white)}
+  .cell.off{color:var(--line)}
+  .tokenrow{display:grid;grid-template-columns:1fr 150px 150px 70px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line)}
+  @media(max-width:700px){.tokenrow{grid-template-columns:1fr 1fr}}
+  .tname{font-family:var(--mono);font-size:12.5px}
+  .tpath{font-family:var(--mono);font-size:11px;color:var(--ink-3);display:block}
+  select{width:100%;padding:5px 6px;border:1px solid var(--line);font-family:var(--mono);font-size:11.5px;background:var(--white);border-radius:2px}
+  .sw{display:inline-block;width:10px;height:10px;border:1px solid var(--line);vertical-align:-1px;margin-right:5px}
+  .pubtag{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:var(--ink-3);text-align:right}
+  .pubtag.pub{color:var(--ok)}
+  pre{background:var(--white);border:1px solid var(--line);padding:14px;overflow:auto;font-family:var(--mono);font-size:11.5px;max-height:460px;border-radius:2px}
+  .issue{border-left:3px solid var(--warn);background:var(--white);padding:9px 12px;margin-bottom:6px;font-size:12.5px}
+  .issue.info{border-left-color:var(--ink-3)}
+  .issue.clear{border-left-color:var(--ok)}
+  .issue b{font-family:var(--mono)}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+  .empty{color:var(--ink-3);padding:30px 0;font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Component token namer</h1>
+    <div class="sub">Pattern: component / category / role / state. Colour only.</div>
+  </div>
+  <div class="sub" id="headcount"></div>
+</header>
+
+<div class="wrap">
+  <div class="panel left">
+    <fieldset>
+      <label class="lbl" for="cname">Component name</label>
+      <p class="hint">One word if possible. Spaces and capitals are stripped, so "Icon button" becomes iconbutton.</p>
+      <input type="text" id="cname" placeholder="button" autocomplete="off">
+    </fieldset>
+
+    <fieldset>
+      <span class="lbl">Category</span>
+      <p class="hint">Which part of the component is painted.</p>
+      <div class="chips" id="cats"></div>
+    </fieldset>
+
+    <fieldset>
+      <span class="lbl">Role</span>
+      <p class="hint">Leave all unselected if the component has only one variant. The role segment is then omitted.</p>
+      <div class="chips" id="roles"></div>
+      <div class="row">
+        <input type="text" id="roleAdd" placeholder="custom role" autocomplete="off">
+        <button class="ghost" id="roleAddBtn">Add</button>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <span class="lbl">State</span>
+      <p class="hint">Default is always included and cannot be removed.</p>
+      <div class="chips" id="states"></div>
+      <div class="row">
+        <input type="text" id="stateAdd" placeholder="custom state" autocomplete="off">
+        <button class="ghost" id="stateAddBtn">Add</button>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <span class="lbl">Figma group</span>
+      <p class="hint">Top-level group the variables sit under.</p>
+      <input type="text" id="group" value="Interactive" autocomplete="off">
+    </fieldset>
+  </div>
+
+  <div class="panel">
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="true" data-tab="matrix">Matrix</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="tokens">Tokens</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="review">Review</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="export">Export</button>
+    </div>
+
+    <section id="tab-matrix">
+      <p class="hint">Every combination is on by default. Untick the ones that do not exist on this component.</p>
+      <div class="bar">
+        <button class="ghost" id="allOn">Tick all</button>
+        <button class="ghost" id="allOff">Untick all</button>
+      </div>
+      <div id="matrix"></div>
+    </section>
+
+    <section id="tab-tokens" hidden>
+      <p class="hint">Map each token to a primitive for both modes. Publishing follows the rule: default states published, all other states hidden.</p>
+      <div class="bar">
+        <button class="ghost" id="copyDark">Copy light mapping into dark</button>
+      </div>
+      <div id="tokens"></div>
+    </section>
+
+    <section id="tab-review" hidden>
+      <div id="review"></div>
+    </section>
+
+    <section id="tab-export" hidden>
+      <div class="bar">
+        <button class="tab" data-fmt="json" aria-selected="true">JSON</button>
+        <button class="tab" data-fmt="css" aria-selected="false">CSS</button>
+        <button class="tab" data-fmt="md" aria-selected="false">Ticket</button>
+        <button class="primary" id="copyBtn">Copy</button>
+        <button class="primary" id="dlBtn">Download</button>
+      </div>
+      <pre id="out"></pre>
+    </section>
+  </div>
+</div>
+
+<script>
+const PRIMITIVES = [
+  ["transparent","#000000",0],["white","#FFFFFF",1],
+  ["neutral-100","#F6F6F6",1],["neutral-200","#D1D1D1",1],["neutral-400","#808080",1],
+  ["neutral-600","#3B3B3B",1],["neutral-700","#171717",1],["neutral-800","#0A0A0A",1],
+  ["black","#000000",1],["black-a50","#000000",0.5],
+  ["red-400","#FF3737",1],["red-700","#A80000",1],
+  ["orange-400","#FF8500",1],["orange-700","#FF5000",1],["orange-700-aa","#D33704",1],
+  ["yellow-400","#FFB400",1],
+  ["green-400","#1AEB25",1],["green-700","#008400",1],
+  ["blue-400","#0000FF",1]
+];
+
+const CATEGORIES = ["surface","content","line","icon"];
+let roles = [{v:"primary",on:false},{v:"secondary",on:false},{v:"tertiary",on:false}];
+let states = [
+  {v:"default",on:true,locked:true},{v:"hover",on:true},{v:"pressed",on:true},
+  {v:"disabled",on:true},{v:"selected",on:false},{v:"loading",on:false},
+  {v:"on",on:false},{v:"off",on:false}
+];
+let cats = CATEGORIES.map(v=>({v,on:v!=="icon"}));
+let excluded = new Set();
+let mapping = {};
+let fmt = "json";
+
+const $ = s => document.querySelector(s);
+const slug = s => s.toLowerCase().replace(/[^a-z0-9]/g,"");
+const title = s => s ? s.charAt(0).toUpperCase()+s.slice(1) : s;
+const onList = a => a.filter(x=>x.on).map(x=>x.v);
+
+function build(){
+  const comp = slug($("#cname").value);
+  const C = onList(cats), R = onList(roles), S = onList(states);
+  const rows = R.length ? C.flatMap(c=>R.map(r=>({c,r}))) : C.map(c=>({c,r:null}));
+  const out = [];
+  rows.forEach(({c,r})=>S.forEach(s=>{
+    const key = [c,r,s].filter(Boolean).join("|");
+    if(excluded.has(key)) return;
+    const segs = [comp||"component",c,r,s].filter(Boolean);
+    const varName = [c,r,s].filter(Boolean).join("-");
+    out.push({
+      key, cat:c, role:r, state:s,
+      name: segs.join("-"),
+      path: [$("#group").value.trim()||"Interactive", title(comp)||"Component", title(c), varName].join("/"),
+      published: s === "default"
+    });
+  }));
+  return out;
+}
+
+function renderChips(el, arr, onToggle){
+  el.innerHTML = "";
+  arr.forEach((item,i)=>{
+    const b = document.createElement("button");
+    b.className = "chip"; b.type = "button";
+    b.setAttribute("aria-pressed", String(item.on));
+    b.textContent = item.v + (item.locked ? " *" : "");
+    if(item.locked) b.disabled = true;
+    b.onclick = ()=>{ onToggle(i); renderAll(); };
+    el.appendChild(b);
+  });
+}
+
+function renderMatrix(){
+  const C = onList(cats), R = onList(roles), S = onList(states);
+  const host = $("#matrix");
+  if(!C.length || !S.length){ host.innerHTML = '<p class="empty">Select at least one category and one state.</p>'; return; }
+  const rows = R.length ? C.flatMap(c=>R.map(r=>({c,r}))) : C.map(c=>({c,r:null}));
+  let h = "<table><thead><tr><th></th>" + S.map(s=>`<th>${s}</th>`).join("") + "</tr></thead><tbody>";
+  rows.forEach(({c,r})=>{
+    h += `<tr><td class="axis">${[c,r].filter(Boolean).join(" &middot; ")}</td>`;
+    S.forEach(s=>{
+      const key = [c,r,s].filter(Boolean).join("|");
+      const on = !excluded.has(key);
+      h += `<td class="cell ${on?"on":"off"}" data-key="${key}" role="button" tabindex="0">${on?"&#10003;":"&#8212;"}</td>`;
+    });
+    h += "</tr>";
+  });
+  host.innerHTML = h + "</tbody></table>";
+  host.querySelectorAll(".cell").forEach(td=>{
+    const t = ()=>{ const k = td.dataset.key; excluded.has(k)?excluded.delete(k):excluded.add(k); renderAll(); };
+    td.onclick = t;
+    td.onkeydown = e => { if(e.key==="Enter"||e.key===" "){ e.preventDefault(); t(); } };
+  });
+}
+
+function primOptions(sel){
+  return '<option value="">not mapped</option>' + PRIMITIVES.map(([n,hex,a])=>
+    `<option value="${n}" ${sel===n?"selected":""}>${n}</option>`).join("");
+}
+function hexOf(n){ const p = PRIMITIVES.find(x=>x[0]===n); return p?p[1]:"transparent"; }
+
+function renderTokens(){
+  const list = build(), host = $("#tokens");
+  if(!list.length){ host.innerHTML = '<p class="empty">Nothing generated yet. Add a component name and pick categories.</p>'; return; }
+  host.innerHTML = list.map(t=>{
+    const m = mapping[t.name] || {};
+    return `<div class="tokenrow">
+      <div><span class="tname">${t.name}</span><span class="tpath">${t.path}</span></div>
+      <div><select data-n="${t.name}" data-m="light">${primOptions(m.light)}</select></div>
+      <div><select data-n="${t.name}" data-m="dark">${primOptions(m.dark)}</select></div>
+      <div class="pubtag ${t.published?"pub":""}">${t.published?"publish":"hidden"}</div>
+    </div>`;
+  }).join("");
+  host.querySelectorAll("select").forEach(s=>{
+    s.onchange = ()=>{
+      const n = s.dataset.n;
+      mapping[n] = mapping[n] || {};
+      mapping[n][s.dataset.m] = s.value || undefined;
+      renderAll();
+    };
+  });
+}
+
+function renderReview(){
+  const list = build(), host = $("#review"), issues = [];
+  const comp = slug($("#cname").value);
+  if(!comp) issues.push(["", "No component name yet, so previews use the placeholder <b>component</b>."]);
+  if($("#cname").value && $("#cname").value !== comp)
+    issues.push(["info", `Name normalised to <b>${comp}</b>. Confirm this is what developers expect in code.`]);
+
+  const unmapped = list.filter(t=>!(mapping[t.name]||{}).light || !(mapping[t.name]||{}).dark);
+  if(unmapped.length) issues.push(["err", `<b>${unmapped.length}</b> of ${list.length} tokens are missing a primitive in one or both modes.`]);
+
+  const same = list.filter(t=>{ const m = mapping[t.name]||{}; return m.light && m.light === m.dark; });
+  if(same.length) issues.push(["info", `<b>${same.length}</b> tokens use the same primitive in light and dark. Correct for cross-cutting brand colours, worth checking otherwise.`]);
+
+  const names = list.map(t=>t.name), dupes = [...new Set(names.filter((n,i)=>names.indexOf(n)!==i))];
+  if(dupes.length) issues.push(["err", `Duplicate names: <b>${dupes.join(", ")}</b>.`]);
+
+  const bad = list.filter(t=>t.name.split("-").length < 3);
+  if(bad.length) issues.push(["err", `Names with too few segments: <b>${bad.map(t=>t.name).join(", ")}</b>.`]);
+
+  if(!onList(roles).length && onList(cats).length)
+    issues.push(["info","No role selected, so the role segment is omitted. If a second variant is added later, every token here must be renamed."]);
+
+  const perCat = onList(cats).map(c=>`${c} ${list.filter(t=>t.cat===c).length}`).join(", ");
+  issues.push(["clear", `<b>${list.length}</b> tokens will be created (${perCat||"none"}). ${list.filter(t=>t.published).length} published, ${list.filter(t=>!t.published).length} hidden.`]);
+
+  host.innerHTML = issues.map(([k,m])=>
+    `<div class="issue ${k==="err"?"":k==="clear"?"clear":"info"}">${m}</div>`).join("");
+}
+
+function renderOut(){
+  const list = build();
+  const comp = slug($("#cname").value) || "component";
+  let text = "";
+  if(fmt==="json"){
+    text = JSON.stringify({
+      component: comp,
+      pattern: "[component]-[category]-[role]-[state]",
+      generated: new Date().toISOString().slice(0,10),
+      tokens: list.map(t=>({
+        name: t.name, figmaPath: t.path, type: "color",
+        category: t.cat, role: t.role, state: t.state,
+        light: (mapping[t.name]||{}).light || null,
+        dark: (mapping[t.name]||{}).dark || null,
+        publish: t.published
+      }))
+    }, null, 2);
+  } else if(fmt==="css"){
+    const line = (t,mode)=>{
+      const p = (mapping[t.name]||{})[mode];
+      return `  --${t.name}: ${p?`var(--${p})`:"/* unmapped */"};`;
+    };
+    text = `/* ${comp} component tokens */\n:root[data-theme="light"] {\n`
+      + list.map(t=>line(t,"light")).join("\n")
+      + `\n}\n\n:root[data-theme="dark"] {\n`
+      + list.map(t=>line(t,"dark")).join("\n") + `\n}\n`;
+  } else {
+    text = `## New component tokens: ${comp}\n\n`
+      + `Pattern: [component]-[category]-[role]-[state]. Colour only, aliased to colour primitives.\n\n`
+      + `| Token | Light | Dark | Figma |\n|---|---|---|---|\n`
+      + list.map(t=>{
+          const m = mapping[t.name]||{};
+          return `| \`${t.name}\` | ${m.light||"TBC"} | ${m.dark||"TBC"} | ${t.published?"published":"hidden"} |`;
+        }).join("\n")
+      + `\n\nTotal: ${list.length} tokens.\n`;
+  }
+  $("#out").textContent = text;
+  return text;
+}
+
+function renderAll(){
+  renderChips($("#cats"), cats, i=>cats[i].on=!cats[i].on);
+  renderChips($("#roles"), roles, i=>roles[i].on=!roles[i].on);
+  renderChips($("#states"), states, i=>{ if(!states[i].locked) states[i].on=!states[i].on; });
+  renderMatrix(); renderTokens(); renderReview(); renderOut();
+  $("#headcount").innerHTML = `<span class="count">${build().length}</span> tokens`;
+}
+
+$("#cname").oninput = renderAll;
+$("#group").oninput = renderAll;
+$("#roleAddBtn").onclick = ()=>{
+  const v = slug($("#roleAdd").value); if(!v) return;
+  if(!roles.some(r=>r.v===v)) roles.push({v,on:true}); else roles.find(r=>r.v===v).on = true;
+  $("#roleAdd").value=""; renderAll();
+};
+$("#stateAddBtn").onclick = ()=>{
+  const v = slug($("#stateAdd").value); if(!v) return;
+  if(!states.some(s=>s.v===v)) states.push({v,on:true}); else states.find(s=>s.v===v).on = true;
+  $("#stateAdd").value=""; renderAll();
+};
+$("#roleAdd").onkeydown = e => { if(e.key==="Enter") $("#roleAddBtn").click(); };
+$("#stateAdd").onkeydown = e => { if(e.key==="Enter") $("#stateAddBtn").click(); };
+$("#allOn").onclick = ()=>{ excluded.clear(); renderAll(); };
+$("#allOff").onclick = ()=>{ build().forEach(t=>excluded.add(t.key)); renderAll(); };
+$("#copyDark").onclick = ()=>{
+  Object.keys(mapping).forEach(n=>{ if(mapping[n].light) mapping[n].dark = mapping[n].light; });
+  renderAll();
+};
+
+document.querySelectorAll('.tab[data-tab]').forEach(t=>{
+  t.onclick = ()=>{
+    document.querySelectorAll('.tab[data-tab]').forEach(x=>{
+      x.setAttribute("aria-selected", String(x===t));
+      $("#tab-"+x.dataset.tab).hidden = x!==t;
+    });
+  };
+});
+document.querySelectorAll('.tab[data-fmt]').forEach(t=>{
+  t.onclick = ()=>{
+    fmt = t.dataset.fmt;
+    document.querySelectorAll('.tab[data-fmt]').forEach(x=>x.setAttribute("aria-selected", String(x===t)));
+    renderOut();
+  };
+});
+$("#copyBtn").onclick = async ()=>{
+  try{ await navigator.clipboard.writeText(renderOut()); $("#copyBtn").textContent="Copied";
+    setTimeout(()=>$("#copyBtn").textContent="Copy",1200); }catch(e){ $("#copyBtn").textContent="Copy failed"; }
+};
+$("#dlBtn").onclick = ()=>{
+  const ext = fmt==="json"?"json":fmt==="css"?"css":"md";
+  const blob = new Blob([renderOut()],{type:"text/plain"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = (slug($("#cname").value)||"component")+"-tokens."+ext;
+  a.click(); URL.revokeObjectURL(a.href);
+};
+
+renderAll();
+</script>
+</body>
+</html>
