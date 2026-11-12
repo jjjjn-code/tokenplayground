@@ -6,6 +6,7 @@ import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppSidebar } from "./_components/AppSidebar";
+import { Gate } from "./_components/Gate";
 import { StoreProvider } from "./_lib/store";
 import "./globals.css";
 
@@ -25,7 +26,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <Suspense>
                   <AppSidebar />
                 </Suspense>
-                <div className="flex min-w-0 flex-1 flex-col">{children}</div>
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <Gate>{children}</Gate>
+                </div>
               </div>
               <Toaster position="bottom-center" />
             </StoreProvider>

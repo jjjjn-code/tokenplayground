@@ -2,41 +2,35 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useTheme } from "next-themes";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Blocks,
   ChevronRight,
   Component,
   FileCode2,
   Layers,
+  GitPullRequestArrow,
   Menu,
-  Moon,
   Palette,
   PlusCircle,
-  RotateCcw,
-  Sun,
   Table2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import type { Layer } from "@/src/lib/tokens";
 import { useStore } from "../_lib/store";
+import { AccountPanel } from "./AccountPanel";
 import { KIND_ORDER, KIND_TITLE, LAYER_TITLE } from "../_lib/sets";
 
 const LAYER_ICON = { primitive: Palette, semantic: Layers, component: Component } as const;
 
 function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
-  const { set, author, setAuthor, localChanges, reset } = useStore();
+  const { set } = useStore();
   const pathname = usePathname();
   const params = useSearchParams();
   const current = pathname === "/" ? params.get("set") ?? "all" : null;
-  const { resolvedTheme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
 
   const count = (pred: (t: (typeof set.tokens)[number]) => boolean) => set.tokens.filter(pred).length;
   const components = [...new Set(set.tokens.map((t) => t.component).filter(Boolean) as string[])].sort();
@@ -105,6 +99,7 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
       <nav className="flex flex-col gap-0.5 px-2" aria-label="Main">
         {item("/?set=all", "all", "All tokens", set.tokens.length, <Table2 className="size-4 text-muted-foreground" />)}
         {item("/create", null, "Create tokens", undefined, <PlusCircle className="size-4 text-muted-foreground" />)}
+        {item("/push", null, "Push to code", undefined, <GitPullRequestArrow className="size-4 text-muted-foreground" />)}
         {item("/export", null, "Export CSS", undefined, <FileCode2 className="size-4 text-muted-foreground" />)}
       </nav>
 
@@ -113,36 +108,7 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
         {(["primitive", "semantic", "component"] as const).map(layerGroup)}
       </nav>
 
-      <div className="flex flex-col gap-3 border-t border-sidebar-border p-3">
-        <div className="flex items-center justify-between gap-2 text-xs">
-          <span className={cn("text-muted-foreground", localChanges && "text-foreground")}>
-            {localChanges ? `${localChanges} local ${localChanges === 1 ? "change" : "changes"}` : "No local changes"}
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs"
-            onClick={() => {
-              if (window.confirm("Throw away every local change and reload the dummy token set?")) reset();
-            }}
-          >
-            <RotateCcw className="size-3.5" /> Reset
-          </Button>
-        </div>
-        <div className="flex items-center gap-2">
-          <label htmlFor="author" className="shrink-0 text-xs text-muted-foreground">You are</label>
-          <Input id="author" value={author} onChange={(e) => setAuthor(e.target.value)} className="h-8 text-xs" autoComplete="off" />
-          <Button
-            variant="outline"
-            size="icon"
-            className="size-8 shrink-0"
-            aria-label="Switch light or dark interface"
-            onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
-          >
-            {mounted && resolvedTheme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
-          </Button>
-        </div>
-      </div>
+      <AccountPanel />
     </div>
   );
 }

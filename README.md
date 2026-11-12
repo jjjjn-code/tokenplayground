@@ -10,8 +10,8 @@ The product requirements are in [`docs/PRD.md`](docs/PRD.md).
 | --- | --- | --- |
 | 1 | Foundations: data model, rules engine, references, dummy set | Done |
 | 2 | Overview and creation (F1 to F4) | Done |
-| 3 | Push to repo (F5) | Next |
-| 4 | Pull and history (F6 to F8) | Not started |
+| 3 | Push to repo (F5) | Built and tested in demo mode; real GitHub needs the set-up in [`docs/SETUP.md`](docs/SETUP.md) |
+| 4 | Pull and history (F6 to F8) | Next |
 | 5 | Figma plugin (F9) | Not started |
 
 ## Running it
@@ -28,6 +28,14 @@ npm test
 npm run dev
 ```
 
+To try saving and pushing with a fake GitHub inside the tool:
+
+```bash
+npm run demo
+```
+
+To connect real GitHub, follow [`docs/SETUP.md`](docs/SETUP.md).
+
 ## Look and feel
 
 The interface uses [shadcn/ui](https://ui.shadcn.com) components on Tailwind CSS, with the neutral theme and a light and dark mode. The overview works like a spreadsheet, and the way tokens are organised follows Tokens Studio: a sidebar of token sets, modes as columns, references shown as pills.
@@ -38,9 +46,14 @@ The interface uses [shadcn/ui](https://ui.shadcn.com) components on Tailwind CSS
 | --- | --- |
 | Overview (`/`) | A spreadsheet of tokens. Pick a token set in the sidebar, click a value to change it, use arrow keys to move between cells, right-click a row for actions, tick rows for bulk actions, click a name for details |
 | Create (`/create`) | Component tokens using the token namer flow, with choices on the left and a live preview on the right. Single primitive or semantic tokens are created from the New button |
+| Push to code (`/push`) | The changes since the last push, a preview of every file and the pull request text, and the button that opens the pull request |
 | Export CSS (`/export`) | Preview, copy or download the CSS that push will write, and the token data as JSON |
 
-Until push arrives in phase 3, changes are kept in your browser. "Reset" at the bottom of the sidebar throws them away and reloads the dummy set.
+The tool runs in 1 of 3 modes:
+
+- **GitHub**: once set up, you sign in with GitHub. Tokens load from `ual-tokens-data`; edits are held as unsaved changes until you press Save, which writes 1 commit. If someone else saved first, your edits are reapplied on top of theirs and any token you both changed is listed.
+- **Demo**: the same, with a fake GitHub inside the tool (`npm run demo`).
+- **Local**: no GitHub; edits stay in your browser. "Reset" at the bottom of the sidebar reloads the dummy set.
 
 ## Where things are
 
@@ -56,6 +69,8 @@ Until push arrives in phase 3, changes are kept in your browser. "Reset" at the 
 | `src/lib/tokens/css.ts` | Turns tokens into CSS for the parent and component files |
 | `src/lib/tokens/repo.ts` | Where each token lives in the code repo (provisional paths) |
 | `app/` | The screens. Shared pieces are in `app/_components/`; the working copy is in `app/_lib/store.tsx` |
+| `src/lib/git/` | Saving to the token data repo and pushing to the code repo, with a fake GitHub for tests and demo mode |
+| `src/lib/server/` and `app/api/` | Sign-in with the GitHub App and the endpoints the screens call |
 | `components/ui/` | shadcn/ui components, added with the shadcn command line tool |
 | `data/dummy/` | Dummy token set and history. Moves to the token data repo in phase 3 |
 | `fixtures/` | Test material: release branch CSS sample, the 6 drift cases, simulated component usage |

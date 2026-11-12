@@ -47,3 +47,6 @@ Follow the 5 phases in `docs/PRD.md`. Build and test each phase against a dummy 
 - The rules engine is in `src/lib/tokens/`. Naming rules settings are in `src/lib/tokens/rules.ts`.
 - Until the token data repo exists, the dummy set lives in `data/dummy/tokens.json`.
 - Provisional decisions are listed in `README.md`.
+- GitHub: a GitHub App with user sign-in (`app/api/auth`). Tokens are saved to `TOKENS_DATA_REPO` and pushed to `TOKENS_CODE_REPO`; see `docs/SETUP.md` and `.env.example`. Never commit secrets.
+- Demo mode (`npm run demo`) uses an in-memory fake GitHub (`src/lib/git/host.ts`), which the tests also use.
+- UI: shadcn/ui on Tailwind. Add components with `npx shadcn@latest add <name>` and check the imports point at `@/lib/utils`.

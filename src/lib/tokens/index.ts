@@ -7,3 +7,4 @@ export * from "./dtcg";
 export * from "./history";
 export * from "./repo";
 export * from "./css";
+export * from "./changes";

@@ -3,14 +3,17 @@
 /**
  * The tool's working copy of the token set.
  *
- * Until push arrives in phase 3, changes are kept in this browser
- * (localStorage) in the same DTCG format the token data repo will use.
- * "Reset" throws local changes away and reloads the dummy set.
+ * Local mode (no GitHub set up): changes are kept in this browser, as in phase 2.
+ * GitHub and demo mode: tokens load from the token data repo. Edits are held
+ * here as unsaved changes until the person saves, which writes 1 commit. If
+ * someone else saved first, the person's edits are reapplied on top of the
+ * newer version and any token both people changed is reported.
  */
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import rawTokens from "@/data/dummy/tokens.json";
 import rawHistory from "@/data/dummy/history.json";
 import {
+  mergeEdits,
   parseDtcg,
   serialiseDtcg,
   type HistoryAction,
@@ -19,35 +22,69 @@ import {
   type TokenSet,
 } from "@/src/lib/tokens";
 
-const STORAGE_KEY = "token-tool:working-copy:v1";
-const AUTHOR_KEY = "token-tool:author";
+export type Mode = "loading" | "local" | "demo" | "github";
 
-interface Saved {
-  tokens: Record<string, unknown>;
-  history: HistoryEntry[];
+export interface Viewer {
+  login: string;
+  name: string;
+  avatar: string;
+}
+
+export interface LastPush {
+  at: string;
+  by: string;
+  prUrl: string | null;
+  branch: string | null;
+  title: string;
+}
+
+export interface SaveResult {
+  ok: boolean;
+  /** Tokens both you and someone else changed, after a conflict. */
+  conflicts?: string[];
+  message?: string;
 }
 
 interface Store {
+  mode: Mode;
+  viewer: Viewer | null;
+  repos: { data: string; code: string; codeBranch: string } | null;
+  /** A problem loading from GitHub, shown instead of the tokens. */
+  loadError: string | null;
+  /** True once the tokens to show are known (local set, or loaded from GitHub). */
+  ready: boolean;
+  /** The saved version loaded from GitHub. Changes after each save or reload. */
+  savedHead: string | null;
   set: TokenSet;
   history: HistoryEntry[];
+  lastPush: LastPush | null;
   author: string;
   setAuthor: (name: string) => void;
-  /** Number of local changes not yet pushed. */
+  /** Local mode: changes since the dummy set. GitHub mode: unsaved tokens. */
   localChanges: number;
-  /** Save new or edited tokens. `replacing` lists names being edited. */
+  unsavedNames: string[];
   saveTokens: (tokens: Token[], replacing: string[], reason?: string) => void;
   deprecate: (name: string, reason: string) => void;
   reactivate: (name: string, reason: string) => void;
   reset: () => void;
+  saveToRepo: (message: string) => Promise<SaveResult>;
+  saving: boolean;
+  reload: () => Promise<void>;
+  signOut: () => Promise<void>;
 }
 
 const StoreContext = createContext<Store | null>(null);
 
+const LOCAL_KEY = "token-tool:working-copy:v1";
+const AUTHOR_KEY = "token-tool:author";
+const draftKey = (repo: string) => `token-tool:draft:${repo}`;
+
 const initialSet = () => parseDtcg(structuredClone(rawTokens));
 const initialHistory = () => structuredClone(rawHistory) as HistoryEntry[];
 const newId = () => `h-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-function readStorage<T>(key: string): T | null {
+function read<T>(key: string): T | null {
   try {
     const raw = window.localStorage.getItem(key);
     return raw ? (JSON.parse(raw) as T) : null;
@@ -55,60 +92,146 @@ function readStorage<T>(key: string): T | null {
     return null;
   }
 }
-
-function writeStorage(key: string, value: unknown) {
+function write(key: string, value: unknown) {
   try {
-    window.localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
+    if (value === null) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
   } catch {
     // Storage can be blocked; the tool still works for this visit.
   }
 }
 
+interface Draft {
+  head: string;
+  base: Record<string, unknown>;
+  tokens: Record<string, unknown>;
+  pending: HistoryEntry[];
+}
+
+interface Remote {
+  head: string;
+  saved: TokenSet;
+  savedHistory: HistoryEntry[];
+}
+
 export function StoreProvider({ children }: { children: React.ReactNode }) {
+  const [mode, setMode] = useState<Mode>("loading");
+  const [viewer, setViewer] = useState<Viewer | null>(null);
+  const [repos, setRepos] = useState<Store["repos"]>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [set, setSet] = useState<TokenSet>(initialSet);
   const [history, setHistory] = useState<HistoryEntry[]>(initialHistory);
-  const [author, setAuthorState] = useState("designer");
-  const [loaded, setLoaded] = useState(false);
+  const [pending, setPending] = useState<HistoryEntry[]>([]);
+  const [remote, setRemote] = useState<Remote | null>(null);
+  const [lastPush, setLastPush] = useState<LastPush | null>(null);
+  const [authorState, setAuthorState] = useState("designer");
+  const [saving, setSaving] = useState(false);
+  const loaded = useRef(false);
+
+  const remoteMode = mode === "demo" || mode === "github";
+  const author = remoteMode && viewer ? viewer.login : authorState;
+
+  const fetchData = useCallback(async () => {
+    const res = await fetch("/api/data", { cache: "no-store" });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.message ?? "Could not load tokens.");
+    return body as { head: string; tokens: Record<string, unknown>; history: HistoryEntry[]; lastPush: (LastPush & { tokens: unknown }) | null };
+  }, []);
+
+  const applyRemote = useCallback(
+    (data: Awaited<ReturnType<typeof fetchData>>, dataRepo: string) => {
+      const saved = parseDtcg(data.tokens);
+      setRemote({ head: data.head, saved, savedHistory: data.history });
+      setLastPush(data.lastPush ? { at: data.lastPush.at, by: data.lastPush.by, prUrl: data.lastPush.prUrl, branch: data.lastPush.branch, title: data.lastPush.title } : null);
+      // Reapply unsaved edits from an earlier visit.
+      const draft = read<Draft>(draftKey(dataRepo));
+      if (draft) {
+        const base = parseDtcg(draft.base);
+        const mine = parseDtcg(draft.tokens);
+        const merged = draft.head === data.head ? mine : mergeEdits(base, mine, saved).merged;
+        setSet(merged);
+        setPending(draft.pending);
+        setHistory([...data.history, ...draft.pending]);
+      } else {
+        setSet(saved);
+        setPending([]);
+        setHistory(data.history);
+      }
+    },
+    [],
+  );
+
+  const load = useCallback(async () => {
+    setLoadError(null);
+    let session: { mode: Mode; viewer: Viewer | null; dataRepo: string | null; codeRepo: string | null; codeBranch: string };
+    try {
+      session = await (await fetch("/api/session", { cache: "no-store" })).json();
+    } catch {
+      session = { mode: "local", viewer: null, dataRepo: null, codeRepo: null, codeBranch: "main" };
+    }
+    setViewer(session.viewer);
+    setRepos(session.dataRepo && session.codeRepo ? { data: session.dataRepo, code: session.codeRepo, codeBranch: session.codeBranch } : null);
+
+    if (session.mode === "local") {
+      const saved = read<{ tokens: Record<string, unknown>; history: HistoryEntry[] }>(LOCAL_KEY);
+      if (saved) {
+        setSet(parseDtcg(saved.tokens));
+        setHistory(saved.history);
+      }
+      setMode("local");
+      return;
+    }
+    setMode(session.mode);
+    if (!session.viewer) return; // signed out: the sidebar offers sign-in
+    try {
+      applyRemote(await fetchData(), session.dataRepo!);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Could not load tokens.");
+    }
+  }, [applyRemote, fetchData]);
 
   useEffect(() => {
-    const saved = readStorage<Saved>(STORAGE_KEY);
-    if (saved) {
-      setSet(parseDtcg(saved.tokens));
-      setHistory(saved.history);
-    }
     try {
       const a = window.localStorage.getItem(AUTHOR_KEY);
       if (a) setAuthorState(a);
     } catch {
       // ignore
     }
-    setLoaded(true);
-  }, []);
+    void load().then(() => {
+      loaded.current = true;
+    });
+  }, [load]);
 
+  // Persist: local mode keeps the whole working copy; GitHub mode keeps unsaved edits as a draft.
   useEffect(() => {
-    if (loaded) writeStorage(STORAGE_KEY, { tokens: serialiseDtcg(set), history } satisfies Saved);
-  }, [set, history, loaded]);
+    if (!loaded.current) return;
+    if (mode === "local") write(LOCAL_KEY, { tokens: serialiseDtcg(set), history });
+    if (remoteMode && remote && repos) {
+      const dirty = !same(set, remote.saved) || pending.length > 0;
+      write(draftKey(repos.data), dirty ? ({ head: remote.head, base: serialiseDtcg(remote.saved), tokens: serialiseDtcg(set), pending } satisfies Draft) : null);
+    }
+  }, [set, history, pending, remote, mode, remoteMode, repos]);
 
   const setAuthor = useCallback((name: string) => {
     setAuthorState(name);
-    writeStorage(AUTHOR_KEY, name);
+    write(AUTHOR_KEY, name);
   }, []);
 
   const log = useCallback(
     (entries: Omit<HistoryEntry, "id" | "at" | "by">[]) => {
       const at = new Date().toISOString();
-      setHistory((h) => [...h, ...entries.map((e) => ({ ...e, id: newId(), at, by: author || "unknown" }))]);
+      const full = entries.map((e) => ({ ...e, id: newId(), at, by: author || "unknown" }));
+      setHistory((h) => [...h, ...full]);
+      if (remoteMode) setPending((p) => [...p, ...full]);
     },
-    [author],
+    [author, remoteMode],
   );
 
   const saveTokens = useCallback(
     (tokens: Token[], replacing: string[], reason?: string) => {
       const before = new Map(set.tokens.map((t) => [t.name, t]));
       setSet((s) => {
-        const kept = s.tokens.filter((t) => !replacing.includes(t.name));
-        // Keep an edited token in its original position.
-        const out = [...kept];
+        const out = s.tokens.filter((t) => !replacing.includes(t.name));
         for (const t of tokens) {
           const i = s.tokens.findIndex((x) => x.name === t.name);
           if (i === -1) out.push(t);
@@ -138,15 +261,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const prev = set.tokens.find((t) => t.name === name);
       if (!prev) return;
       setSet((s) => ({ tokens: s.tokens.map((t) => (t.name === name ? { ...t, status } : t)) }));
-      log([
-        {
-          token: name,
-          action,
-          reason,
-          before: { values: prev.values, status: prev.status },
-          after: { values: prev.values, status },
-        },
-      ]);
+      log([{ token: name, action, reason, before: { values: prev.values, status: prev.status }, after: { values: prev.values, status } }]);
     },
     [set, log],
   );
@@ -154,16 +269,107 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const deprecate = useCallback((name: string, reason: string) => changeStatus(name, "deprecated", "deprecated", reason), [changeStatus]);
   const reactivate = useCallback((name: string, reason: string) => changeStatus(name, "active", "edited", reason), [changeStatus]);
 
+  /** Local mode: back to the dummy set. GitHub mode: throw away unsaved edits. */
   const reset = useCallback(() => {
+    if (remoteMode && remote) {
+      setSet(remote.saved);
+      setHistory(remote.savedHistory);
+      setPending([]);
+      return;
+    }
     setSet(initialSet());
     setHistory(initialHistory());
+  }, [remoteMode, remote]);
+
+  const saveToRepo = useCallback(
+    async (message: string): Promise<SaveResult> => {
+      if (!remote || !repos) return { ok: false, message: "Not connected to GitHub." };
+      setSaving(true);
+      try {
+        const res = await fetch("/api/data", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ expectedHead: remote.head, tokens: serialiseDtcg(set), history: [...remote.savedHistory, ...pending], message }),
+        });
+        const body = await res.json();
+        if (res.status === 409) {
+          // Someone else saved first: reapply these edits on their version.
+          const theirs = await fetchData();
+          const theirSet = parseDtcg(theirs.tokens);
+          const { merged, conflicts } = mergeEdits(remote.saved, set, theirSet);
+          setRemote({ head: theirs.head, saved: theirSet, savedHistory: theirs.history });
+          setSet(merged);
+          setHistory([...theirs.history, ...pending]);
+          return { ok: false, conflicts, message: "Someone else saved changes while you were working." };
+        }
+        if (!res.ok) return { ok: false, message: body.message ?? "Could not save." };
+        const savedHistory = body.history as HistoryEntry[];
+        setRemote({ head: body.head, saved: set, savedHistory });
+        setHistory(savedHistory);
+        setPending([]);
+        return { ok: true };
+      } catch {
+        return { ok: false, message: "Could not reach the server. Your edits are kept here." };
+      } finally {
+        setSaving(false);
+      }
+    },
+    [remote, repos, set, pending, fetchData],
+  );
+
+  const reload = useCallback(async () => {
+    if (!repos) return;
+    try {
+      applyRemote(await fetchData(), repos.data);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Could not load tokens.");
+    }
+  }, [repos, applyRemote, fetchData]);
+
+  const signOut = useCallback(async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/";
   }, []);
 
-  const localChanges = history.length - rawHistory.length;
+  const unsavedNames = useMemo(() => {
+    if (mode === "local") return [];
+    if (!remote) return [];
+    const saved = new Map(remote.saved.tokens.map((t) => [t.name, t]));
+    const now = new Map(set.tokens.map((t) => [t.name, t]));
+    const names = new Set<string>();
+    for (const t of set.tokens) if (!same(saved.get(t.name), t)) names.add(t.name);
+    for (const t of remote.saved.tokens) if (!now.has(t.name)) names.add(t.name);
+    return [...names];
+  }, [mode, remote, set]);
+
+  const ready = mode === "local" || (remoteMode && !!remote);
+  const localChanges = remoteMode ? unsavedNames.length : Math.max(0, history.length - rawHistory.length);
 
   const value = useMemo<Store>(
-    () => ({ set, history, author, setAuthor, localChanges: Math.max(0, localChanges), saveTokens, deprecate, reactivate, reset }),
-    [set, history, author, setAuthor, localChanges, saveTokens, deprecate, reactivate, reset],
+    () => ({
+      mode,
+      viewer,
+      repos,
+      loadError,
+      ready,
+      savedHead: remote?.head ?? null,
+      set,
+      history,
+      lastPush,
+      author,
+      setAuthor,
+      localChanges,
+      unsavedNames,
+      saveTokens,
+      deprecate,
+      reactivate,
+      reset,
+      saveToRepo,
+      saving,
+      reload,
+      signOut,
+    }),
+    [mode, viewer, repos, loadError, ready, remote, set, history, lastPush, author, setAuthor, localChanges, unsavedNames, saveTokens, deprecate, reactivate, reset, saveToRepo, saving, reload, signOut],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
