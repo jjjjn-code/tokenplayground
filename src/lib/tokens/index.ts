@@ -5,3 +5,5 @@ export * from "./references";
 export * from "./validate";
 export * from "./dtcg";
 export * from "./history";
+export * from "./repo";
+export * from "./css";

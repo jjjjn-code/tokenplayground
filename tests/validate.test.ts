@@ -132,3 +132,21 @@ describe("check before save (F2)", () => {
     expect(res.issues.every((i) => i.token === "surface-brand")).toBe(true);
   });
 });
+
+describe("empty values and category checks", () => {
+  it("reports a missing value once, naming the modes", () => {
+    const t: Token = { ...colour("surface-brand", "semantic", ""), values: { light: "", dark: "" } };
+    const issues = validateTokenSet({ tokens: [t] });
+    expect(issues.filter((i) => i.code === "value.empty")).toHaveLength(1);
+    expect(issues.find((i) => i.code === "value.empty")?.message).toContain("light and dark");
+    expect(codes(issues)).not.toContain("mode.same");
+  });
+
+  it("warns when a component token points to a semantic token of another category", () => {
+    const set = dummy();
+    const bad = colour("chip-surface-default", "component", { ref: "content-default" }, { component: "chip" });
+    expect(codes(checkBeforeSave(set, [bad]).issues)).toContain("ref.category");
+    const icon = colour("chip-icon-default", "component", { ref: "content-default" }, { component: "chip" });
+    expect(codes(checkBeforeSave(set, [icon]).issues)).not.toContain("ref.category");
+  });
+});

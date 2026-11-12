@@ -57,14 +57,19 @@ export function checkToken(t: Token, index: TokenIndex): Issue[] {
     // changes between modes is not flagged.
     const l = resolveToken(index, t.name, "light");
     const d = resolveToken(index, t.name, "dark");
-    if (!l.error && !d.error && l.value === d.value) {
+    if (!l.error && !d.error && l.value !== "" && l.value === d.value) {
       info("mode.same", `"${t.name}" is ${String(l.value)} in both light and dark. Correct for brand colours that do not change, worth checking otherwise.`);
     }
   }
 
   // Values and references
+  const isEmpty = (v: TokenValue | undefined) => v === "" || (v !== undefined && isComposite(v) && Object.values(v).some((p) => p === ""));
+  const emptyModes = (["light", "dark"] as const).filter((m) => isEmpty(t.values[m]));
+  if (emptyModes.length) {
+    err("value.empty", `"${t.name}" is missing a ${emptyModes.join(" and ")} value. Pick a token or enter a value.`);
+  }
   for (const v of [t.values.light, t.values.dark]) {
-    if (v === undefined) continue;
+    if (v === undefined || isEmpty(v)) continue;
     if (t.layer === "primitive" && referencesIn(v).length) {
       err("ref.primitive", `Primitives hold raw values. "${t.name}" points to another token.`);
     }
@@ -88,6 +93,13 @@ export function checkToken(t: Token, index: TokenIndex): Issue[] {
     const simple = [t.values.light, t.values.dark].some((v) => isReference(v) && v.ref === ref);
     if (simple && target.kind !== t.kind) {
       err("ref.kind", `"${t.name}" is a ${t.kind} token but points to "${ref}", a ${target.kind} token.`);
+    }
+    if (t.layer === "component" && target.layer === "semantic" && t.kind === "color") {
+      const cat = t.name.split("-")[1];
+      const targetCat = target.name.split("-")[0];
+      if (cat && targetCat !== cat && !(cat === "icon" && targetCat === "content")) {
+        warn("ref.category", `"${t.name}" is a ${cat} token but points to "${ref}", a ${targetCat} token. Check this is intended.`);
+      }
     }
     if (target.status === "deprecated" && t.status !== "deprecated") {
       warn("ref.deprecated", `"${t.name}" points to "${ref}", which is deprecated.`);
