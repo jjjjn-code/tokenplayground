@@ -1,6 +1,10 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useState } from "react";
+import { Check, ChevronsUpDown } from "lucide-react";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 import {
   isReference,
   resolveToken,
@@ -10,14 +14,84 @@ import {
   type Token,
   type TokenIndex,
 } from "@/src/lib/tokens";
-import { LAYER_LABEL, resolvedText, Swatch } from "./ui";
+import { LAYER_TITLE } from "../_lib/sets";
+import { AliasPill, resolvedText, Swatch } from "./ui";
 
 /**
- * Pick a value for 1 mode: either another token (F3) or a raw value.
- * Shows what the chosen token resolves to, so references stay references
- * while the person can still see the final value.
+ * Searchable list of tokens to point to (F3), with swatches and resolved
+ * values. When raw values are allowed, typing a value offers to use it.
  */
+export function TokenCommandList({
+  candidates,
+  index,
+  mode,
+  selected,
+  allowRaw,
+  allowRef = true,
+  onPick,
+  placeholder,
+}: {
+  candidates: Token[];
+  index: TokenIndex;
+  mode: Mode;
+  selected?: string;
+  allowRaw: boolean;
+  allowRef?: boolean;
+  onPick: (v: SimpleValue) => void;
+  placeholder?: string;
+}) {
+  const [search, setSearch] = useState("");
+  const layers: Layer[] = ["primitive", "semantic"];
+  const raw = search.trim();
+  // Offer the typed text as a raw value only when it looks like one, or when
+  // no token matches, so Enter on a token name picks the token.
+  const looksRaw = !!raw && (/^[#0-9.]/.test(raw) || !allowRef || !candidates.some((c) => c.name.includes(raw.toLowerCase())));
+  return (
+    <Command>
+      <CommandInput
+        value={search}
+        onValueChange={setSearch}
+        placeholder={placeholder ?? (allowRaw && allowRef ? "Search tokens or type a value" : allowRaw ? "Type a value, for example #FF5000" : "Search tokens")}
+      />
+      <CommandList className="max-h-72">
+        {allowRaw && looksRaw ? (
+          <CommandGroup heading="Raw value">
+            <CommandItem value={`__raw__${raw}`} onSelect={() => onPick(raw)} forceMount>
+              <Swatch value={raw} size="sm" />
+              Use <span className="font-mono">{raw}</span>
+            </CommandItem>
+          </CommandGroup>
+        ) : null}
+        {allowRef ? <CommandEmpty>No matching token.</CommandEmpty> : null}
+        {allowRef
+          ? layers.map((l) => {
+              const opts = candidates.filter((c) => c.layer === l);
+              if (!opts.length) return null;
+              return (
+                <CommandGroup key={l} heading={LAYER_TITLE[l]}>
+                  {opts.map((c) => {
+                    const r = resolveToken(index, c.name, mode);
+                    return (
+                      <CommandItem key={c.name} value={c.name} keywords={[resolvedText(r.value)]} onSelect={() => onPick({ ref: c.name })}>
+                        <Swatch value={r.value} size="sm" />
+                        <span className="truncate font-mono text-[12.5px]">{c.name}</span>
+                        <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground">{typeof r.value === "object" ? "" : resolvedText(r.value)}</span>
+                        <Check className={cn("size-3.5", selected === c.name ? "opacity-100" : "opacity-0")} />
+                      </CommandItem>
+                    );
+                  })}
+                </CommandGroup>
+              );
+            })
+          : null}
+      </CommandList>
+    </Command>
+  );
+}
+
+/** A form field that holds a reference or a raw value, opening the searchable list. */
 export function ValuePicker({
+  id,
   label,
   value,
   onChange,
@@ -26,8 +100,9 @@ export function ValuePicker({
   mode,
   allowRaw,
   allowRef,
-  rawPlaceholder,
+  invalid,
 }: {
+  id?: string;
   label: string;
   value: SimpleValue | "";
   onChange: (v: SimpleValue | "") => void;
@@ -36,72 +111,57 @@ export function ValuePicker({
   mode: Mode;
   allowRaw: boolean;
   allowRef: boolean;
-  rawPlaceholder?: string;
+  invalid?: boolean;
 }) {
-  const id = useId();
-  const [kind, setKind] = useState<"ref" | "raw">(isReference(value) || (value === "" && allowRef) ? "ref" : "raw");
-  const current = kind === "ref" && !allowRef ? "raw" : kind === "raw" && !allowRaw ? "ref" : kind;
-
+  const [open, setOpen] = useState(false);
   const refName = isReference(value) ? value.ref : "";
   const resolved = refName ? resolveToken(index, refName, mode) : null;
-  const layers: Layer[] = ["primitive", "semantic"];
+  const rawValue = !isReference(value) && value !== "" ? String(value) : "";
 
   return (
-    <div className="picker">
-      <div className="picker-head">
-        <label htmlFor={id} className="lbl">
-          {label}
-        </label>
-        {allowRaw && allowRef ? (
-          <div className="seg" role="group" aria-label={`${label}: value type`}>
-            <button type="button" aria-pressed={current === "ref"} onClick={() => { setKind("ref"); onChange(""); }}>
-              Token
-            </button>
-            <button type="button" aria-pressed={current === "raw"} onClick={() => { setKind("raw"); onChange(""); }}>
-              Raw value
-            </button>
-          </div>
-        ) : null}
-      </div>
-      {current === "ref" ? (
-        <>
-          <select id={id} value={refName} onChange={(e) => onChange(e.target.value ? { ref: e.target.value } : "")}>
-            <option value="">Pick a token</option>
-            {layers.map((l) => {
-              const opts = candidates.filter((c) => c.layer === l);
-              if (!opts.length) return null;
-              return (
-                <optgroup key={l} label={LAYER_LABEL[l]}>
-                  {opts.map((c) => (
-                    <option key={c.name} value={c.name}>
-                      {c.name}
-                      {c.status === "deprecated" ? " (deprecated)" : ""}
-                    </option>
-                  ))}
-                </optgroup>
-              );
-            })}
-          </select>
-          {resolved ? (
-            <div className="resolved-line">
-              <Swatch value={resolved.value} />
-              {resolved.error ? <span className="err">Broken reference</span> : <span>Resolves to {resolvedText(resolved.value)}</span>}
-            </div>
-          ) : null}
-        </>
-      ) : (
-        <div className="raw-row">
-          <input
-            id={id}
-            type="text"
-            value={typeof value === "string" || typeof value === "number" ? String(value) : ""}
-            placeholder={rawPlaceholder}
-            onChange={(e) => onChange(e.target.value)}
-            autoComplete="off"
-          />
-          <Swatch value={value} />
-        </div>
-      )}
-    </div>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          id={id}
+          type="button"
+          role="combobox"
+          aria-expanded={open}
+          aria-label={label}
+          className={cn(
+            "flex h-9 w-full items-center gap-2 rounded-md border border-input bg-transparent px-2.5 text-left text-sm shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30",
+            invalid && "border-destructive/60",
+          )}
+        >
+          {refName ? (
+            <>
+              <Swatch value={resolved?.value} size="sm" />
+              <AliasPill name={refName} broken={!!resolved?.error} className="min-w-0" />
+            </>
+          ) : rawValue ? (
+            <>
+              <Swatch value={rawValue} size="sm" />
+              <span className="truncate font-mono text-[12.5px]">{rawValue}</span>
+            </>
+          ) : (
+            <span className="text-muted-foreground">{allowRef ? "Pick a token" : "Enter a value"}</span>
+          )}
+          <ChevronsUpDown className="ml-auto size-3.5 shrink-0 opacity-50" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[340px] p-0" align="start">
+        <TokenCommandList
+          candidates={candidates}
+          index={index}
+          mode={mode}
+          selected={refName}
+          allowRaw={allowRaw}
+          allowRef={allowRef}
+          onPick={(v) => {
+            onChange(v);
+            setOpen(false);
+          }}
+        />
+      </PopoverContent>
+    </Popover>
   );
 }

@@ -1,6 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Copy } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import {
   checkBeforeSave,
   cssVariableName,
@@ -19,7 +25,8 @@ import {
   type TokenValue,
 } from "@/src/lib/tokens";
 import { useStore } from "../_lib/store";
-import { IssueList, KIND_LABEL, LAYER_LABEL } from "./ui";
+import { KIND_ORDER, KIND_TITLE } from "../_lib/sets";
+import { IssueList } from "./ui";
 import { ValuePicker } from "./ValuePicker";
 
 const PARTS: Partial<Record<Kind, string[]>> = {
@@ -42,17 +49,6 @@ const PART_LABEL: Record<string, string> = {
   spread: "Spread",
 };
 
-const RAW_HINT: Record<Kind, string> = {
-  color: "#FF5000",
-  spacing: "16px",
-  sizing: "24px",
-  typography: "16px",
-  radius: "2px",
-  border: "1px",
-  shadow: "0px 2px 8px 0px #000000",
-};
-
-/** Typography, border and shadow tokens are composite in the semantic layer. */
 const isCompositeShape = (layer: Layer, kind: Kind) => layer === "semantic" && !!PARTS[kind];
 
 function emptyValue(layer: Layer, kind: Kind): TokenValue {
@@ -77,8 +73,6 @@ export function TokenEditor({ token, onDone }: { token?: Token; onDone: (saved?:
   const [status, setStatus] = useState<Token["status"]>(token?.status ?? "draft");
   const [description, setDescription] = useState(token?.description ?? "");
   const [reason, setReason] = useState("");
-
-  // Guided name parts for semantic colours.
   const [category, setCategory] = useState<string>("surface");
   const [variant, setVariant] = useState("");
 
@@ -106,9 +100,8 @@ export function TokenEditor({ token, onDone }: { token?: Token; onDone: (saved?:
   };
 
   const { ok, issues } = checkBeforeSave(set, [draft], editing ? [token!.name] : []);
-  const unchanged = editing && JSON.stringify(draft) === JSON.stringify({ ...token, description: token!.description });
+  const unchanged = editing && JSON.stringify(draft) === JSON.stringify(token);
 
-  /** Tokens this token may point to: lower layers only, same type for simple values. */
   const refCandidates = (anyKind: boolean) =>
     set.tokens.filter(
       (t) =>
@@ -119,106 +112,115 @@ export function TokenEditor({ token, onDone }: { token?: Token; onDone: (saved?:
     );
 
   const renderValue = (mode: Mode, value: TokenValue, onChange: (v: TokenValue) => void) => {
-    const label = mode === "light" ? (darkAllowed ? "Light value" : "Value") : "Dark value";
+    const label = mode === "light" ? (darkAllowed ? "Light" : "Value") : "Dark";
     if (isComposite(value)) {
       const c = value as CompositeValue;
       return (
-        <fieldset className="composite">
-          <legend className="lbl">{label}</legend>
-          {Object.keys(c).map((p) => (
-            <ValuePicker
-              key={p}
-              label={PART_LABEL[p] ?? p}
-              value={c[p] as SimpleValue | ""}
-              onChange={(v) => onChange({ ...c, [p]: v as SimpleValue })}
-              candidates={refCandidates(true)}
-              index={index}
-              mode={mode}
-              allowRaw
-              allowRef
-            />
-          ))}
+        <fieldset className="rounded-lg border p-3">
+          <legend className="px-1 text-sm font-medium">{label}</legend>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {Object.keys(c).map((p) => (
+              <div key={p} className="grid gap-1.5">
+                <Label className="text-xs text-muted-foreground">{PART_LABEL[p] ?? p}</Label>
+                <ValuePicker
+                  label={`${label} ${PART_LABEL[p] ?? p}`}
+                  value={c[p] as SimpleValue | ""}
+                  onChange={(v) => onChange({ ...c, [p]: v as SimpleValue })}
+                  candidates={refCandidates(true)}
+                  index={index}
+                  mode={mode}
+                  allowRaw
+                  allowRef
+                />
+              </div>
+            ))}
+          </div>
         </fieldset>
       );
     }
     return (
-      <ValuePicker
-        label={label}
-        value={value as SimpleValue | ""}
-        onChange={(v) => onChange(v as TokenValue)}
-        candidates={refCandidates(false)}
-        index={index}
-        mode={mode}
-        allowRaw={layer !== "component"}
-        allowRef={layer !== "primitive"}
-        rawPlaceholder={RAW_HINT[kind]}
-      />
+      <div className="grid gap-1.5">
+        <Label>{label}</Label>
+        <ValuePicker
+          label={label}
+          value={value as SimpleValue | ""}
+          onChange={(v) => onChange(v as TokenValue)}
+          candidates={refCandidates(false)}
+          index={index}
+          mode={mode}
+          allowRaw={layer !== "component"}
+          allowRef={layer !== "primitive"}
+        />
+      </div>
     );
   };
 
   const save = () => {
-    if (!ok) return;
+    if (!ok || !finalName || unchanged) return;
     saveTokens([draft], editing ? [token!.name] : [], reason);
     onDone(draft);
   };
 
   return (
     <form
-      className="editor"
+      className="grid gap-5"
       onSubmit={(e) => {
         e.preventDefault();
         save();
       }}
     >
       {!editing ? (
-        <div className="grid2">
-          <div>
-            <label className="lbl" htmlFor="ed-layer">Layer</label>
-            <select id="ed-layer" value={layer} onChange={(e) => changeShape(e.target.value as Layer, kind)}>
-              <option value="primitive">{LAYER_LABEL.primitive}</option>
-              <option value="semantic">{LAYER_LABEL.semantic}</option>
-            </select>
-            <p className="hint">Component tokens are created with the component flow.</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-1.5">
+            <Label htmlFor="ed-layer">Layer</Label>
+            <Select value={layer} onValueChange={(v) => changeShape(v as Layer, kind)}>
+              <SelectTrigger id="ed-layer" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="primitive">Primitive</SelectItem>
+                <SelectItem value="semantic">Semantic</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-          <div>
-            <label className="lbl" htmlFor="ed-kind">Type</label>
-            <select id="ed-kind" value={kind} onChange={(e) => changeShape(layer, e.target.value as Kind)}>
-              {(Object.keys(KIND_LABEL) as Kind[]).map((k) => (
-                <option key={k} value={k}>{KIND_LABEL[k]}</option>
-              ))}
-            </select>
+          <div className="grid gap-1.5">
+            <Label htmlFor="ed-kind">Type</Label>
+            <Select value={kind} onValueChange={(v) => changeShape(layer, v as Kind)}>
+              <SelectTrigger id="ed-kind" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {KIND_ORDER.map((k) => <SelectItem key={k} value={k}>{KIND_TITLE[k]}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
         </div>
       ) : (
-        <p className="meta">
-          <span className="tname">{token!.name}</span> · {LAYER_LABEL[token!.layer]} · {KIND_LABEL[token!.kind]} · <code>{cssVariableName(token!)}</code>
-        </p>
+        <p className="font-mono text-xs text-muted-foreground">{cssVariableName(token!)}</p>
       )}
 
       {!editing ? (
         guidedSemantic ? (
-          <div className="grid2">
-            <div>
-              <label className="lbl" htmlFor="ed-cat">Category</label>
-              <select id="ed-cat" value={category} onChange={(e) => setCategory(e.target.value)}>
-                {SEMANTIC_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="lbl" htmlFor="ed-var">Variant</label>
-              <input id="ed-var" type="text" list="variants" value={variant} placeholder="default" onChange={(e) => setVariant(e.target.value.toLowerCase().replace(/\s+/g, "-"))} autoComplete="off" />
+          <div className="grid gap-1.5">
+            <Label htmlFor="ed-var">Name</Label>
+            <div className="flex items-center gap-2">
+              <Select value={category} onValueChange={setCategory}>
+                <SelectTrigger className="w-32 font-mono" aria-label="Category"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {SEMANTIC_CATEGORIES.map((c) => <SelectItem key={c} value={c} className="font-mono">{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <span className="text-muted-foreground">-</span>
+              <Input id="ed-var" list="variants" value={variant} placeholder="variant, for example brand" className="font-mono"
+                onChange={(e) => setVariant(e.target.value.toLowerCase().replace(/\s+/g, "-"))} autoComplete="off" />
               <datalist id="variants">
                 {SEMANTIC_VARIANTS.map((v) => <option key={v} value={v} />)}
               </datalist>
             </div>
-            <p className="hint full">Name: <span className="tname">{finalName || "category-variant"}</span></p>
+            <p className="text-xs text-muted-foreground">Pattern: [category]-[variant]. Always write -default.</p>
           </div>
         ) : (
-          <div>
-            <label className="lbl" htmlFor="ed-name">Name</label>
-            <input id="ed-name" type="text" value={name} onChange={(e) => setName(e.target.value)} autoComplete="off"
+          <div className="grid gap-1.5">
+            <Label htmlFor="ed-name">Name</Label>
+            <Input id="ed-name" value={name} onChange={(e) => setName(e.target.value)} className="font-mono" autoComplete="off"
               placeholder={kind === "color" ? "orange-700" : `${NON_COLOUR_PREFIXES[kind as Exclude<Kind, "color">][0]}-name`} />
-            <p className="hint">
+            <p className="text-xs text-muted-foreground">
               {kind === "color"
                 ? "Pattern: [colour]-[step], for example orange-700. Leave out the --color- prefix."
                 : `Provisional rule: start with ${NON_COLOUR_PREFIXES[kind as Exclude<Kind, "color">].map((p) => `${p}-`).join(" or ")}.`}
@@ -227,49 +229,64 @@ export function TokenEditor({ token, onDone }: { token?: Token; onDone: (saved?:
         )
       ) : null}
 
-      {renderValue("light", light, setLight)}
+      <div className="grid gap-4">
+        {renderValue("light", light, setLight)}
+        {darkAllowed ? (
+          dark !== undefined ? (
+            <>
+              {renderValue("dark", dark, setDark)}
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => setDark(structuredClone(light))}>
+                  <Copy className="size-3.5" /> Copy light into dark
+                </Button>
+                {!colourNeedsDark ? (
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setDark(undefined)}>Use the light value in dark mode</Button>
+                ) : null}
+              </div>
+            </>
+          ) : (
+            <Button type="button" variant="outline" size="sm" className="justify-self-start" onClick={() => setDark(structuredClone(light))}>
+              Add a different dark value
+            </Button>
+          )
+        ) : null}
+      </div>
 
-      {darkAllowed ? (
-        dark !== undefined ? (
-          <>
-            {renderValue("dark", dark, setDark)}
-            <div className="bar">
-              <button type="button" className="ghost" onClick={() => setDark(structuredClone(light))}>Copy light into dark</button>
-              {!colourNeedsDark ? <button type="button" className="ghost" onClick={() => setDark(undefined)}>Use the light value in dark mode</button> : null}
-            </div>
-          </>
-        ) : (
-          <button type="button" className="ghost" onClick={() => setDark(structuredClone(light))}>Add a different dark value</button>
-        )
-      ) : null}
+      <Separator />
 
-      {editing ? (
-        <div>
-          <label className="lbl" htmlFor="ed-status">Status</label>
-          <select id="ed-status" value={status} onChange={(e) => setStatus(e.target.value as Token["status"])}>
-            <option value="draft">Draft</option>
-            <option value="active">Active</option>
-            {token!.status === "deprecated" ? <option value="deprecated">Deprecated</option> : null}
-          </select>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {editing ? (
+          <div className="grid gap-1.5">
+            <Label htmlFor="ed-status">Status</Label>
+            <Select value={status} onValueChange={(v) => setStatus(v as Token["status"])}>
+              <SelectTrigger id="ed-status" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="draft">Draft</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                {token!.status === "deprecated" ? <SelectItem value="deprecated">Deprecated</SelectItem> : null}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
+        <div className={editing ? "grid gap-1.5" : "grid gap-1.5 sm:col-span-2"}>
+          <Label htmlFor="ed-desc">Description <span className="font-normal text-muted-foreground">(optional)</span></Label>
+          <Input id="ed-desc" value={description} onChange={(e) => setDescription(e.target.value)} autoComplete="off" />
+        </div>
+        <div className="grid gap-1.5 sm:col-span-2">
+          <Label htmlFor="ed-reason">Reason for this change <span className="font-normal text-muted-foreground">(optional, saved in the history)</span></Label>
+          <Input id="ed-reason" value={reason} onChange={(e) => setReason(e.target.value)} autoComplete="off" />
+        </div>
+      </div>
+
+      {finalName ? (
+        <div className="rounded-lg border bg-muted/40 p-3">
+          <IssueList issues={issues} okText="No problems found." />
         </div>
       ) : null}
 
-      <div>
-        <label className="lbl" htmlFor="ed-desc">Description (optional)</label>
-        <input id="ed-desc" type="text" value={description} onChange={(e) => setDescription(e.target.value)} autoComplete="off" />
-      </div>
-      <div>
-        <label className="lbl" htmlFor="ed-reason">Reason for this change (optional, saved in the history)</label>
-        <input id="ed-reason" type="text" value={reason} onChange={(e) => setReason(e.target.value)} autoComplete="off" />
-      </div>
-
-      <IssueList issues={finalName ? issues : []} empty={finalName && ok ? "No problems found." : undefined} />
-
-      <div className="bar end">
-        <button type="button" className="ghost" onClick={() => onDone()}>Cancel</button>
-        <button type="submit" className="primary" disabled={!ok || !finalName || unchanged}>
-          {editing ? "Save changes" : "Create token"}
-        </button>
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="outline" onClick={() => onDone()}>Cancel</Button>
+        <Button type="submit" disabled={!ok || !finalName || unchanged}>{editing ? "Save changes" : "Create token"}</Button>
       </div>
     </form>
   );

@@ -1,67 +1,162 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 import {
+  Archive,
+  ArchiveRestore,
+  ChevronDown,
+  Copy,
+  History,
+  Link2,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Search,
+  X,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
+import {
+  checkBeforeSave,
   cssFileFor,
   cssVariableName,
   formatValue,
   indexTokens,
+  isComposite,
   isPublishedInFigma,
+  isReference,
+  LAYER_RANK,
   lastChange,
   resolveToken,
   validateTokenSet,
-  type Kind,
-  type Layer,
+  type Mode,
+  type SimpleValue,
   type Status,
   type Token,
+  type TokenIndex,
 } from "@/src/lib/tokens";
 import { useStore } from "../_lib/store";
-import { ContextMenu, type MenuItem } from "./ContextMenu";
+import { inSet, KIND_ORDER, KIND_TITLE, LAYER_TITLE, parseSet, setTitle } from "../_lib/sets";
 import { TokenDetails, type DetailsTab } from "./TokenDetails";
 import { TokenEditor } from "./TokenEditor";
-import { Dialog, formatDate, KIND_LABEL, LAYER_LABEL, resolvedText, ValueCell } from "./ui";
+import { TokenCommandList } from "./ValuePicker";
+import { AliasPill, relativeDate, resolvedText, StatusBadge, Swatch } from "./ui";
 
-/** Token overview (F1) with the context menu (F4). */
+const COLS = 6; // name, light, dark, status, last change, in code
+
+interface Group {
+  key: string;
+  title: string;
+  href: string;
+  tokens: Token[];
+}
+
+function groupTokens(tokens: Token[]): Group[] {
+  const groups = new Map<string, Group>();
+  const order = (t: Token) =>
+    LAYER_RANK[t.layer] * 100 + (t.layer === "component" ? 0 : KIND_ORDER.indexOf(t.kind));
+  for (const t of [...tokens].sort((a, b) => order(a) - order(b))) {
+    const key = t.layer === "component" ? `component/${t.component}` : `${t.layer}/${t.kind}`;
+    const title = t.layer === "component" ? `${LAYER_TITLE.component} · ${t.component}` : `${LAYER_TITLE[t.layer]} · ${KIND_TITLE[t.kind]}`;
+    if (!groups.has(key)) groups.set(key, { key, title, href: `/?set=${key}`, tokens: [] });
+    groups.get(key)!.tokens.push(t);
+  }
+  return [...groups.values()];
+}
+
+/** What a cell shows for 1 mode: swatch, alias pill and resolved value. */
+function ValueDisplay({ token, mode, index }: { token: Token; mode: Mode; index: TokenIndex }) {
+  const v = mode === "dark" ? token.values.dark ?? token.values.light : token.values.light;
+  const r = resolveToken(index, token.name, mode);
+  if (isComposite(v)) {
+    const resolved = (r.value ?? {}) as Record<string, unknown>;
+    const colour = Object.values(resolved).find((x) => typeof x === "string" && x.startsWith("#"));
+    const summary = Object.entries(resolved)
+      .filter(([k]) => k !== "color" && k !== "fontFamily")
+      .map(([, x]) => String(x))
+      .join(" · ");
+    return (
+      <>
+        <Swatch value={colour} />
+        <span className="truncate font-mono text-[12.5px]" title={resolvedText(r.value)}>
+          {r.error ? <span className="text-destructive">broken reference</span> : summary}
+        </span>
+      </>
+    );
+  }
+  if (isReference(v)) {
+    return (
+      <>
+        <Swatch value={r.value} />
+        <AliasPill name={v.ref} broken={!!r.error} className="max-w-[60%]" />
+        <span className="ml-auto truncate font-mono text-[11.5px] text-muted-foreground">{r.error ? "broken" : resolvedText(r.value)}</span>
+      </>
+    );
+  }
+  return (
+    <>
+      <Swatch value={v} />
+      <span className="truncate font-mono text-[12.5px]">{v === "" ? <span className="text-destructive">missing</span> : String(v)}</span>
+    </>
+  );
+}
+
+/** Token overview (F1) as a spreadsheet, with inline editing (F3) and the row menu (F4). */
 export function Overview() {
-  const { set, history, deprecate, reactivate } = useStore();
+  const { set, history, saveTokens, deprecate, reactivate } = useStore();
   const params = useSearchParams();
+  const router = useRouter();
+  const filter = parseSet(params.get("set"));
   const index = useMemo(() => indexTokens(set), [set]);
   const issues = useMemo(() => validateTokenSet(set), [set]);
 
   const [q, setQ] = useState("");
-  const [layer, setLayer] = useState<Layer | "">("");
-  const [kind, setKind] = useState<Kind | "">("");
-  const [component, setComponent] = useState(params.get("component") ?? "");
-  const [status, setStatus] = useState<Status | "">("");
-
-  const [selected, setSelected] = useState<string | null>(params.get("token"));
+  const [status, setStatus] = useState<Status | "all">("all");
+  const [selection, setSelection] = useState<Set<string>>(new Set());
+  const [open, setOpen] = useState<string | null>(params.get("token"));
   const [tab, setTab] = useState<DetailsTab>("references");
-  const [menu, setMenu] = useState<{ x: number; y: number; token: Token } | null>(null);
+  const [editCell, setEditCell] = useState<{ name: string; mode: Mode } | null>(null);
   const [editing, setEditing] = useState<Token | null>(null);
-  const [statusChange, setStatusChange] = useState<Token | null>(null);
+  const [creating, setCreating] = useState(params.get("new") === "token");
+  const [statusChange, setStatusChange] = useState<{ names: string[]; to: "deprecated" | "active" } | null>(null);
   const [reason, setReason] = useState("");
-  const [toast, setToast] = useState("");
 
   useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(""), 1800);
-    return () => clearTimeout(t);
-  }, [toast]);
-
-  const components = useMemo(
-    () => [...new Set(set.tokens.map((t) => t.component).filter(Boolean) as string[])].sort(),
-    [set],
-  );
+    setOpen(params.get("token"));
+    if (params.get("new") === "token") setCreating(true);
+  }, [params]);
+  useEffect(() => setSelection(new Set()), [params]);
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return set.tokens.filter((t) => {
-      if (layer && t.layer !== layer) return false;
-      if (kind && t.kind !== kind) return false;
-      if (component && t.component !== component) return false;
-      if (status && t.status !== status) return false;
+      if (!inSet(t, filter)) return false;
+      if (status !== "all" && t.status !== status) return false;
       if (!needle) return true;
       const hay = [
         t.name,
@@ -75,202 +170,454 @@ export function Overview() {
         .toLowerCase();
       return hay.includes(needle);
     });
-  }, [set, index, q, layer, kind, component, status]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [set, index, q, status, params]);
 
-  const errorsFor = useCallback((name: string) => issues.filter((i) => i.token === name && i.severity !== "info"), [issues]);
+  const groups = useMemo(() => groupTokens(rows), [rows]);
+  const flat = groups.flatMap((g) => g.tokens);
+  const issuesFor = useCallback((name: string) => issues.filter((i) => i.token === name && i.severity !== "info"), [issues]);
+  const errorCount = issues.filter((i) => i.severity === "error").length;
 
-  const copy = async (text: string) => {
+  const copy = async (text: string, label = text) => {
     try {
       await navigator.clipboard.writeText(text);
-      setToast(`Copied ${text}`);
+      toast.success(`Copied ${label}`);
     } catch {
-      setToast("Copy failed");
+      toast.error("Copy failed");
     }
   };
 
-  const menuItems = (t: Token): MenuItem[] => [
-    { label: "Copy name", onSelect: () => copy(t.name) },
-    { label: "Copy code name", onSelect: () => copy(cssVariableName(t)) },
-    { label: "View references", onSelect: () => { setSelected(t.name); setTab("references"); } },
-    { label: "View history", onSelect: () => { setSelected(t.name); setTab("history"); } },
-    { label: "Edit", onSelect: () => setEditing(t) },
+  const openDetails = (name: string, t: DetailsTab = "references") => {
+    setTab(t);
+    setOpen(name);
+  };
+
+  /** Inline edit of 1 mode, checked by the rules engine before saving. */
+  const commitCell = (token: Token, mode: Mode, value: SimpleValue) => {
+    const updated: Token = { ...token, values: { ...token.values, [mode]: value } };
+    const res = checkBeforeSave(set, [updated], [token.name]);
+    const firstError = res.issues.find((i) => i.severity === "error");
+    if (firstError) {
+      toast.error("Not saved", { description: firstError.message });
+      return;
+    }
+    saveTokens([updated], [token.name]);
+    setEditCell(null);
+    const warning = res.issues.find((i) => i.severity === "warning");
+    if (warning) toast.warning(`Updated ${token.name}`, { description: warning.message });
+    else toast.success(`Updated ${token.name}`, { description: `${mode === "light" && token.layer !== "primitive" ? "Light" : mode === "dark" ? "Dark" : "Value"}: ${formatValue(value)}` });
+  };
+
+  const candidatesFor = (t: Token) =>
+    set.tokens.filter((c) => LAYER_RANK[c.layer] < LAYER_RANK[t.layer] && c.kind === t.kind && c.status !== "deprecated");
+
+  type Action = { label: string; icon: React.ReactNode; onSelect: () => void; separator?: boolean; destructive?: boolean };
+  const actions = (t: Token): Action[] => [
+    { label: "Copy name", icon: <Copy />, onSelect: () => copy(t.name) },
+    { label: "Copy code name", icon: <Copy />, onSelect: () => copy(cssVariableName(t)) },
+    { label: "View references", icon: <Link2 />, onSelect: () => openDetails(t.name, "references"), separator: true },
+    { label: "View history", icon: <History />, onSelect: () => openDetails(t.name, "history") },
+    { label: "Edit", icon: <Pencil />, onSelect: () => setEditing(t), separator: true },
     t.status === "deprecated"
-      ? { label: "Make active again", onSelect: () => { setReason(""); setStatusChange(t); } }
-      : { label: "Deprecate", onSelect: () => { setReason(""); setStatusChange(t); } },
+      ? { label: "Make active again", icon: <ArchiveRestore />, onSelect: () => { setReason(""); setStatusChange({ names: [t.name], to: "active" }); } }
+      : { label: "Deprecate", icon: <Archive />, destructive: true, onSelect: () => { setReason(""); setStatusChange({ names: [t.name], to: "deprecated" }); } },
   ];
 
-  const selectedToken = selected ? set.tokens.find((t) => t.name === selected) ?? null : null;
-  const anyFilter = q || layer || kind || component || status;
-  const problems = issues.filter((i) => i.severity === "error").length;
+  /** Arrow keys move between cells, like a spreadsheet. */
+  const onGridKeyDown = (e: React.KeyboardEvent) => {
+    const el = e.target as HTMLElement;
+    const r = Number(el.dataset.row);
+    const c = Number(el.dataset.col);
+    if (Number.isNaN(r) || Number.isNaN(c)) return;
+    const moves: Record<string, [number, number]> = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+    const m = moves[e.key];
+    if (!m) return;
+    e.preventDefault();
+    let nr = r + m[0];
+    let nc = c + m[1];
+    while (nr >= 0 && nr < flat.length && nc >= 0 && nc < COLS) {
+      const next = document.querySelector<HTMLElement>(`[data-row="${nr}"][data-col="${nc}"]`);
+      if (next) {
+        next.focus();
+        return;
+      }
+      nr += m[0];
+      nc += m[1];
+    }
+  };
+
+  const selectedToken = open ? set.tokens.find((t) => t.name === open) ?? null : null;
+  const allSelected = flat.length > 0 && flat.every((t) => selection.has(t.name));
+  const toggleRow = (n: string) =>
+    setSelection((s) => {
+      const x = new Set(s);
+      if (x.has(n)) x.delete(n);
+      else x.add(n);
+      return x;
+    });
+
+  let rowIndex = -1;
+
+  const valueCell = (t: Token, mode: Mode, r: number, c: number) => {
+    if (mode === "dark" && t.layer === "primitive") {
+      return (
+        <td key={mode}>
+          <div className="cell-btn text-muted-foreground/60" title="Primitives have 1 value for every mode">—</div>
+        </td>
+      );
+    }
+    const composite = isComposite(mode === "dark" ? t.values.dark ?? t.values.light : t.values.light);
+    const isOpen = editCell?.name === t.name && editCell.mode === mode;
+    const label = `${t.name}, ${t.layer === "primitive" ? "value" : mode}. Press Enter to change.`;
+    if (composite) {
+      return (
+        <td key={mode}>
+          <button type="button" className="cell-btn" data-editable="true" data-row={r} data-col={c} aria-label={label} onClick={() => setEditing(t)}>
+            <ValueDisplay token={t} mode={mode} index={index} />
+          </button>
+        </td>
+      );
+    }
+    const current = mode === "dark" ? t.values.dark : t.values.light;
+    return (
+      <td key={mode}>
+        <Popover open={isOpen} onOpenChange={(o) => setEditCell(o ? { name: t.name, mode } : null)}>
+          <PopoverTrigger asChild>
+            <button type="button" className={cn("cell-btn", isOpen && "bg-accent")} data-editable="true" data-row={r} data-col={c} aria-label={label}>
+              <ValueDisplay token={t} mode={mode} index={index} />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[340px] p-0" align="start" sideOffset={2}>
+            <div className="border-b px-3 py-2 text-xs text-muted-foreground">
+              <span className="font-mono text-foreground">{t.name}</span> · {t.layer === "primitive" ? "value" : mode}
+            </div>
+            <TokenCommandList
+              candidates={candidatesFor(t)}
+              index={index}
+              mode={mode}
+              selected={isReference(current) ? current.ref : undefined}
+              allowRaw={t.layer !== "component"}
+              allowRef={t.layer !== "primitive"}
+              onPick={(v) => commitCell(t, mode, v)}
+            />
+          </PopoverContent>
+        </Popover>
+      </td>
+    );
+  };
 
   return (
-    <div className={selectedToken ? "overview with-details" : "overview"}>
-      <section className="table-area">
-        <div className="filters" role="search">
-          <div className="f-search">
-            <label className="lbl" htmlFor="q">Search</label>
-            <input id="q" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name or value, for example orange-700 or #FF5000" autoComplete="off" />
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* Toolbar */}
+      <header className="flex min-h-14 flex-wrap items-center gap-3 border-b px-4 py-2 pl-16 md:pl-4">
+        <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-sm">
+          {setTitle(filter).map((p, i, a) => (
+            <Fragment key={p}>
+              {i > 0 ? <span className="text-muted-foreground">/</span> : null}
+              <span className={i === a.length - 1 ? "font-medium" : "text-muted-foreground"}>{p}</span>
+            </Fragment>
+          ))}
+          <span className="ml-1 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-muted-foreground">{rows.length}</span>
+        </nav>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="search"
+              aria-label="Search tokens"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search name or value"
+              className="h-8 w-56 pl-8 text-[13px]"
+            />
           </div>
-          <div>
-            <label className="lbl" htmlFor="f-layer">Layer</label>
-            <select id="f-layer" value={layer} onChange={(e) => setLayer(e.target.value as Layer | "")}>
-              <option value="">All</option>
-              {(Object.keys(LAYER_LABEL) as Layer[]).map((l) => <option key={l} value={l}>{LAYER_LABEL[l]}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="lbl" htmlFor="f-kind">Type</label>
-            <select id="f-kind" value={kind} onChange={(e) => setKind(e.target.value as Kind | "")}>
-              <option value="">All</option>
-              {(Object.keys(KIND_LABEL) as Kind[]).map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="lbl" htmlFor="f-comp">Component</label>
-            <select id="f-comp" value={component} onChange={(e) => setComponent(e.target.value)}>
-              <option value="">All</option>
-              {components.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="lbl" htmlFor="f-status">Status</label>
-            <select id="f-status" value={status} onChange={(e) => setStatus(e.target.value as Status | "")}>
-              <option value="">All</option>
-              <option value="draft">Draft</option>
-              <option value="active">Active</option>
-              <option value="deprecated">Deprecated</option>
-            </select>
-          </div>
+          <Select value={status} onValueChange={(v) => setStatus(v as Status | "all")}>
+            <SelectTrigger size="sm" className="w-36 text-[13px]" aria-label="Status"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Any status</SelectItem>
+              <SelectItem value="draft">Draft</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="deprecated">Deprecated</SelectItem>
+            </SelectContent>
+          </Select>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm"><Plus className="size-4" /> New <ChevronDown className="size-3.5 opacity-70" /></Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-60">
+              <DropdownMenuItem asChild>
+                <Link href="/create">Component tokens<span className="ml-auto text-xs text-muted-foreground">guided</span></Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setCreating(true)}>Primitive or semantic token</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
+      </header>
 
-        <div className="table-bar">
-          <span>
-            <span className="count">{rows.length}</span> of {set.tokens.length} tokens
-            {anyFilter ? (
-              <button type="button" className="link" onClick={() => { setQ(""); setLayer(""); setKind(""); setComponent(""); setStatus(""); }}>
-                Clear filters
-              </button>
-            ) : null}
-          </span>
-          <span className={problems ? "err" : "sub"}>{problems ? `${problems} rule errors in the set` : "No rule errors"}</span>
-          <Link className="button primary" href="/create">New tokens</Link>
-        </div>
+      {/* Status strip or bulk actions */}
+      <div className="flex h-10 items-center gap-3 border-b bg-muted/30 px-4 text-[13px]">
+        {selection.size ? (
+          <>
+            <span className="font-medium">{selection.size} selected</span>
+            <Button variant="ghost" size="sm" className="h-7" onClick={() => copy([...selection].join("\n"), `${selection.size} names`)}>
+              <Copy className="size-3.5" /> Copy names
+            </Button>
+            <Button variant="ghost" size="sm" className="h-7" onClick={() => { setReason(""); setStatusChange({ names: [...selection].filter((n) => set.tokens.find((t) => t.name === n)?.status !== "deprecated"), to: "deprecated" }); }}>
+              <Archive className="size-3.5" /> Deprecate
+            </Button>
+            <Button variant="ghost" size="sm" className="ml-auto h-7" onClick={() => setSelection(new Set())}>
+              <X className="size-3.5" /> Clear
+            </Button>
+          </>
+        ) : (
+          <>
+            <span className="hidden text-muted-foreground sm:inline">Click a value to change it. Right-click a row for more.</span>
+            <span className={cn("ml-auto", errorCount ? "text-destructive" : "text-muted-foreground")}>
+              {errorCount ? `${errorCount} rule ${errorCount === 1 ? "error" : "errors"} in the set` : "All tokens pass the naming rules"}
+            </span>
+          </>
+        )}
+      </div>
 
-        <div className="table-scroll">
-          <table className="tokens">
-            <thead>
-              <tr>
-                <th scope="col">Name</th>
-                <th scope="col">Layer and type</th>
-                <th scope="col">Light</th>
-                <th scope="col">Dark</th>
-                <th scope="col">Status</th>
-                <th scope="col">Last change</th>
-                <th scope="col">In code</th>
-                <th scope="col"><span className="visually-hidden">Actions</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((t) => {
-                const last = lastChange(history, t.name);
-                const errs = errorsFor(t.name);
-                return (
-                  <tr
-                    key={t.name}
-                    className={[selected === t.name ? "sel" : "", t.status === "deprecated" ? "dep" : ""].join(" ")}
-                    onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, token: t }); }}
-                  >
-                    <td>
-                      <button type="button" className="link tname" onClick={() => setSelected(t.name)}>{t.name}</button>
-                      {(t.layer === "component" && !isPublishedInFigma(t)) || errs.length ? (
-                        <span className="tags">
-                          {t.layer === "component" && !isPublishedInFigma(t) ? <span className="tag">hidden in Figma</span> : null}
-                          {errs.length ? <span className={`tag ${errs.some((e) => e.severity === "error") ? "bad" : "warn"}`} title={errs.map((e) => e.message).join("\n")}>{errs.length} {errs.length === 1 ? "issue" : "issues"}</span> : null}
-                        </span>
-                      ) : null}
-                    </td>
-                    <td>{LAYER_LABEL[t.layer]} · {KIND_LABEL[t.kind].toLowerCase()}{t.component ? <span className="sub block">{t.component}</span> : null}</td>
-                    <td><ValueCell token={t} mode="light" index={index} /></td>
-                    <td>{t.layer === "primitive" ? <span className="muted">no modes</span> : <ValueCell token={t} mode="dark" index={index} />}</td>
-                    <td><span className={`status ${t.status}`}>{t.status}</span></td>
-                    <td>{last ? <><span>{last.action}</span><span className="sub block">{formatDate(last.at)}</span></> : <span className="muted">none</span>}</td>
-                    <td><code>{cssVariableName(t)}</code><span className="sub block">{cssFileFor(t)}</span></td>
-                    <td>
-                      <button
-                        type="button"
-                        className="icon-btn"
-                        aria-label={`Actions for ${t.name}`}
-                        aria-haspopup="menu"
-                        onClick={(e) => {
-                          const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                          setMenu({ x: r.right - 200, y: r.bottom + 4, token: t });
-                        }}
-                      >
-                        ⋯
-                      </button>
+      {/* Sheet */}
+      <div className="min-h-0 flex-1 overflow-auto" onKeyDown={onGridKeyDown}>
+        <table className="sheet-table min-w-[1060px]">
+          <colgroup>
+            <col style={{ width: 300 }} />
+            <col style={{ width: 230 }} />
+            <col style={{ width: 230 }} />
+            <col style={{ width: 104 }} />
+            <col style={{ width: 120 }} />
+            <col />
+            <col style={{ width: 44 }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th className="sticky-col">
+                <div className="flex items-center gap-3">
+                  <Checkbox
+                    aria-label="Select all shown tokens"
+                    checked={allSelected ? true : selection.size ? "indeterminate" : false}
+                    onCheckedChange={(v) => setSelection(v ? new Set(flat.map((t) => t.name)) : new Set())}
+                  />
+                  Name
+                </div>
+              </th>
+              <th>Light</th>
+              <th>Dark</th>
+              <th>Status</th>
+              <th>Last change</th>
+              <th>In code</th>
+              <th><span className="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {groups.map((g) => (
+              <Fragment key={g.key}>
+                {groups.length > 1 || !filter.layer ? (
+                  <tr className="group-row">
+                    <td colSpan={7} className="sticky-col">
+                      <Link href={g.href} className="flex items-center gap-2 px-3 text-xs font-medium text-muted-foreground hover:text-foreground">
+                        {g.title}
+                        <span className="font-mono tabular-nums opacity-70">{g.tokens.length}</span>
+                      </Link>
                     </td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {!rows.length ? <p className="empty">No tokens match these filters.</p> : null}
-        </div>
-      </section>
+                ) : null}
+                {g.tokens.map((t) => {
+                  rowIndex += 1;
+                  const r = rowIndex;
+                  const errs = issuesFor(t.name);
+                  const last = lastChange(history, t.name);
+                  const hidden = t.layer === "component" && !isPublishedInFigma(t);
+                  return (
+                    <ContextMenu key={t.name}>
+                      <ContextMenuTrigger asChild>
+                        <tr data-selected={selection.has(t.name) || open === t.name}>
+                          <td className="sticky-col">
+                            <div className="flex h-full items-center gap-3 pl-[10px]">
+                              <Checkbox aria-label={`Select ${t.name}`} checked={selection.has(t.name)} onCheckedChange={() => toggleRow(t.name)} />
+                              <button
+                                type="button"
+                                className={cn("cell-btn -ml-1 min-w-0 flex-1 pl-1 font-mono text-[12.5px]", t.status === "deprecated" && "text-muted-foreground line-through")}
+                                data-editable="true"
+                                data-row={r}
+                                data-col={0}
+                                onClick={() => openDetails(t.name)}
+                              >
+                                <span className="truncate">{t.name}</span>
+                                {hidden ? (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="shrink-0 rounded border px-1 font-sans text-[10px] text-muted-foreground no-underline">hidden</span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Hidden from publishing in Figma</TooltipContent>
+                                  </Tooltip>
+                                ) : null}
+                                {errs.length ? (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className={cn("ml-auto size-2 shrink-0 rounded-full", errs.some((e) => e.severity === "error") ? "bg-destructive" : "bg-warning")} aria-label={`${errs.length} issues`} />
+                                    </TooltipTrigger>
+                                    <TooltipContent className="max-w-xs">{errs.map((e) => e.message).join(" ")}</TooltipContent>
+                                  </Tooltip>
+                                ) : null}
+                              </button>
+                            </div>
+                          </td>
+                          {valueCell(t, "light", r, 1)}
+                          {valueCell(t, "dark", r, 2)}
+                          <td>
+                            <div className="cell-btn" tabIndex={-1} data-row={r} data-col={3}><StatusBadge status={t.status} /></div>
+                          </td>
+                          <td>
+                            <div className="cell-btn text-[12px] whitespace-nowrap text-muted-foreground" title={last ? `${last.action} by ${last.by}` : undefined}>
+                              {last ? <span className="truncate"><span className="text-foreground capitalize">{last.action}</span> · {relativeDate(last.at)}</span> : "—"}
+                            </div>
+                          </td>
+                          <td>
+                            <div className="cell-btn" title={cssFileFor(t)}>
+                              <span className="truncate font-mono text-[12px] text-muted-foreground">{cssVariableName(t)}</span>
+                            </div>
+                          </td>
+                          <td>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="mx-auto flex size-7" aria-label={`Actions for ${t.name}`}>
+                                  <MoreHorizontal className="size-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-48">
+                                {actions(t).map((a) => (
+                                  <Fragment key={a.label}>
+                                    {a.separator ? <DropdownMenuSeparator /> : null}
+                                    <DropdownMenuItem onSelect={a.onSelect} variant={a.destructive ? "destructive" : "default"}>
+                                      {a.icon} {a.label}
+                                    </DropdownMenuItem>
+                                  </Fragment>
+                                ))}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </td>
+                        </tr>
+                      </ContextMenuTrigger>
+                      <ContextMenuContent className="w-52">
+                        <div className="truncate px-2 py-1.5 font-mono text-xs text-muted-foreground">{t.name}</div>
+                        {actions(t).map((a) => (
+                          <Fragment key={a.label}>
+                            {a.separator ? <ContextMenuSeparator /> : null}
+                            <ContextMenuItem onSelect={a.onSelect} variant={a.destructive ? "destructive" : "default"}>
+                              {a.icon} {a.label}
+                            </ContextMenuItem>
+                          </Fragment>
+                        ))}
+                      </ContextMenuContent>
+                    </ContextMenu>
+                  );
+                })}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+        {!rows.length ? (
+          <div className="flex flex-col items-center gap-2 py-16 text-sm text-muted-foreground">
+            No tokens match.
+            {q || status !== "all" ? <Button variant="outline" size="sm" onClick={() => { setQ(""); setStatus("all"); }}>Clear search</Button> : null}
+          </div>
+        ) : null}
+      </div>
 
-      {selectedToken ? (
-        <TokenDetails
-          token={selectedToken}
-          tab={tab}
-          onTab={setTab}
-          onSelect={setSelected}
-          onClose={() => setSelected(null)}
-          onEdit={() => setEditing(selectedToken)}
-        />
-      ) : null}
+      {/* Details */}
+      <Sheet open={!!selectedToken} onOpenChange={(o) => { if (!o) { setOpen(null); if (params.get("token")) router.replace(`/?set=${params.get("set") ?? "all"}`); } }}>
+        <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
+          {selectedToken ? (
+            <>
+              <SheetHeader>
+                <SheetTitle className="font-mono text-base break-all">{selectedToken.name}</SheetTitle>
+                <SheetDescription className="sr-only">Details, references and history</SheetDescription>
+              </SheetHeader>
+              <TokenDetails token={selectedToken} tab={tab} onTab={setTab} onSelect={(n) => setOpen(n)} onEdit={() => setEditing(selectedToken)} />
+            </>
+          ) : null}
+        </SheetContent>
+      </Sheet>
 
-      {menu ? <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.token)} label={`Actions for ${menu.token.name}`} onClose={() => setMenu(null)} /> : null}
+      {/* Edit */}
+      <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="font-mono">{editing?.name}</DialogTitle>
+            <DialogDescription>Change values, status or description. The rules are checked as you go.</DialogDescription>
+          </DialogHeader>
+          {editing ? <TokenEditor key={editing.name} token={editing} onDone={(saved) => { setEditing(null); if (saved) toast.success(`Saved ${saved.name}`); }} /> : null}
+        </DialogContent>
+      </Dialog>
 
-      {editing ? (
-        <Dialog title={`Edit ${editing.name}`} onClose={() => setEditing(null)} wide>
-          <TokenEditor token={editing} onDone={(saved) => { setEditing(null); if (saved) setToast(`Saved ${saved.name}`); }} />
-        </Dialog>
-      ) : null}
+      {/* Create a primitive or semantic token */}
+      <Dialog open={creating} onOpenChange={(o) => { setCreating(o); if (!o && params.get("new")) router.replace("/"); }}>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>New token</DialogTitle>
+            <DialogDescription>Create a primitive or semantic token. For component tokens, use the guided flow.</DialogDescription>
+          </DialogHeader>
+          {creating ? (
+            <TokenEditor
+              onDone={(saved) => {
+                setCreating(false);
+                if (saved) {
+                  toast.success(`Created ${saved.name}`);
+                  router.replace(`/?set=${saved.layer}/${saved.kind}&token=${saved.name}`);
+                } else if (params.get("new")) router.replace("/");
+              }}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
-      {statusChange ? (
-        <Dialog title={statusChange.status === "deprecated" ? `Make ${statusChange.name} active again` : `Deprecate ${statusChange.name}`} onClose={() => setStatusChange(null)}>
+      {/* Deprecate or make active */}
+      <Dialog open={!!statusChange} onOpenChange={(o) => !o && setStatusChange(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {statusChange?.to === "active"
+                ? `Make ${statusChange.names[0]} active again`
+                : statusChange && statusChange.names.length > 1
+                  ? `Deprecate ${statusChange.names.length} tokens`
+                  : `Deprecate ${statusChange?.names[0] ?? ""}`}
+            </DialogTitle>
+            <DialogDescription>
+              {statusChange?.to === "active"
+                ? "The token will be treated as active again."
+                : "Deprecated tokens stay in code and in Figma, but the tool warns when anything points to them."}
+            </DialogDescription>
+          </DialogHeader>
           <form
-            className="editor"
+            className="grid gap-4"
             onSubmit={(e) => {
               e.preventDefault();
-              if (!reason.trim()) return;
-              if (statusChange.status === "deprecated") reactivate(statusChange.name, reason.trim());
-              else deprecate(statusChange.name, reason.trim());
+              if (!statusChange || !reason.trim()) return;
+              for (const n of statusChange.names) {
+                if (statusChange.to === "active") reactivate(n, reason.trim());
+                else deprecate(n, reason.trim());
+              }
+              toast.success(statusChange.to === "active" ? "Made active" : `Deprecated ${statusChange.names.length} ${statusChange.names.length === 1 ? "token" : "tokens"}`);
               setStatusChange(null);
+              setSelection(new Set());
             }}
           >
-            {statusChange.status !== "deprecated" ? (
-              <p>
-                Deprecated tokens stay in the code and in Figma, but the tool warns when anything points to them.
-                {(() => {
-                  const n = set.tokens.filter((t) => [t.values.light, t.values.dark].some((v) => v && typeof v === "object" && "ref" in v && v.ref === statusChange.name)).length;
-                  return n ? ` ${n} ${n === 1 ? "token points" : "tokens point"} to it directly.` : "";
-                })()}
-              </p>
-            ) : null}
-            <label className="lbl" htmlFor="st-reason">Reason (required)</label>
-            <input id="st-reason" type="text" value={reason} onChange={(e) => setReason(e.target.value)} autoComplete="off" required />
-            <div className="bar end">
-              <button type="button" className="ghost" onClick={() => setStatusChange(null)}>Cancel</button>
-              <button type="submit" className="primary" disabled={!reason.trim()}>
-                {statusChange.status === "deprecated" ? "Make active" : "Deprecate"}
-              </button>
+            <div className="grid gap-1.5">
+              <Label htmlFor="st-reason">Reason</Label>
+              <Input id="st-reason" value={reason} onChange={(e) => setReason(e.target.value)} autoComplete="off" required placeholder="Saved in the history" />
             </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setStatusChange(null)}>Cancel</Button>
+              <Button type="submit" variant={statusChange?.to === "active" ? "default" : "destructive"} disabled={!reason.trim() || !statusChange?.names.length}>
+                {statusChange?.to === "active" ? "Make active" : "Deprecate"}
+              </Button>
+            </DialogFooter>
           </form>
-        </Dialog>
-      ) : null}
-
-      <div className="toast" role="status" aria-live="polite">{toast}</div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

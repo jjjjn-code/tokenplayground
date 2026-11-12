@@ -28,15 +28,19 @@ npm test
 npm run dev
 ```
 
+## Look and feel
+
+The interface uses [shadcn/ui](https://ui.shadcn.com) components on Tailwind CSS, with the neutral theme and a light and dark mode. The overview works like a spreadsheet, and the way tokens are organised follows Tokens Studio: a sidebar of token sets, modes as columns, references shown as pills.
+
 ## Screens
 
 | Page | What it does |
 | --- | --- |
-| Overview (`/`) | Every token in 1 table, with search, filters, a details panel (references and history) and a context menu on every row |
-| Create (`/create`) | Component tokens using the token namer flow, or a single primitive or semantic token |
+| Overview (`/`) | A spreadsheet of tokens. Pick a token set in the sidebar, click a value to change it, use arrow keys to move between cells, right-click a row for actions, tick rows for bulk actions, click a name for details |
+| Create (`/create`) | Component tokens using the token namer flow, with choices on the left and a live preview on the right. Single primitive or semantic tokens are created from the New button |
 | Export CSS (`/export`) | Preview, copy or download the CSS that push will write, and the token data as JSON |
 
-Until push arrives in phase 3, changes are kept in your browser. "Reset" in the header throws them away and reloads the dummy set.
+Until push arrives in phase 3, changes are kept in your browser. "Reset" at the bottom of the sidebar throws them away and reloads the dummy set.
 
 ## Where things are
 
@@ -52,6 +56,7 @@ Until push arrives in phase 3, changes are kept in your browser. "Reset" in the 
 | `src/lib/tokens/css.ts` | Turns tokens into CSS for the parent and component files |
 | `src/lib/tokens/repo.ts` | Where each token lives in the code repo (provisional paths) |
 | `app/` | The screens. Shared pieces are in `app/_components/`; the working copy is in `app/_lib/store.tsx` |
+| `components/ui/` | shadcn/ui components, added with the shadcn command line tool |
 | `data/dummy/` | Dummy token set and history. Moves to the token data repo in phase 3 |
 | `fixtures/` | Test material: release branch CSS sample, the 6 drift cases, simulated component usage |
 | `tests/` | Automated tests |
