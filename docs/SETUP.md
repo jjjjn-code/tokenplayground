@@ -11,7 +11,13 @@ On github.com/new, create 2 **private** repos on your account, with nothing tick
 - `ual-tokens-data`
 - `ual-tokens-sandbox`
 
-Claude fills them with the starting files: the dummy token set in the data repo, and CSS generated from it in the sandbox.
+Then fill them with the starting files: the dummy token set in the data repo, and CSS generated from it in the sandbox. Clone both repos next to this one, then run:
+
+```bash
+npm run seed -- ../ual-tokens-data ../ual-tokens-sandbox
+```
+
+Commit and push the files in each repo to `main`. (Claude did this for the first set-up on 12 Nov 2026.)
 
 ## 2. Put the tool on Vercel
 
