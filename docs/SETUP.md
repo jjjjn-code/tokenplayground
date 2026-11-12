@@ -24,13 +24,15 @@ The tool works straight away in local mode (edits kept in your browser) until st
 
 ## 3. Create the GitHub App
 
+If you have already created it, open it again from **Settings**, **Developer settings**, **GitHub Apps**, **Edit**, and check each setting below on the **General** tab, then press **Save changes** at the bottom.
+
 1. Go to github.com, your profile picture, **Settings**, **Developer settings**, **GitHub Apps**, **New GitHub App**.
 2. Fill in:
-   - **GitHub App name**: `UAL token tool` (it must be unique on GitHub, so add your initials if it is taken).
+   - **GitHub App name**: any name, for example `jn token tool`. It must be unique on GitHub. The tool does not depend on the name.
    - **Homepage URL**: your Vercel address.
-   - **Callback URL**: your Vercel address followed by `/api/auth/callback`, for example `https://tokenplayground.vercel.app/api/auth/callback`. To also use the tool on your computer, press **Add Callback URL** and add `http://localhost:3000/api/auth/callback`.
-   - **Expire user authorization tokens**: leave ticked.
-   - **Request user authorization (OAuth) during installation**: leave unticked.
+   - **Callback URL**: this is a text box, not a column. Scroll down to the heading **Identifying and authorizing users**; Callback URL is the first box under it. Enter your Vercel address followed by `/api/auth/callback`, for example `https://tokenplayground.vercel.app/api/auth/callback`. To also use the tool on your computer, press **Add Callback URL** and add `http://localhost:3000/api/auth/callback`.
+   - **Expire user authorization tokens** (same section): leave ticked.
+   - **Request user authorization (OAuth) during installation** (same section): leave unticked.
    - **Webhook**: untick **Active**.
 3. Under **Permissions**, **Repository permissions**, set:
    - **Contents**: Read and write
