@@ -55,6 +55,9 @@ export function NewTokenRow({
   const [light, setLight] = useState<SimpleValue | "">("");
   const [dark, setDark] = useState<SimpleValue | "">("");
   const [darkTouched, setDarkTouched] = useState(false);
+  // Messages wait until the person finishes: never on load, never while typing.
+  // "name": after leaving the name field or pushing Enter. "all": after pushing Create.
+  const [reveal, setReveal] = useState<"none" | "name" | "all">("none");
   const nameRef = useRef<HTMLInputElement>(null);
   const rowRef = useRef<HTMLTableRowElement>(null);
   const hasDark = layer !== "primitive";
@@ -77,7 +80,6 @@ export function NewTokenRow({
   const { ok, issues } = useMemo(() => checkBeforeSave(set, [draft], []), [set, JSON.stringify(draft)]); // eslint-disable-line react-hooks/exhaustive-deps
   const nameTyped = draft.name.length > 0 && draft.name !== `${component}-`;
   const nameError = issues.find((i) => i.severity === "error" && i.code.startsWith("name"));
-  const firstError = nameError ?? issues.find((i) => i.severity === "error");
   const firstWarning = issues.find((i) => i.severity === "warning");
   // A new role, state or category belongs in the guided component flow.
   const novelty = layer === "component" && component && nameTyped && !nameError ? componentNovelty(set, component, draft.name) : null;
@@ -88,7 +90,10 @@ export function NewTokenRow({
 
   const create = () => {
     if (canCreate) onCreate(draft);
+    else setReveal("all");
   };
+  const showName = reveal !== "none" && nameTyped;
+  const valueError = issues.find((i) => i.severity === "error" && !i.code.startsWith("name"));
 
   const focusLight = () => rowRef.current?.querySelector<HTMLButtonElement>('[data-new="light"] button')?.focus();
 
@@ -101,12 +106,21 @@ export function NewTokenRow({
             aria-label="New token name"
             aria-describedby="new-token-guide new-token-message"
             value={name}
-            onChange={(e) => setName(e.target.value.toLowerCase().replace(/\s+/g, "-"))}
+            onChange={(e) => {
+              setName(e.target.value.toLowerCase().replace(/\s+/g, "-"));
+              setReveal("none");
+            }}
+            onBlur={() => {
+              if (nameTyped) setReveal((r) => (r === "none" ? "name" : r));
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
                 if (canCreate) create();
-                else focusLight();
+                else if (!nameError && !novelty && nameTyped) {
+                  setReveal("name");
+                  focusLight();
+                } else setReveal("name");
               }
             }}
             placeholder={placeholderFor(layer, kind, component)}
@@ -114,13 +128,13 @@ export function NewTokenRow({
             spellCheck={false}
             className={cn(
               "h-8 w-full min-w-0 rounded-md border bg-background px-2 font-mono text-[12.5px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-              nameTyped && nameError && "border-destructive/60",
-              novelty && "border-warning/60",
+              showName && nameError && "border-destructive/60",
+              showName && novelty && "border-warning/60",
             )}
           />
           <p id="new-token-guide" className="text-[11.5px] leading-snug text-muted-foreground">{guide}</p>
           <div id="new-token-message" aria-live="polite" className="text-[12px] leading-snug">
-            {!nameTyped ? null : novelty && component ? (
+            {!showName ? null : novelty && component ? (
               <div className="flex gap-1.5 rounded-md border border-warning/40 bg-warning/10 p-2">
                 <AlertTriangle className="mt-px size-3.5 shrink-0 text-warning" />
                 <div className="grid gap-1.5">
@@ -130,15 +144,22 @@ export function NewTokenRow({
                   </Button>
                 </div>
               </div>
-            ) : firstError ? (
-              <p className="flex gap-1.5 text-destructive"><CircleX className="mt-px size-3.5 shrink-0" />{firstError.message}</p>
-            ) : (
+            ) : nameError ? (
+              <p className="flex gap-1.5 text-destructive"><CircleX className="mt-px size-3.5 shrink-0" />{nameError.message}</p>
+            ) : reveal === "all" && valueError ? (
+              <p className="flex gap-1.5 text-destructive"><CircleX className="mt-px size-3.5 shrink-0" />{valueError.message}</p>
+            ) : canCreate ? (
               <p className="flex gap-1.5 text-success">
                 <CircleCheck className="mt-px size-3.5 shrink-0" />
-                <span>Ready: <span className="font-mono">{cssVariableName(draft)}</span>. Press Enter to create.</span>
+                <span>The token is correct. Push Enter to add <span className="font-mono">{cssVariableName(draft)}</span>.</span>
+              </p>
+            ) : (
+              <p className="flex gap-1.5 text-muted-foreground">
+                <CircleCheck className="mt-px size-3.5 shrink-0" />
+                <span>The name is correct. Select the values.</span>
               </p>
             )}
-            {nameTyped && !novelty && !firstError && firstWarning ? (
+            {showName && !novelty && !nameError && canCreate && firstWarning ? (
               <p className="mt-1 flex gap-1.5 text-warning"><AlertTriangle className="mt-px size-3.5 shrink-0" />{firstWarning.message}</p>
             ) : null}
           </div>
@@ -183,7 +204,7 @@ export function NewTokenRow({
       </td>
       <td className="align-top">
         <div className="flex h-[39px] items-center justify-center gap-0.5">
-          <Button size="icon" variant="ghost" className="size-7" aria-label="Create token" disabled={!canCreate} onClick={create}>
+          <Button size="icon" variant="ghost" className="size-7" aria-label="Create token" disabled={!nameTyped} onClick={create}>
             <Check className="size-4" />
           </Button>
           <Button size="icon" variant="ghost" className="size-7" aria-label="Cancel" onClick={onCancel}>

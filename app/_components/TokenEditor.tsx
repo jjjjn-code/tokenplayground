@@ -88,6 +88,17 @@ export function TokenEditor({
   const [status, setStatus] = useState<Token["status"]>(token?.status ?? "draft");
   const [description, setDescription] = useState(token?.description ?? "");
   const [reason, setReason] = useState("");
+  // Messages wait until the person finishes: after leaving the name field
+  // (name messages only) or pushing Create or Save (all messages).
+  const [reveal, setReveal] = useState<"none" | "name" | "all">("none");
+  const typedName = () => setReveal("none");
+  const leftName = (e: React.FocusEvent) => {
+    // Moving to Create or Cancel is not "finished typing": showing a message
+    // then would move the button away from the pointer.
+    const to = e.relatedTarget as HTMLElement | null;
+    if (to?.closest("[data-form-action]")) return;
+    setReveal((r) => (r === "none" ? "name" : r));
+  };
   const [category, setCategory] = useState<string>("surface");
   const [variant, setVariant] = useState("");
 
@@ -171,7 +182,10 @@ export function TokenEditor({
   };
 
   const save = () => {
-    if (!ok || !finalName || unchanged) return;
+    if (!ok || !finalName || unchanged) {
+      setReveal("all");
+      return;
+    }
     saveTokens([draft], editing ? [token!.name] : [], reason);
     onDone(draft);
   };
@@ -223,7 +237,7 @@ export function TokenEditor({
               </Select>
               <span className="text-muted-foreground">-</span>
               <Input id="ed-var" list="variants" value={variant} placeholder="variant, for example brand" className="font-mono"
-                onChange={(e) => setVariant(e.target.value.toLowerCase().replace(/\s+/g, "-"))} autoComplete="off" />
+                onChange={(e) => { setVariant(e.target.value.toLowerCase().replace(/\s+/g, "-")); typedName(); }} onBlur={leftName} autoComplete="off" />
               <datalist id="variants">
                 {SEMANTIC_VARIANTS.map((v) => <option key={v} value={v} />)}
               </datalist>
@@ -233,7 +247,7 @@ export function TokenEditor({
         ) : (
           <div className="grid gap-1.5">
             <Label htmlFor="ed-name">Name</Label>
-            <Input id="ed-name" value={name} onChange={(e) => setName(e.target.value)} className="font-mono" autoComplete="off"
+            <Input id="ed-name" value={name} onChange={(e) => { setName(e.target.value); typedName(); }} onBlur={leftName} className="font-mono" autoComplete="off"
               placeholder={kind === "color" ? "orange-700" : `${NON_COLOUR_PREFIXES[kind as Exclude<Kind, "color">][0]}-name`} />
             <p className="text-xs text-muted-foreground">
               {kind === "color"
@@ -293,15 +307,18 @@ export function TokenEditor({
         </div>
       </div>
 
-      {finalName ? (
+      {finalName && reveal !== "none" ? (
         <div className="rounded-lg border bg-muted/40 p-3">
-          <IssueList issues={issues} okText="No problems found." />
+          <IssueList
+            issues={reveal === "all" ? issues : issues.filter((i) => i.code.startsWith("name"))}
+            okText={reveal === "all" ? "No problems found." : "The name is correct."}
+          />
         </div>
       ) : null}
 
       <div className="flex justify-end gap-2">
-        <Button type="button" variant="outline" onClick={() => onDone()}>Cancel</Button>
-        <Button type="submit" disabled={!ok || !finalName || unchanged}>{editing ? "Save changes" : "Create token"}</Button>
+        <Button type="button" variant="outline" onClick={() => onDone()} data-form-action>Cancel</Button>
+        <Button type="submit" disabled={!finalName || unchanged} data-form-action>{editing ? "Save changes" : "Create token"}</Button>
       </div>
     </form>
   );

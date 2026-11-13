@@ -82,6 +82,8 @@ export function ComponentCreator() {
   const [mapping, setMapping] = useState<Record<string, { light?: string; dark?: string }>>({});
   const [reason, setReason] = useState("");
   const [showIssues, setShowIssues] = useState(false);
+  // No problems on arrival: they show after the first push on Create.
+  const [attempted, setAttempted] = useState(false);
   const params = useSearchParams();
   const prefilled = useRef(false);
 
@@ -192,7 +194,11 @@ export function ComponentCreator() {
   const setMap = (name: string, mode: "light" | "dark", v: string) => setMapping((m) => ({ ...m, [name]: { ...m[name], [mode]: v || undefined } }));
 
   const save = () => {
-    if (!canSave) return;
+    if (!canSave) {
+      setAttempted(true);
+      setShowIssues(true);
+      return;
+    }
     saveTokens(candidates, [], reason);
     toast.success(`Created ${fresh.length} ${component} tokens`, { description: "Saved as drafts in your unsaved changes." });
     router.push(`/?set=component/${component}`);
@@ -400,16 +406,18 @@ export function ComponentCreator() {
               </div>
             </CollapsibleContent>
             <div className="flex flex-wrap items-center gap-3 px-5 py-3">
-              <CollapsibleTrigger asChild>
-                <Button variant="ghost" size="sm" className="gap-2">
-                  <span className={cn("size-2 rounded-full", errors ? "bg-destructive" : warnings ? "bg-warning" : "bg-success")} aria-hidden="true" />
-                  {errors ? `${errors} to fix` : "Ready"}
-                  {warnings ? `, ${warnings} ${warnings === 1 ? "warning" : "warnings"}` : ""}
-                  <ChevronUp className={cn("size-3.5 transition-transform", !showIssues && "rotate-180")} />
-                </Button>
-              </CollapsibleTrigger>
+              {attempted ? (
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" size="sm" className="gap-2">
+                    <span className={cn("size-2 rounded-full", errors ? "bg-destructive" : warnings ? "bg-warning" : "bg-success")} aria-hidden="true" />
+                    {errors ? `${errors} ${errors === 1 ? "error" : "errors"}` : "Ready"}
+                    {warnings ? `, ${warnings} ${warnings === 1 ? "warning" : "warnings"}` : ""}
+                    <ChevronUp className={cn("size-3.5 transition-transform", !showIssues && "rotate-180")} />
+                  </Button>
+                </CollapsibleTrigger>
+              ) : null}
               <Input aria-label="Reason, saved in the history" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (optional), for example new hover states" className="h-8 min-w-48 flex-1 text-[13px]" autoComplete="off" />
-              <Button onClick={save} disabled={!canSave}>Create {fresh.length} {fresh.length === 1 ? "token" : "tokens"}</Button>
+              <Button onClick={save}>Create {fresh.length} {fresh.length === 1 ? "token" : "tokens"}</Button>
             </div>
           </Collapsible>
         </div>

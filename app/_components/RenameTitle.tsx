@@ -35,6 +35,8 @@ export function RenameTitle({ token, onRenamed }: { token: Token; onRenamed: (na
   const { set, history, rename } = useStore();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(token.name);
+  // Show messages only after the person leaves the field or pushes Save, never while typing.
+  const [revealed, setRevealed] = useState(false);
 
   const next = name.trim();
   const changed = next !== token.name;
@@ -53,10 +55,16 @@ export function RenameTitle({ token, onRenamed }: { token: Token; onRenamed: (na
 
   const start = () => {
     setName(token.name);
+    setRevealed(false);
     setEditing(true);
   };
+  const show = revealed && changed;
   const save = () => {
-    if (!canSave) return;
+    // Show problems, or the "already in code" warning, before saving.
+    if (!canSave || (!revealed && pushed)) {
+      setRevealed(true);
+      return;
+    }
     rename(token.name, next);
     setEditing(false);
     onRenamed(next);
@@ -87,7 +95,15 @@ export function RenameTitle({ token, onRenamed }: { token: Token; onRenamed: (na
           autoFocus
           aria-label="New name"
           value={name}
-          onChange={(e) => setName(e.target.value.toLowerCase().replace(/\s+/g, "-"))}
+          onChange={(e) => {
+            setName(e.target.value.toLowerCase().replace(/\s+/g, "-"));
+            setRevealed(false);
+          }}
+          onBlur={(e) => {
+            // Leaving for the Save or Cancel button is not "finished typing".
+            const to = e.relatedTarget as HTMLElement | null;
+            if (!to?.closest("[data-rename-action]")) setRevealed(true);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Escape") {
               e.stopPropagation();
@@ -98,24 +114,24 @@ export function RenameTitle({ token, onRenamed }: { token: Token; onRenamed: (na
           autoComplete="off"
           className={cn(
             "h-9 min-w-0 flex-1 rounded-md border bg-background px-2.5 font-mono text-[14px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-            changed && errors.length && "border-destructive/60",
-            changed && !errors.length && novelty && "border-warning/60",
+            show && errors.length && "border-destructive/60",
+            show && !errors.length && novelty && "border-warning/60",
           )}
         />
-        <Button type="submit" size="icon" className="size-9" aria-label="Save new name" disabled={!canSave}>
+        <Button type="submit" size="icon" className="size-9" aria-label="Save new name" disabled={!changed} data-rename-action>
           <Check className="size-4" />
         </Button>
-        <Button type="button" variant="outline" size="icon" className="size-9" aria-label="Cancel rename" onClick={() => setEditing(false)}>
+        <Button type="button" variant="outline" size="icon" className="size-9" aria-label="Cancel rename" onClick={() => setEditing(false)} data-rename-action>
           <X className="size-4" />
         </Button>
       </form>
       <p className="text-xs text-muted-foreground">{namingGuide({ tokens: set.tokens.filter((t) => t.name !== token.name) }, token.layer, token.kind, token.component)}</p>
-      {changed && errors.length ? (
+      {show && errors.length ? (
         <p className="flex gap-1.5 text-xs text-destructive" role="alert">
           <CircleX className="mt-px size-3.5 shrink-0" /> {errors[0].message}
         </p>
       ) : null}
-      {changed && !errors.length && novelty && token.component ? (
+      {show && !errors.length && novelty && token.component ? (
         <div className="flex gap-1.5 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs" role="alert">
           <AlertTriangle className="mt-px size-3.5 shrink-0 text-warning" />
           <div className="grid gap-1.5">
@@ -126,7 +142,7 @@ export function RenameTitle({ token, onRenamed }: { token: Token; onRenamed: (na
           </div>
         </div>
       ) : null}
-      {changed && canSave ? (
+      {show && canSave ? (
         <div className="grid gap-1 text-xs text-muted-foreground">
           <span>
             In code: <span className="font-mono text-foreground">{cssVariableName(candidate)}</span>
