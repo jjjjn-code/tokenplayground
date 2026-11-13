@@ -29,7 +29,7 @@ import { KIND_ORDER, KIND_TITLE, LAYER_TITLE } from "../_lib/sets";
 const LAYER_ICON = { primitive: Palette, semantic: Layers, component: Component } as const;
 
 function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
-  const { set } = useStore();
+  const { set, toSend, codeChanges } = useStore();
   const pathname = usePathname();
   const params = useSearchParams();
   const current = pathname === "/" ? params.get("set") ?? "all" : null;
@@ -37,7 +37,7 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
   const count = (pred: (t: (typeof set.tokens)[number]) => boolean) => set.tokens.filter(pred).length;
   const components = [...new Set(set.tokens.map((t) => t.component).filter(Boolean) as string[])].sort();
 
-  const item = (href: string, key: string | null, label: React.ReactNode, n?: number, icon?: React.ReactNode, depth = 0) => {
+  const item = (href: string, key: string | null, label: React.ReactNode, n?: number, icon?: React.ReactNode, depth = 0, todo?: { count: number; text: string }) => {
     const active = key !== null ? current === key : pathname === href;
     return (
       <Link
@@ -53,6 +53,15 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
         {icon}
         <span className="truncate">{label}</span>
         {n !== undefined ? <span className="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground">{n}</span> : null}
+        {todo && todo.count > 0 ? (
+          <span
+            className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-warning/20 px-1.5 font-mono text-[11px] font-semibold tabular-nums text-foreground ring-1 ring-warning/50"
+            title={todo.text}
+          >
+            {todo.count}
+            <span className="sr-only">: {todo.text}</span>
+          </span>
+        ) : null}
       </Link>
     );
   };
@@ -101,8 +110,14 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
       <nav className="flex flex-col gap-0.5 px-2" aria-label="Main">
         {item("/?set=all", "all", "All tokens", set.tokens.length, <Table2 className="size-4 text-muted-foreground" />)}
         {item("/create", null, "Create tokens", undefined, <PlusCircle className="size-4 text-muted-foreground" />)}
-        {item("/push", null, "Send to code", undefined, <GitPullRequestArrow className="size-4 text-muted-foreground" />)}
-        {item("/pull", null, "Review code changes", undefined, <ArrowDownToLine className="size-4 text-muted-foreground" />)}
+        {item("/push", null, "Send to code", undefined, <GitPullRequestArrow className="size-4 text-muted-foreground" />, 0, {
+          count: toSend,
+          text: `${toSend} saved ${toSend === 1 ? "change is" : "changes are"} not in code yet.`,
+        })}
+        {item("/pull", null, "Review code changes", undefined, <ArrowDownToLine className="size-4 text-muted-foreground" />, 0, {
+          count: codeChanges ?? 0,
+          text: `${codeChanges} code ${codeChanges === 1 ? "change waits" : "changes wait"} for your review.`,
+        })}
         {item("/figma", null, "Sync to Figma", undefined, <Frame className="size-4 text-muted-foreground" />)}
         {item("/export", null, "Export CSS", undefined, <FileCode2 className="size-4 text-muted-foreground" />)}
       </nav>

@@ -12,8 +12,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import rawTokens from "@/data/dummy/tokens.json";
 import rawHistory from "@/data/dummy/history.json";
+import { answeredBy } from "./pending";
 import {
+  diffSets,
   mergeEdits,
+  type Discrepancy,
   renameToken,
   parseDtcg,
   serialiseDtcg,
@@ -78,8 +81,12 @@ interface Store {
   reload: (head?: string) => Promise<void>;
   /** Put a token back to the values it had in an earlier version (F7). */
   restoreVersion: (name: string, values: Token["values"], reason: string) => void;
+  /** Saved token changes not yet sent to code. 0 in local mode. */
+  toSend: number;
+  /** Code changes waiting for a review. null until checked, or in local mode. */
+  codeChanges: number | null;
   /** After a push: take the new saved version straight from the push result. */
-  applyPush: (r: { dataHead: string; history: HistoryEntry[]; lastPush: LastPush }) => void;
+  applyPush: (r: { dataHead: string; history: HistoryEntry[]; lastPush: LastPush & { tokens?: Record<string, unknown> } }) => void;
   signOut: () => Promise<void>;
 }
 
@@ -134,6 +141,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [pending, setPending] = useState<HistoryEntry[]>([]);
   const [remote, setRemote] = useState<Remote | null>(null);
   const [lastPush, setLastPush] = useState<LastPush | null>(null);
+  const [pushBaseline, setPushBaseline] = useState<TokenSet | null>(null);
+  const [codeChanges, setCodeChanges] = useState<number | null>(null);
   const [authorState, setAuthorState] = useState("designer");
   const [saving, setSaving] = useState(false);
   const loaded = useRef(false);
@@ -153,6 +162,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const saved = parseDtcg(data.tokens);
       setRemote({ head: data.head, saved, savedHistory: data.history });
       setLastPush(data.lastPush ? { at: data.lastPush.at, by: data.lastPush.by, prUrl: data.lastPush.prUrl, branch: data.lastPush.branch, title: data.lastPush.title } : null);
+      setPushBaseline(data.lastPush ? parseDtcg(data.lastPush.tokens as Record<string, unknown>) : null);
       // Reapply unsaved edits from an earlier visit.
       const draft = read<Draft>(draftKey(dataRepo));
       if (draft) {
@@ -365,11 +375,39 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, [repos, applyRemote, fetchData]);
 
-  const applyPush = useCallback((r: { dataHead: string; history: HistoryEntry[]; lastPush: LastPush }) => {
+  const applyPush = useCallback((r: { dataHead: string; history: HistoryEntry[]; lastPush: LastPush & { tokens?: Record<string, unknown> } }) => {
     setRemote((rem) => (rem ? { ...rem, head: r.dataHead, savedHistory: r.history } : rem));
     setHistory([...r.history, ...pending]);
     setLastPush({ at: r.lastPush.at, by: r.lastPush.by, prUrl: r.lastPush.prUrl, branch: r.lastPush.branch, title: r.lastPush.title });
-  }, [pending]);
+    // What was just sent is the saved set.
+    setPushBaseline(r.lastPush.tokens ? parseDtcg(r.lastPush.tokens) : remote?.saved ?? null);
+  }, [pending, remote]);
+
+  const toSend = useMemo(
+    () => (remoteMode && remote ? diffSets(pushBaseline ?? { tokens: [] }, remote.saved).length : 0),
+    [remoteMode, remote, pushBaseline],
+  );
+
+  // Check the code for changes each time a new saved version loads.
+  const remoteHead = remote?.head ?? null;
+  const remoteHistory = remote?.savedHistory;
+  useEffect(() => {
+    if (!remoteMode || !remoteHead) {
+      setCodeChanges(null);
+      return;
+    }
+    let live = true;
+    fetch(`/api/pull?head=${remoteHead}`, { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body: { discrepancies: Discrepancy[] } | null) => {
+        if (!live) return;
+        setCodeChanges(body ? body.discrepancies.filter((d) => !answeredBy(d, remoteHistory ?? [])).length : null);
+      })
+      .catch(() => live && setCodeChanges(null));
+    return () => {
+      live = false;
+    };
+  }, [remoteMode, remoteHead, remoteHistory]);
 
   const restoreVersion = useCallback(
     (name: string, values: Token["values"], reason: string) => {
@@ -411,6 +449,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       set,
       history,
       lastPush,
+      toSend,
+      codeChanges,
       author,
       setAuthor,
       localChanges,
@@ -428,7 +468,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       applyPush,
       signOut,
     }),
-    [mode, viewer, repos, loadError, ready, remote, set, history, lastPush, author, setAuthor, localChanges, unsavedNames, saveTokens, deprecate, rename, reactivate, setStatus, reset, saveToRepo, saving, reload, restoreVersion, applyPush, signOut],
+    [mode, viewer, repos, loadError, ready, remote, set, history, lastPush, toSend, codeChanges, author, setAuthor, localChanges, unsavedNames, saveTokens, deprecate, rename, reactivate, setStatus, reset, saveToRepo, saving, reload, restoreVersion, applyPush, signOut],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

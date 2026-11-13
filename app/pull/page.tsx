@@ -28,6 +28,7 @@ import {
   type Mode,
 } from "@/src/lib/tokens";
 import { useStore } from "../_lib/store";
+import { answeredBy } from "../_lib/pending";
 import { Swatch } from "../_components/ui";
 
 interface Plan {
@@ -138,11 +139,7 @@ export default function PullPage() {
    */
   const waitingFor = (d: Discrepancy) => {
     if (reviewAgain.has(d.id)) return null;
-    // Declined, or accepted under a new name: both wait for the follow-up pull request.
-    const renamed = d.kind === "extra" ? [...history].reverse().find((e) => e.action === "accepted" && e.from === d.codeName && e.prUrl) : undefined;
-    if (renamed) return renamed;
-    const last = lastChange(history, d.token ?? d.suggestedName ?? d.codeName);
-    return last?.prUrl && (last.action === "declined" || (last.action === "accepted" && last.from)) ? last : null;
+    return answeredBy(d, history);
   };
   const all = shown?.discrepancies ?? [];
   const waiting = all.filter((d) => waitingFor(d));
