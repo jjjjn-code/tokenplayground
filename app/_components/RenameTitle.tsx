@@ -176,7 +176,7 @@ export function RenameTitle({ token, onRenamed }: { token: Token; onRenamed: (na
           ) : null}
           {pushed ? (
             <span className="flex gap-1.5 text-warning">
-              <AlertTriangle className="mt-px size-3.5 shrink-0" /> The code uses the name {cssVariableName(token)}. After the next push, developers must change all uses of the old name.
+              <AlertTriangle className="mt-px size-3.5 shrink-0" /> The code uses the name {cssVariableName(token)}. After you next send to code, developers must change all uses of the old name.
             </span>
           ) : null}
         </div>

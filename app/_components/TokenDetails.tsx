@@ -34,7 +34,7 @@ const ACTION_LABEL: Record<string, string> = {
   created: "Created",
   edited: "Edited",
   deprecated: "Deprecated",
-  pushed: "Pushed",
+  pushed: "Sent to code",
   pulled: "Pulled",
   accepted: "Updated from code",
   declined: "Kept, code change requested",

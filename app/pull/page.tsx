@@ -241,7 +241,7 @@ export default function PullPage() {
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex min-h-14 flex-wrap items-center gap-3 border-b px-4 py-2 pl-16 md:pl-4">
         <div>
-          <h1 className="text-sm font-medium">Pull from code</h1>
+          <h1 className="text-sm font-medium">Review code changes</h1>
           <p className="text-xs text-muted-foreground">
             {remote && repos ? (
               <>Compare <span className="font-mono">{repos.code}</span> ({shown?.releaseBranch ?? "main"}) <ArrowRight className="inline size-3" /> saved tokens</>
@@ -252,7 +252,7 @@ export default function PullPage() {
         </div>
         {remote ? (
           <Button variant="outline" size="sm" className="ml-auto" onClick={() => { setDone(null); void fetchPlan(); }} disabled={loading}>
-            <RotateCw className={cn("size-3.5", loading && "animate-spin")} /> Pull again
+            <RotateCw className={cn("size-3.5", loading && "animate-spin")} /> Check again
           </Button>
         ) : null}
       </header>
@@ -260,11 +260,11 @@ export default function PullPage() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto grid max-w-5xl gap-4 p-5">
           {mode === "local" ? (
-            <Notice title="Not connected to GitHub">This is an example. It compares your tokens with simulated developer changes. To pull for real, connect GitHub. Refer to docs/SETUP.md.</Notice>
+            <Notice title="Not connected to GitHub">This is an example. It compares your tokens with simulated developer changes. To review real code changes, connect GitHub. Refer to docs/SETUP.md.</Notice>
           ) : null}
           {remote && unsaved ? (
             <Notice tone="warning" title={`You have ${unsaved} unsaved ${unsaved === 1 ? "change" : "changes"}`}>
-              <span className="block">Pull compares the code with saved tokens only. Save your changes, then send your decisions.</span>
+              <span className="block">This page compares the code with saved tokens only. Save your changes, then review the code changes.</span>
               <Button
                 size="sm"
                 className="mt-2"

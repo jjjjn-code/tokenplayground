@@ -100,8 +100,8 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
       <nav className="flex flex-col gap-0.5 px-2" aria-label="Main">
         {item("/?set=all", "all", "All tokens", set.tokens.length, <Table2 className="size-4 text-muted-foreground" />)}
         {item("/create", null, "Create tokens", undefined, <PlusCircle className="size-4 text-muted-foreground" />)}
-        {item("/push", null, "Push to code", undefined, <GitPullRequestArrow className="size-4 text-muted-foreground" />)}
-        {item("/pull", null, "Pull from code", undefined, <ArrowDownToLine className="size-4 text-muted-foreground" />)}
+        {item("/push", null, "Send to code", undefined, <GitPullRequestArrow className="size-4 text-muted-foreground" />)}
+        {item("/pull", null, "Review code changes", undefined, <ArrowDownToLine className="size-4 text-muted-foreground" />)}
         {item("/export", null, "Export CSS", undefined, <FileCode2 className="size-4 text-muted-foreground" />)}
       </nav>
 

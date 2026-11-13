@@ -206,7 +206,7 @@ export function findDiscrepancies(set: TokenSet, files: Record<string, string | 
         codeName: expectedName,
         differences: diffs,
         ...(composite && !allMissing
-          ? { acceptBlockedReason: "This token has more than 1 part. Change the token by hand, then pull again." }
+          ? { acceptBlockedReason: "This token has more than 1 part. Change the token by hand, then check again." }
           : {}),
       });
     }
@@ -271,7 +271,7 @@ export function applyDecisions(set: TokenSet, discrepancies: Discrepancy[], deci
   for (const dec of decisions) {
     const d = byId.get(dec.id);
     if (!d) {
-      problems.push({ id: dec.id, message: "This difference is not in the code now. Pull again." });
+      problems.push({ id: dec.id, message: "This difference is not in the code now. Check again." });
       continue;
     }
     if (!dec.reason.trim()) {

@@ -48,7 +48,7 @@ describe("push", () => {
 
   it("has nothing to push straight after set-up", async () => {
     expect((await planPush(host, cfg)).changes).toEqual([]);
-    await expect(pushToCode(host, cfg, { title: "x", summary: "", author: "jane" })).rejects.toThrow(/no changes to push/);
+    await expect(pushToCode(host, cfg, { title: "x", summary: "", author: "jane" })).rejects.toThrow(/no changes to send/);
   });
 
   it("plans only the files that change, touching only the managed block", async () => {

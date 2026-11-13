@@ -173,7 +173,7 @@ export async function pushToCode(
   const title = input.title.trim();
   if (!title) throw new HostError("Type a title for the pull request.", 422);
   const plan = await planPush(host, cfg, input.dataHead);
-  if (!plan.changes.length) throw new HostError("There are no changes to push. The saved tokens are the same as the last push.", 422);
+  if (!plan.changes.length) throw new HostError("There are no changes to send. The saved tokens are the same as the last time you sent to code.", 422);
 
   // A fresh branch, numbered if the name is taken.
   let branch = branchName(title, now);

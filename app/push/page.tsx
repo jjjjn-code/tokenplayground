@@ -125,7 +125,7 @@ export default function PushPage() {
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex min-h-14 flex-wrap items-center gap-3 border-b px-4 py-2 pl-16 md:pl-4">
         <div>
-          <h1 className="text-sm font-medium">Push to code</h1>
+          <h1 className="text-sm font-medium">Send to code</h1>
           <p className="text-xs text-muted-foreground">
             {remote && repos ? (
               <>Saved tokens in <span className="font-mono">{repos.data}</span> <ArrowRight className="inline size-3" /> pull request to <span className="font-mono">{repos.code}</span> ({repos.codeBranch})</>
@@ -146,12 +146,12 @@ export default function PushPage() {
           <div className="grid min-w-0 content-start gap-5">
             {mode === "local" ? (
               <Notice tone="info" title="Not connected to GitHub">
-                This preview compares your tokens with the dummy token set. To push, connect GitHub. Refer to <span className="font-mono">docs/SETUP.md</span>.
+                This preview compares your tokens with the dummy token set. To send to code, connect GitHub. Refer to <span className="font-mono">docs/SETUP.md</span>.
               </Notice>
             ) : null}
             {remote && unsaved ? (
               <Notice tone="warning" title={`You have ${unsaved} unsaved ${unsaved === 1 ? "change" : "changes"}`}>
-                Push sends only saved changes. Save your changes first, then push.
+                Only saved changes are sent. Save your changes first, then send them.
               </Notice>
             ) : null}
             {done ? (
@@ -170,14 +170,14 @@ export default function PushPage() {
 
             <section className="overflow-hidden rounded-lg border">
               <div className="flex items-center justify-between gap-3 border-b bg-muted/40 px-4 py-2.5">
-                <h2 className="text-sm font-medium">Changes since the last push</h2>
+                <h2 className="text-sm font-medium">Changes since you last sent to code</h2>
                 <span className="font-mono text-xs text-muted-foreground">{shown ? shown.changes.length : "…"}</span>
               </div>
               {!shown ? (
                 <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Working out what changed</div>
               ) : !shown.changes.length ? (
                 <div className="p-6 text-sm text-muted-foreground">
-                  There are no changes to push. The saved tokens are the same as the last push. To make changes, go to the <Link href="/" className="underline">overview</Link>.
+                  There are no changes to send. The saved tokens are the same as the last time you sent to code. To make changes, go to the <Link href="/" className="underline">overview</Link>.
                 </div>
               ) : (
                 <table className="w-full table-fixed text-[13px]">
@@ -258,7 +258,7 @@ export default function PushPage() {
             </form>
 
             <div className="rounded-lg border p-4 text-sm">
-              <h2 className="mb-2 text-sm font-medium">Last push</h2>
+              <h2 className="mb-2 text-sm font-medium">Last sent to code</h2>
               {lastPush ? (
                 <div className="grid gap-1 text-[13px]">
                   <div>{lastPush.title}</div>
@@ -270,7 +270,7 @@ export default function PushPage() {
                   ) : null}
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground">{remote ? "No push yet." : "Not connected."}</p>
+                <p className="text-xs text-muted-foreground">{remote ? "Nothing is sent yet." : "Not connected."}</p>
               )}
             </div>
           </aside>

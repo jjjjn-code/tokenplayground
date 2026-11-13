@@ -141,7 +141,7 @@ export function AccountPanel() {
           <DialogHeader>
             <DialogTitle>Save {n} {n === 1 ? "change" : "changes"}</DialogTitle>
             <DialogDescription>
-              Your changes are saved to {repos?.data ?? "the token data repo"} as 1 commit. Saving does not change the code. To change the code, use Push to code.
+              Your changes are saved to {repos?.data ?? "the token data repo"} as 1 commit. Saving does not change the code. To change the code, use Send to code.
             </DialogDescription>
           </DialogHeader>
           <ul className="max-h-40 overflow-y-auto rounded-md border bg-muted/30 p-2 font-mono text-[12px]">
