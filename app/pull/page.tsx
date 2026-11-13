@@ -350,7 +350,7 @@ export default function PullPage() {
                         variant={dr.decision === "accept" ? "default" : "outline"}
                         aria-pressed={dr.decision === "accept"}
                         disabled={!!d.acceptBlockedReason}
-                        onClick={() => setDraft(d.id, { decision: "accept" })}
+                        onClick={() => setDraft(d.id, { decision: dr.decision === "accept" ? undefined : "accept" })}
                       >
                         {c.accept}
                       </Button>
@@ -359,7 +359,7 @@ export default function PullPage() {
                         size="sm"
                         variant={dr.decision === "decline" ? "default" : "outline"}
                         aria-pressed={dr.decision === "decline"}
-                        onClick={() => setDraft(d.id, { decision: "decline" })}
+                        onClick={() => setDraft(d.id, { decision: dr.decision === "decline" ? undefined : "decline" })}
                       >
                         {c.decline}
                       </Button>
