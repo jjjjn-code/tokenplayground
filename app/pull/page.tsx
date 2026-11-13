@@ -7,6 +7,7 @@ import rawTokens from "@/data/dummy/tokens.json";
 import rawHistory from "@/data/dummy/history.json";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { simulateDeveloperDrift } from "@/src/lib/git/drift";
@@ -80,7 +81,8 @@ function choices(d: Discrepancy): { accept: string; decline: string } {
 
 /** Pull and discrepancy review (F6) with the decline follow-up (F8). */
 export default function PullPage() {
-  const { mode, set, history, repos, unsavedNames, savedHead, reload } = useStore();
+  const { mode, set, history, repos, unsavedNames, savedHead, reload, saveToRepo, saving } = useStore();
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewAgain, setReviewAgain] = useState<Set<string>>(new Set());
   const remote = mode === "demo" || mode === "github";
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -113,7 +115,9 @@ export default function PullPage() {
       const body = await res.json();
       if (!res.ok) throw new Error(body.message);
       setPlan(body as Plan);
-      setDrafts({});
+      // Keep decisions already made for differences that are still there.
+      const ids = new Set((body as Plan).discrepancies.map((d) => d.id));
+      setDrafts((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => ids.has(id))));
       setAttempted(false);
       setServerProblems({});
     } catch (e) {
@@ -164,15 +168,28 @@ export default function PullPage() {
     });
   };
 
-  const apply = async () => {
+  const chosen = list.filter((d) => drafts[d.id]?.decision);
+  const acceptCount = chosen.filter((d) => drafts[d.id].decision === "accept").length;
+  const declineCount = chosen.length - acceptCount;
+  const renamedCount = chosen.filter((d) => d.kind === "extra" && drafts[d.id].decision === "accept" && (drafts[d.id].name ?? d.suggestedName) !== d.suggestedName).length;
+
+  /** Check every chosen difference has a note, then show the summary before sending. */
+  const openReview = () => {
     setAttempted(true);
-    if (!plan || !remote) return;
-    const chosen = list.filter((d) => drafts[d.id]?.decision);
     if (!chosen.length) {
-      toast.error("Select Accept or Decline for 1 difference or more.");
+      toast.error("Select an option on 1 difference or more.");
       return;
     }
-    if (chosen.some((d) => !drafts[d.id].reason.trim())) return;
+    const missing = chosen.find((d) => !drafts[d.id].reason.trim() || (drafts[d.id].decision === "accept" && d.kind === "extra" && !(drafts[d.id].name ?? d.suggestedName ?? "").trim()));
+    if (missing) {
+      document.getElementById(`card-${missing.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    setReviewOpen(true);
+  };
+
+  const apply = async () => {
+    if (!plan || !remote || !chosen.length) return;
     const decisions: Decision[] = chosen.map((d) => ({
       id: d.id,
       decision: drafts[d.id].decision!,
@@ -194,6 +211,7 @@ export default function PullPage() {
       }
       if (!res.ok) throw new Error(body.message);
       setDone({ accepted: body.accepted, declined: body.declined, restorePr: body.restorePr });
+      setReviewOpen(false);
       toast.success(`${body.accepted} accepted, ${body.declined} declined.`);
       await reload(body.dataHead);
     } catch (e) {
@@ -244,7 +262,19 @@ export default function PullPage() {
           ) : null}
           {remote && unsaved ? (
             <Notice tone="warning" title={`You have ${unsaved} unsaved ${unsaved === 1 ? "change" : "changes"}`}>
-              Pull compares the code with saved tokens only. Save your changes first, then pull again.
+              <span className="block">Pull compares the code with saved tokens only. Save your changes, then send your decisions.</span>
+              <Button
+                size="sm"
+                className="mt-2"
+                disabled={saving}
+                onClick={async () => {
+                  const r = await saveToRepo(`Save ${unsaved} ${unsaved === 1 ? "change" : "changes"} before the code review`);
+                  if (r.ok) toast.success(`${unsaved} ${unsaved === 1 ? "change is" : "changes are"} saved.`);
+                  else toast.error("Your changes are not saved.", { description: r.message });
+                }}
+              >
+                {saving ? <Loader2 className="size-3.5 animate-spin" /> : null} Save now
+              </Button>
             </Notice>
           ) : null}
           {planError ? <Notice tone="warning" title="The code cannot load">{planError}</Notice> : null}
@@ -285,7 +315,7 @@ export default function PullPage() {
                 const c = choices(d);
                 const problem = problemFor(d);
                 return (
-                  <section key={d.id} className={cn("grid gap-3 rounded-lg border p-4", dr.decision && !problem && "border-foreground/30", problem && "border-destructive/50")} aria-label={d.token ?? d.codeName}>
+                  <section key={d.id} id={`card-${d.id}`} className={cn("grid gap-3 scroll-mt-24 rounded-lg border p-4", dr.decision && !problem && "border-foreground/30", problem && "border-destructive/50")} aria-label={d.token ?? d.codeName}>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-mono text-[13px] font-medium">{d.token ?? d.codeName}</span>
                       <Badge variant="outline" className={KIND_TONE[d.kind]}>{discrepancyLabel(d.kind)}</Badge>
@@ -352,6 +382,8 @@ export default function PullPage() {
                     ) : null}
                     {problem ? (
                       <p className="flex gap-1.5 text-xs text-destructive" role="alert"><CircleX className="mt-px size-3.5 shrink-0" />{problem}</p>
+                    ) : dr.decision && dr.reason.trim() ? (
+                      <p className="flex gap-1.5 text-xs text-success"><CircleCheck className="mt-px size-3.5 shrink-0" />Ready to send. Send all decisions from the bar at the bottom.</p>
                     ) : null}
                   </section>
                 );
@@ -383,13 +415,58 @@ export default function PullPage() {
 
       {list.length ? (
         <div className="flex flex-wrap items-center gap-3 border-t bg-background px-5 py-3">
-          <span className="text-sm text-muted-foreground">{decided} of {list.length} decided. You can apply some now and the rest later.</span>
-          <Button className="ml-auto" onClick={() => void apply()} disabled={!remote || applying || !!unsaved}>
-            {applying ? <Loader2 className="size-4 animate-spin" /> : <GitPullRequestArrow className="size-4" />}
-            Apply {decided || ""} {decided === 1 ? "decision" : "decisions"}
+          <span className="text-sm">
+            {decided ? (
+              <>
+                <span className="font-medium">{decided} ready to send:</span>{" "}
+                <span className="text-muted-foreground">{acceptCount} accepted, {declineCount} declined. You can leave the others for later.</span>
+              </>
+            ) : (
+              <span className="text-muted-foreground">Select an option on each difference you want to send. You can leave the others for later.</span>
+            )}
+          </span>
+          <Button className="ml-auto" onClick={openReview} disabled={!remote || applying || !!unsaved || !decided}>
+            <GitPullRequestArrow className="size-4" />
+            {unsaved ? "Save first" : `Review and send${decided ? ` ${decided}` : ""}`}
           </Button>
         </div>
       ) : null}
+
+      <Dialog open={reviewOpen} onOpenChange={setReviewOpen}>
+        <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Send {chosen.length} {chosen.length === 1 ? "decision" : "decisions"}</DialogTitle>
+            <DialogDescription>Examine your decisions. Nothing goes to GitHub until you push Send.</DialogDescription>
+          </DialogHeader>
+          <ul className="grid gap-2 text-sm">
+            {chosen.map((d) => {
+              const dr = drafts[d.id];
+              return (
+                <li key={d.id} className="grid gap-0.5 rounded-md border p-2.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-[13px]">{d.token ?? d.codeName}</span>
+                    <Badge variant={dr.decision === "accept" ? "secondary" : "outline"}>{dr.decision === "accept" ? (d.kind === "extra" ? `Accept as ${dr.name ?? d.suggestedName}` : "Accept") : "Decline"}</Badge>
+                  </div>
+                  <span className="text-muted-foreground">{dr.reason}</span>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="grid gap-1 rounded-md bg-muted/40 p-3 text-sm">
+            <span className="font-medium">What happens next</span>
+            {acceptCount ? <span>{acceptCount} {acceptCount === 1 ? "token changes" : "tokens change"} in the tool to match the code.</span> : null}
+            {declineCount ? <span>{declineCount} {declineCount === 1 ? "value goes" : "values go"} back to the code in 1 pull request for developers, with your notes.</span> : null}
+            {renamedCount ? <span>{renamedCount} {renamedCount === 1 ? "token gets its new name" : "tokens get their new names"} in the code in the same pull request.</span> : null}
+            <span>Each decision goes in the token history with your name and note.</span>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReviewOpen(false)}>Back</Button>
+            <Button onClick={() => void apply()} disabled={applying}>
+              {applying ? <Loader2 className="size-4 animate-spin" /> : <GitPullRequestArrow className="size-4" />} Send
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
