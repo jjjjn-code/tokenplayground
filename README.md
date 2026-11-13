@@ -10,9 +10,9 @@ The product requirements are in [`docs/PRD.md`](docs/PRD.md).
 | --- | --- | --- |
 | 1 | Foundations: data model, rules engine, references, dummy set | Done |
 | 2 | Overview and creation (F1 to F4) | Done |
-| 3 | Push to repo (F5) | Built and tested in demo mode; real GitHub needs the set-up in [`docs/SETUP.md`](docs/SETUP.md) |
-| 4 | Pull and history (F6 to F8) | Next |
-| 5 | Figma plugin (F9) | Not started |
+| 3 | Push to repo (F5) | Done, tested live on the sandbox |
+| 4 | Pull and history (F6 to F8) | Built and tested in demo mode |
+| 5 | Figma plugin (F9) | Next |
 
 ## Running it
 
@@ -47,6 +47,7 @@ The interface uses [shadcn/ui](https://ui.shadcn.com) components on Tailwind CSS
 | Overview (`/`) | A spreadsheet of tokens. Pick a token set in the sidebar, click a value to change it, use arrow keys to move between cells, right-click a row for actions, tick rows for bulk actions, click a name for details |
 | Create (`/create`) | Component tokens using the token namer flow, with choices on the left and a live preview on the right. Single primitive or semantic tokens are created from the New button |
 | Push to code (`/push`) | The changes since the last push, a preview of every file and the pull request text, and the button that opens the pull request |
+| Pull from code (`/pull`) | Compares the release branch with the saved tokens and lists every difference. Accept (the code is right) or decline (the tool is right), with a reason. Declines open a pull request that puts the tool's values back |
 | Export CSS (`/export`) | Preview, copy or download the CSS that push will write, and the token data as JSON |
 
 The tool runs in 1 of 3 modes:

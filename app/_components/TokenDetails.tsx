@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
-import { ArrowRight, Copy, Pencil } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ArrowRight, Copy, Pencil, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -35,8 +36,8 @@ const ACTION_LABEL: Record<string, string> = {
   deprecated: "Deprecated",
   pushed: "Pushed",
   pulled: "Pulled",
-  accepted: "Accepted",
-  declined: "Declined",
+  accepted: "Accepted from code",
+  declined: "Declined from code",
   restored: "Restored",
   synced: "Synced to Figma",
   renamed: "Renamed",
@@ -56,7 +57,11 @@ export function TokenDetails({
   onSelect: (name: string) => void;
   onEdit: () => void;
 }) {
-  const { set, history } = useStore();
+  const { set, history, restoreVersion } = useStore();
+  const [restoring, setRestoring] = useState<string | null>(null);
+  const [restoreReason, setRestoreReason] = useState("");
+  const [restoreTried, setRestoreTried] = useState(false);
+  const sameValues = (v: Token["values"]) => JSON.stringify(v) === JSON.stringify(token.values);
   const index = useMemo(() => indexTokens(set), [set]);
   const issues = useMemo(() => validateTokenSet(set).filter((i) => i.token === token.name), [set, token.name]);
   const direct = directDependants(set, token.name);
@@ -200,10 +205,43 @@ export function TokenDetails({
                   <div className="mt-1 text-xs text-muted-foreground">Status: {e.before.status} → {e.after.status}</div>
                 ) : null}
                 {e.prUrl ? <a className="text-xs underline" href={e.prUrl}>Pull request</a> : null}
+                {e.after && e.action !== "renamed" && !sameValues(e.after.values) ? (
+                  restoring === e.id ? (
+                    <form
+                      className="mt-2 grid gap-1.5 rounded-md border p-2"
+                      onSubmit={(ev) => {
+                        ev.preventDefault();
+                        setRestoreTried(true);
+                        if (!restoreReason.trim()) return;
+                        restoreVersion(token.name, e.after!.values, restoreReason.trim());
+                        toast.success(`${token.name} is restored to this version.`, { description: "Save to keep the change." });
+                        setRestoring(null);
+                      }}
+                    >
+                      <label className="text-xs font-medium" htmlFor={`restore-${e.id}`}>Reason</label>
+                      <Input id={`restore-${e.id}`} autoFocus value={restoreReason} onChange={(ev) => { setRestoreReason(ev.target.value); setRestoreTried(false); }} className="h-8 text-[13px]" autoComplete="off" />
+                      {restoreTried && !restoreReason.trim() ? <p className="text-xs text-destructive" role="alert">Type a reason for the restore.</p> : null}
+                      <div className="flex gap-1.5">
+                        <Button type="submit" size="sm" className="h-7">Restore</Button>
+                        <Button type="button" size="sm" variant="ghost" className="h-7" onClick={() => setRestoring(null)}>Cancel</Button>
+                      </div>
+                    </form>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-1.5 h-7 text-xs"
+                      onClick={() => { setRestoring(e.id); setRestoreReason(""); setRestoreTried(false); }}
+                    >
+                      <Undo2 className="size-3.5" /> Restore this version
+                    </Button>
+                  )
+                ) : null}
               </li>
             ))}
           </ol>
-          <p className="mt-4 text-xs text-muted-foreground">Restoring an earlier version arrives in phase 4.</p>
+          <p className="mt-4 text-xs text-muted-foreground">To go back, push Restore this version on an earlier change.</p>
         </TabsContent>
       </Tabs>
     </div>

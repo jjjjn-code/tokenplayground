@@ -9,3 +9,4 @@ export * from "./repo";
 export * from "./css";
 export * from "./changes";
 export * from "./authoring";
+export * from "./pull";

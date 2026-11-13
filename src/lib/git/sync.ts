@@ -7,6 +7,12 @@
  *   last-push.json  what the code repo was last given, used to work out the next change set
  */
 import {
+  applyDecisions,
+  findDiscrepancies,
+  pullFiles,
+  restoreChangelog,
+  type Decision,
+  type Discrepancy,
   changelogMarkdown,
   componentCss,
   diffSets,
@@ -33,6 +39,8 @@ export interface SyncConfig {
   dataBranch: string;
   codeRepo: string;
   codeBranch: string;
+  /** The branch pull reads developers' changes from. Defaults to codeBranch. */
+  releaseBranch?: string;
 }
 
 export interface LastPush {
@@ -249,4 +257,134 @@ export function seedFiles(set: TokenSet, history: HistoryEntry[], at = new Date(
       `${componentCss(set, c)}\n\n/* Component styles below are written by developers and never touched by the tool. */\n.${c} {\n  display: inline-flex;\n  align-items: center;\n  background: var(--${c}-surface${c === "button" ? "-primary" : ""}-default);\n  color: var(--${c}-content${c === "button" ? "-primary" : ""}-default);\n}\n`;
   }
   return { data, code };
+}
+
+// ---------- Pull (phase 4) ----------
+
+export interface PullPlan {
+  dataHead: string;
+  codeHead: string;
+  releaseBranch: string;
+  discrepancies: Discrepancy[];
+}
+
+async function readCode(host: GitHost, cfg: SyncConfig, codeHead: string, set: TokenSet) {
+  const files: Record<string, string | null> = {};
+  for (const path of pullFiles(set)) files[path] = await host.readFile(cfg.codeRepo, codeHead, path);
+  return files;
+}
+
+/** Compare the release branch with the saved tokens. */
+export async function planPull(host: GitHost, cfg: SyncConfig, atHead?: string): Promise<PullPlan> {
+  const releaseBranch = cfg.releaseBranch || cfg.codeBranch;
+  const data = await loadData(host, cfg, atHead);
+  const codeHead = await host.head(cfg.codeRepo, releaseBranch);
+  if (!codeHead) throw new HostError(`${cfg.codeRepo} does not have the branch ${releaseBranch}. Do the set-up steps in docs/SETUP.md.`, 404);
+  const files = await readCode(host, cfg, codeHead, data.set);
+  return { dataHead: data.head, codeHead, releaseBranch, discrepancies: findDiscrepancies(data.set, files) };
+}
+
+export interface PullResult {
+  dataHead: string;
+  history: HistoryEntry[];
+  lastPush: LastPush | null;
+  accepted: number;
+  declined: number;
+  restorePr: { url: string; number: number; branch: string } | null;
+  problems: { id: string; message: string }[];
+}
+
+/**
+ * Apply accept and decline decisions as 1 commit in the token data repo.
+ * Declined differences get a pull request that puts the tool's values back
+ * in the code. Nothing is written when any decision has a problem.
+ */
+export async function applyPull(
+  host: GitHost,
+  cfg: SyncConfig,
+  input: { decisions: Decision[]; author: string; codeHead: string; dataHead?: string; now?: Date },
+): Promise<PullResult> {
+  const now = input.now ?? new Date();
+  const data = await loadData(host, cfg, input.dataHead);
+  const files = await readCode(host, cfg, input.codeHead, data.set);
+  const discrepancies = findDiscrepancies(data.set, files);
+  const res = applyDecisions(data.set, discrepancies, input.decisions);
+
+  // New or changed tokens must still obey the rules.
+  const touched = new Set(Object.keys(res.baseline));
+  for (const i of validateTokenSet(res.set)) {
+    if (i.severity === "error" && i.token && touched.has(i.token)) {
+      const d = input.decisions.find((x) => (x.name ?? "") === i.token || x.id === i.token);
+      res.problems.push({ id: d?.id ?? i.token, message: i.message });
+    }
+  }
+  const empty = { dataHead: data.head, history: data.history, lastPush: data.lastPush, accepted: 0, declined: 0, restorePr: null };
+  if (res.problems.length) return { ...empty, problems: res.problems };
+  if (!input.decisions.length) return { ...empty, problems: [] };
+
+  // Restore pull request for declined differences.
+  let restorePr: PullResult["restorePr"] = null;
+  if (res.declined.length || res.renamedOnAccept.length) {
+    const paths = [...new Set([...res.declined, ...res.renamedOnAccept].map((d) => d.discrepancy.file))];
+    const changed: { path: string; content: string }[] = [];
+    for (const path of paths) {
+      const before = files[path] ?? "";
+      const block = path === PARENT_CSS_PATH ? parentCss(res.set) : componentCss(res.set, path.split("/")[1]);
+      const after = replaceManagedBlock(before, block);
+      if (after !== before) changed.push({ path, content: after });
+    }
+    if (changed.length) {
+      const day = now.toISOString().slice(0, 10);
+      let branch = `tokens/${day}-restore-declined`;
+      for (let i = 2; ; i += 1) {
+        try {
+          await host.createBranch(cfg.codeRepo, branch, input.codeHead);
+          break;
+        } catch (e) {
+          if (!(e instanceof ConflictError) || i > 20) throw e;
+          branch = `tokens/${day}-restore-declined-${i}`;
+        }
+      }
+      await host.commit(cfg.codeRepo, branch, input.codeHead, changed, res.declined.length ? "Token restore: declined changes" : "Token update: names agreed in review");
+      const pr = await host.openPullRequest(cfg.codeRepo, {
+        head: branch,
+        base: cfg.releaseBranch || cfg.codeBranch,
+        title: res.declined.length ? "Token restore: declined changes" : "Token update: names agreed in review",
+        body: restoreChangelog(res.declined, input.author, res.renamedOnAccept),
+      });
+      restorePr = { url: pr.url, number: pr.number, branch };
+    }
+  }
+
+  // Decision log and the agreed baseline.
+  const at = now.toISOString();
+  const entries: HistoryEntry[] = res.history.map((e, i) => ({
+    ...e,
+    id: `d-${now.getTime().toString(36)}-${i}`,
+    at,
+    by: input.author,
+    ...((e.action === "declined" || (e.action === "accepted" && e.from)) && restorePr ? { prUrl: restorePr.url } : {}),
+  }));
+  const history = [...data.history, ...entries];
+  let lastPush = data.lastPush;
+  if (lastPush && Object.keys(res.baseline).length) {
+    const base = parseDtcg(lastPush.tokens);
+    let tokens = base.tokens.filter((t) => !(t.name in res.baseline));
+    for (const [name, t] of Object.entries(res.baseline)) if (t) tokens = [...tokens, t];
+    lastPush = { ...lastPush, tokens: serialiseDtcg({ tokens }) };
+  }
+  const accepted = res.history.filter((e) => e.action === "accepted").length;
+  const fileChanges = [
+    { path: DATA_FILES.tokens, content: toJson(serialiseDtcg(res.set, "UAL design tokens. Managed by the token tool.")) },
+    { path: DATA_FILES.history, content: toJson(history) },
+    ...(lastPush ? [{ path: DATA_FILES.lastPush, content: toJson(lastPush) }] : []),
+  ];
+  const head = await host.commit(
+    cfg.dataRepo,
+    cfg.dataBranch,
+    data.head,
+    fileChanges,
+    `Pull review: ${accepted} accepted, ${res.declined.length} declined${restorePr ? ` (${restorePr.url})` : ""}\n\nReviewed by ${input.author} in the token tool.`,
+  );
+  return { dataHead: head, history, lastPush, accepted, declined: res.declined.length, restorePr, problems: [] };
 }

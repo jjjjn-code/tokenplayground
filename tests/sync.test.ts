@@ -108,3 +108,73 @@ describe("exact versions", () => {
     expect(res.lastPush.prUrl).toBe(res.prUrl);
   });
 });
+
+describe("pull", async () => {
+  const { simulateDeveloperDrift } = await import("@/src/lib/git/drift");
+  const { planPull, applyPull } = await import("@/src/lib/git/sync");
+
+  const drift = async () => {
+    const head = (await host.head(cfg.codeRepo, "main"))!;
+    const files: Record<string, string> = {};
+    for (const p of ["styles/colors.css", "components/button/button.css"]) files[p] = (await host.readFile(cfg.codeRepo, head, p))!;
+    const edited = simulateDeveloperDrift(files);
+    await host.commit(cfg.codeRepo, "main", head, Object.entries(edited).map(([path, content]) => ({ path, content })), "Developer changes");
+  };
+
+  it("finds nothing straight after set-up", async () => {
+    expect((await planPull(host, cfg)).discrepancies).toEqual([]);
+  });
+
+  it("applies decisions as 1 commit and opens a restore pull request for declines", async () => {
+    await drift();
+    const plan = await planPull(host, cfg);
+    expect(plan.discrepancies).toHaveLength(9);
+    const hover = plan.discrepancies.find((d) => d.suggestedName === "hover")!;
+    const res = await applyPull(host, cfg, {
+      codeHead: plan.codeHead,
+      dataHead: plan.dataHead,
+      author: "jane",
+      now: new Date("2026-11-13T15:00:00Z"),
+      decisions: [
+        { id: "red-700", decision: "decline", reason: "Brand red is #A80000." },
+        { id: "line-default", decision: "decline", reason: "Wrong prefix." },
+        { id: "button-surface-primary-hover", decision: "accept", reason: "Agreed with developers." },
+        { id: hover.id, decision: "accept", reason: "Useful hover colour.", name: "surface-hover" },
+      ],
+    });
+    expect(res.problems).toEqual([]);
+    expect(res).toMatchObject({ accepted: 2, declined: 2 });
+    expect(res.restorePr?.branch).toBe("tokens/2026-11-13-restore-declined");
+
+    const pr = host.repos.get(cfg.codeRepo)!.pulls.at(-1)!;
+    expect(pr.title).toBe("Token restore: declined changes");
+    expect(pr.body).toContain("Brand red is #A80000.");
+    const restored = (await host.readFile(cfg.codeRepo, res.restorePr!.branch, "styles/colors.css"))!;
+    expect(restored).toContain("--color-red-700: #A80000;");
+    expect(restored).toContain("--color-line-default: var(--color-neutral-700);");
+    expect(restored).toContain("--color-surface-hover: var(--color-orange-700);");
+
+    const d = await loadData(host, cfg);
+    expect(d.set.tokens.find((t) => t.name === "surface-hover")).toBeDefined();
+    expect(d.set.tokens.find((t) => t.name === "button-surface-primary-hover")!.values.light).toBe("#D33704");
+    const actions = d.history.slice(-4).map((e) => `${e.action}:${e.token}`);
+    expect(actions).toEqual(["declined:red-700", "declined:line-default", "accepted:button-surface-primary-hover", "accepted:surface-hover"]);
+    expect(d.history.at(-1)).toMatchObject({ from: "--color-hover", prUrl: res.restorePr!.url });
+    expect(pr.body).toContain("| Accepted with a new name | surface-hover | --color-hover | --color-surface-hover |");
+    expect(d.history.at(-4)!.prUrl).toBe(res.restorePr!.url);
+    // Accepted values are now the agreed baseline, so a push does not list them again.
+    const { planPush } = await import("@/src/lib/git/sync");
+    const names = (await planPush(host, cfg)).changes.map((c) => c.name);
+    expect(names).not.toContain("button-surface-primary-hover");
+    expect(names).not.toContain("surface-hover");
+  });
+
+  it("writes nothing when a decision has a problem", async () => {
+    await drift();
+    const plan = await planPull(host, cfg);
+    const before = await host.head(cfg.dataRepo, "main");
+    const res = await applyPull(host, cfg, { codeHead: plan.codeHead, author: "jane", decisions: [{ id: "line-default", decision: "accept", reason: "x" }] });
+    expect(res.problems).toHaveLength(1);
+    expect(await host.head(cfg.dataRepo, "main")).toBe(before);
+  });
+});

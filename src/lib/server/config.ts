@@ -3,6 +3,7 @@ import rawTokens from "@/data/dummy/tokens.json";
 import rawHistory from "@/data/dummy/history.json";
 import { MemoryHost } from "../git/host";
 import { seedFiles, type SyncConfig } from "../git/sync";
+import { simulateDeveloperDrift } from "../git/drift";
 import { parseDtcg, type HistoryEntry } from "../tokens";
 
 /**
@@ -27,6 +28,7 @@ export function syncConfig(): SyncConfig {
     dataBranch: e.TOKENS_DATA_BRANCH || "main",
     codeRepo: e.TOKENS_CODE_REPO || "demo/ual-tokens-sandbox",
     codeBranch: e.TOKENS_CODE_BRANCH || "main",
+    releaseBranch: e.TOKENS_RELEASE_BRANCH || e.TOKENS_CODE_BRANCH || "main",
   };
 }
 
@@ -39,7 +41,16 @@ export function demoHost(): MemoryHost {
     const cfg = syncConfig();
     const seed = seedFiles(parseDtcg(structuredClone(rawTokens)), structuredClone(rawHistory) as HistoryEntry[]);
     host.seed(cfg.dataRepo, cfg.dataBranch, seed.data);
-    host.seed(cfg.codeRepo, cfg.codeBranch, seed.code);
+    const codeHead = host.seed(cfg.codeRepo, cfg.codeBranch, seed.code);
+    // A developer has since changed the release branch, so pull has something to review.
+    const drifted = simulateDeveloperDrift(seed.code);
+    void host.commit(
+      cfg.codeRepo,
+      cfg.codeBranch,
+      codeHead,
+      Object.entries(drifted).filter(([p, c]) => seed.code[p] !== c).map(([path, content]) => ({ path, content })),
+      "Developer changes (simulated drift cases)",
+    );
     g.__tokenToolDemoHost = host;
   }
   return g.__tokenToolDemoHost;

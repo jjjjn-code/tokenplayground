@@ -10,6 +10,7 @@ import {
   FileCode2,
   Layers,
   GitPullRequestArrow,
+  ArrowDownToLine,
   Menu,
   Palette,
   PlusCircle,
@@ -100,6 +101,7 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
         {item("/?set=all", "all", "All tokens", set.tokens.length, <Table2 className="size-4 text-muted-foreground" />)}
         {item("/create", null, "Create tokens", undefined, <PlusCircle className="size-4 text-muted-foreground" />)}
         {item("/push", null, "Push to code", undefined, <GitPullRequestArrow className="size-4 text-muted-foreground" />)}
+        {item("/pull", null, "Pull from code", undefined, <ArrowDownToLine className="size-4 text-muted-foreground" />)}
         {item("/export", null, "Export CSS", undefined, <FileCode2 className="size-4 text-muted-foreground" />)}
       </nav>
 

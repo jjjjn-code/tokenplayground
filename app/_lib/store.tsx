@@ -72,7 +72,10 @@ interface Store {
   reset: () => void;
   saveToRepo: (message: string) => Promise<SaveResult>;
   saving: boolean;
-  reload: () => Promise<void>;
+  /** Load the saved tokens again; pass `head` to read an exact version just written. */
+  reload: (head?: string) => Promise<void>;
+  /** Put a token back to the values it had in an earlier version (F7). */
+  restoreVersion: (name: string, values: Token["values"], reason: string) => void;
   /** After a push: take the new saved version straight from the push result. */
   applyPush: (r: { dataHead: string; history: HistoryEntry[]; lastPush: LastPush }) => void;
   signOut: () => Promise<void>;
@@ -136,8 +139,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const remoteMode = mode === "demo" || mode === "github";
   const author = remoteMode && viewer ? viewer.login : authorState;
 
-  const fetchData = useCallback(async () => {
-    const res = await fetch("/api/data", { cache: "no-store" });
+  const fetchData = useCallback(async (head?: string) => {
+    const res = await fetch(head ? `/api/data?head=${head}` : "/api/data", { cache: "no-store" });
     const body = await res.json();
     if (!res.ok) throw new Error(body.message ?? "The tokens cannot load.");
     return body as { head: string; tokens: Record<string, unknown>; history: HistoryEntry[]; lastPush: (LastPush & { tokens: unknown }) | null };
@@ -347,10 +350,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [remote, repos, set, pending, fetchData],
   );
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (head?: string) => {
     if (!repos) return;
     try {
-      applyRemote(await fetchData(), repos.data);
+      applyRemote(await fetchData(head), repos.data);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "The tokens cannot load.");
     }
@@ -361,6 +364,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setHistory([...r.history, ...pending]);
     setLastPush({ at: r.lastPush.at, by: r.lastPush.by, prUrl: r.lastPush.prUrl, branch: r.lastPush.branch, title: r.lastPush.title });
   }, [pending]);
+
+  const restoreVersion = useCallback(
+    (name: string, values: Token["values"], reason: string) => {
+      const prev = set.tokens.find((t) => t.name === name);
+      if (!prev) return;
+      setSet((s) => ({ tokens: s.tokens.map((t) => (t.name === name ? { ...t, values } : t)) }));
+      log([{ token: name, action: "restored", reason, before: { values: prev.values, status: prev.status }, after: { values, status: prev.status } }]);
+    },
+    [set, log],
+  );
 
   const signOut = useCallback(async () => {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -404,10 +417,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       saveToRepo,
       saving,
       reload,
+      restoreVersion,
       applyPush,
       signOut,
     }),
-    [mode, viewer, repos, loadError, ready, remote, set, history, lastPush, author, setAuthor, localChanges, unsavedNames, saveTokens, deprecate, rename, reactivate, reset, saveToRepo, saving, reload, applyPush, signOut],
+    [mode, viewer, repos, loadError, ready, remote, set, history, lastPush, author, setAuthor, localChanges, unsavedNames, saveTokens, deprecate, rename, reactivate, reset, saveToRepo, saving, reload, restoreVersion, applyPush, signOut],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
