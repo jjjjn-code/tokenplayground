@@ -172,6 +172,8 @@ export default function PullPage() {
   const acceptCount = chosen.filter((d) => drafts[d.id].decision === "accept").length;
   const declineCount = chosen.length - acceptCount;
   const renamedCount = chosen.filter((d) => d.kind === "extra" && drafts[d.id].decision === "accept" && (drafts[d.id].name ?? d.suggestedName) !== d.suggestedName).length;
+  /** Only declines, and tokens accepted under a new name, change the code. */
+  const needsPr = declineCount > 0 || renamedCount > 0;
 
   /** Check every chosen difference has a note, then show the summary before sending. */
   const openReview = () => {
@@ -383,7 +385,7 @@ export default function PullPage() {
                     {problem ? (
                       <p className="flex gap-1.5 text-xs text-destructive" role="alert"><CircleX className="mt-px size-3.5 shrink-0" />{problem}</p>
                     ) : dr.decision && dr.reason.trim() ? (
-                      <p className="flex gap-1.5 text-xs text-success"><CircleCheck className="mt-px size-3.5 shrink-0" />Ready to send. Send all decisions from the bar at the bottom.</p>
+                      <p className="flex gap-1.5 text-xs text-success"><CircleCheck className="mt-px size-3.5 shrink-0" />Decided. Review all your decisions from the bar at the bottom.</p>
                     ) : null}
                   </section>
                 );
@@ -418,16 +420,15 @@ export default function PullPage() {
           <span className="text-sm">
             {decided ? (
               <>
-                <span className="font-medium">{decided} ready to send:</span>{" "}
+                <span className="font-medium">{decided} decided:</span>{" "}
                 <span className="text-muted-foreground">{acceptCount} accepted, {declineCount} declined. You can leave the others for later.</span>
               </>
             ) : (
-              <span className="text-muted-foreground">Select an option on each difference you want to send. You can leave the others for later.</span>
+              <span className="text-muted-foreground">Select an option on each difference you want to decide now. You can leave the others for later.</span>
             )}
           </span>
           <Button className="ml-auto" onClick={openReview} disabled={!remote || applying || !!unsaved || !decided}>
-            <GitPullRequestArrow className="size-4" />
-            {unsaved ? "Save first" : `Review and send${decided ? ` ${decided}` : ""}`}
+            {unsaved ? "Save first" : `Review ${decided ? `${decided} ` : ""}${decided === 1 ? "decision" : "decisions"}`}
           </Button>
         </div>
       ) : null}
@@ -435,8 +436,8 @@ export default function PullPage() {
       <Dialog open={reviewOpen} onOpenChange={setReviewOpen}>
         <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Send {chosen.length} {chosen.length === 1 ? "decision" : "decisions"}</DialogTitle>
-            <DialogDescription>Examine your decisions. Nothing goes to GitHub until you push Send.</DialogDescription>
+            <DialogTitle>Review {chosen.length} {chosen.length === 1 ? "decision" : "decisions"}</DialogTitle>
+            <DialogDescription>Examine your decisions. Nothing changes until you push {needsPr ? "Save and open pull request" : "Save decisions"}.</DialogDescription>
           </DialogHeader>
           <ul className="grid gap-2 text-sm">
             {chosen.map((d) => {
@@ -454,7 +455,7 @@ export default function PullPage() {
           </ul>
           <div className="grid gap-1 rounded-md bg-muted/40 p-3 text-sm">
             <span className="font-medium">What happens next</span>
-            {acceptCount ? <span>{acceptCount} {acceptCount === 1 ? "token changes" : "tokens change"} in the tool to match the code.</span> : null}
+            {acceptCount ? <span>{acceptCount} {acceptCount === 1 ? "token changes" : "tokens change"} in the tool to match the code. Nothing is sent to the code for {acceptCount === 1 ? "it" : "them"}, because the code already has {acceptCount === 1 ? "this value" : "these values"}.</span> : null}
             {declineCount ? <span>{declineCount} {declineCount === 1 ? "value goes" : "values go"} back to the code in 1 pull request for developers, with your notes.</span> : null}
             {renamedCount ? <span>{renamedCount} {renamedCount === 1 ? "token gets its new name" : "tokens get their new names"} in the code in the same pull request.</span> : null}
             <span>Each decision goes in the token history with your name and note.</span>
@@ -462,7 +463,8 @@ export default function PullPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setReviewOpen(false)}>Back</Button>
             <Button onClick={() => void apply()} disabled={applying}>
-              {applying ? <Loader2 className="size-4 animate-spin" /> : <GitPullRequestArrow className="size-4" />} Send
+              {applying ? <Loader2 className="size-4 animate-spin" /> : needsPr ? <GitPullRequestArrow className="size-4" /> : null}
+              {needsPr ? "Save and open pull request" : "Save decisions"}
             </Button>
           </DialogFooter>
         </DialogContent>
