@@ -206,7 +206,7 @@ export function findDiscrepancies(set: TokenSet, files: Record<string, string | 
         codeName: expectedName,
         differences: diffs,
         ...(composite && !allMissing
-          ? { acceptBlockedReason: "This token has more than 1 part. Change it by hand in the tool, then pull again." }
+          ? { acceptBlockedReason: "This token has more than 1 part. Change the token by hand, then pull again." }
           : {}),
       });
     }
@@ -386,6 +386,6 @@ export function restoreChangelog(declined: AppliedPull["declined"], author: stri
     "| --- | --- | --- | --- | --- | --- |",
     ...rows,
     "",
-    `Declined by ${author} in the token tool. Only the managed blocks between \`tokens:start\` and \`tokens:end\` were changed.`,
+    `Declined by ${author} in Token Library. Only the managed blocks between \`tokens:start\` and \`tokens:end\` were changed.`,
   ].join("\n");
 }

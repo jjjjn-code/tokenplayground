@@ -56,11 +56,11 @@ function explain(d: Discrepancy): string {
     case "changed":
       return "A developer changed this value in the code.";
     case "flattened":
-      return "The code has a raw value. The tool has a reference to a token.";
+      return "The code has a raw value. The token has a reference to a different token.";
     case "missing":
       return "This token is not in the code.";
     case "extra":
-      return "This token is only in the code. It is not in the tool.";
+      return "This value is only in the code. There is no token for it.";
     case "renamed":
       return `The code uses the name ${d.codeName}. The correct name is ${d.expectedCodeName}.`;
   }
@@ -69,13 +69,13 @@ function explain(d: Discrepancy): string {
 function choices(d: Discrepancy): { accept: string; decline: string } {
   switch (d.kind) {
     case "missing":
-      return { accept: "Accept: delete the token from the tool", decline: "Decline: add it back to the code" };
+      return { accept: "Delete the token", decline: "Put it back in the code" };
     case "extra":
-      return { accept: "Accept: add it to the tool", decline: "Decline: remove it from the code" };
+      return { accept: "Add it as a token", decline: "Remove it from the code" };
     case "renamed":
-      return { accept: "Accept", decline: "Decline: put the correct name back" };
+      return { accept: "Update the token", decline: "Correct the name in the code" };
     default:
-      return { accept: "Accept: use the code value", decline: "Decline: keep the tool value" };
+      return { accept: "Update the token", decline: "Keep the token" };
   }
 }
 
@@ -214,7 +214,7 @@ export default function PullPage() {
       if (!res.ok) throw new Error(body.message);
       setDone({ accepted: body.accepted, declined: body.declined, restorePr: body.restorePr });
       setReviewOpen(false);
-      toast.success(`${body.accepted} accepted, ${body.declined} declined.`);
+      toast.success(`${body.accepted} ${body.accepted === 1 ? "token" : "tokens"} updated, ${body.declined} kept.`);
       await reload(body.dataHead);
     } catch (e) {
       toast.error("The decisions are not applied.", { description: e instanceof Error ? e.message : undefined });
@@ -246,7 +246,7 @@ export default function PullPage() {
             {remote && repos ? (
               <>Compare <span className="font-mono">{repos.code}</span> ({shown?.releaseBranch ?? "main"}) <ArrowRight className="inline size-3" /> saved tokens</>
             ) : (
-              "Compare the code with the tool, then accept or decline each difference."
+              "Compare the code with your tokens, then decide on each difference."
             )}
           </p>
         </div>
@@ -284,8 +284,8 @@ export default function PullPage() {
             <div className="flex flex-wrap items-center gap-3 rounded-lg border border-success/40 bg-success/5 p-4">
               <CircleCheck className="size-5 text-success" />
               <div className="min-w-0 flex-1 text-sm">
-                <div className="font-medium">{done.accepted} accepted, {done.declined} declined. The decisions are in the history of each token.</div>
-                {done.restorePr ? <div className="text-muted-foreground">Pull request #{done.restorePr.number} is open. It puts the declined values back in the code.</div> : null}
+                <div className="font-medium">{done.accepted} {done.accepted === 1 ? "token" : "tokens"} updated, {done.declined} kept. The decisions are in the history of each token.</div>
+                {done.restorePr ? <div className="text-muted-foreground">Pull request #{done.restorePr.number} is open. It asks developers to change the code to match the tokens.</div> : null}
               </div>
               {done.restorePr ? (
                 <Button size="sm" variant="outline" asChild>
@@ -329,8 +329,8 @@ export default function PullPage() {
                         <thead>
                           <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
                             <th className="w-20 px-3 py-1.5 font-medium">Mode</th>
-                            <th className="px-3 py-1.5 font-medium">In the tool</th>
-                            <th className="px-3 py-1.5 font-medium">In the code</th>
+                            <th className="px-3 py-1.5 font-medium">Tokens</th>
+                            <th className="px-3 py-1.5 font-medium">Code</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -372,7 +372,7 @@ export default function PullPage() {
                       <div className="grid gap-2 sm:grid-cols-2">
                         {dr.decision === "accept" && d.kind === "extra" ? (
                           <div className="grid gap-1">
-                            <label className="text-xs font-medium" htmlFor={`name-${d.id}`}>Name in the tool</label>
+                            <label className="text-xs font-medium" htmlFor={`name-${d.id}`}>Token name</label>
                             <Input id={`name-${d.id}`} value={dr.name ?? d.suggestedName ?? ""} onChange={(e) => setDraft(d.id, { name: e.target.value.toLowerCase().replace(/[\s_]+/g, "-") })} className="h-8 font-mono text-[12.5px]" autoComplete="off" />
                           </div>
                         ) : null}
@@ -400,7 +400,7 @@ export default function PullPage() {
                       <div key={d.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-dashed p-3 text-sm">
                         <span className="font-mono text-[13px]">{d.token ?? d.codeName}</span>
                         <Badge variant="outline" className={KIND_TONE[d.kind]}>{discrepancyLabel(d.kind)}</Badge>
-                        <span className="min-w-0 flex-1 text-muted-foreground">{w.action === "declined" ? "Declined" : `Accepted as ${w.token}`} by {w.by}: {w.reason}</span>
+                        <span className="min-w-0 flex-1 text-muted-foreground">{w.action === "declined" ? "Token kept" : `Added as the token ${w.token}`} by {w.by}: {w.reason}</span>
                         <a href={w.prUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs underline">
                           Pull request{pr ? ` #${pr}` : ""} <ExternalLink className="size-3" />
                         </a>
@@ -421,7 +421,7 @@ export default function PullPage() {
             {decided ? (
               <>
                 <span className="font-medium">{decided} decided:</span>{" "}
-                <span className="text-muted-foreground">{acceptCount} accepted, {declineCount} declined. You can leave the others for later.</span>
+                <span className="text-muted-foreground">{acceptCount} to update, {declineCount} to keep. You can leave the others for later.</span>
               </>
             ) : (
               <span className="text-muted-foreground">Select an option on each difference you want to decide now. You can leave the others for later.</span>
@@ -446,10 +446,10 @@ export default function PullPage() {
             const change = (d: Discrepancy) => {
               const dr = drafts[d.id];
               const accept = dr.decision === "accept";
-              if (d.kind === "missing") return <span>{accept ? "Deleted from the tool." : "Added back to the code."}</span>;
+              if (d.kind === "missing") return <span>{accept ? "The token is deleted." : "Added back to the code."}</span>;
               if (d.kind === "extra") {
                 return accept ? (
-                  <span>Added to the tool as <span className="font-mono">{dr.name ?? d.suggestedName}</span>.{(dr.name ?? d.suggestedName) !== d.suggestedName ? " Its new name also goes to developers." : ""}</span>
+                  <span>Added as the token <span className="font-mono">{dr.name ?? d.suggestedName}</span>.{(dr.name ?? d.suggestedName) !== d.suggestedName ? " Its new name also goes to developers." : ""}</span>
                 ) : (
                   <span>Removed from the code.</span>
                 );
@@ -487,12 +487,12 @@ export default function PullPage() {
             return (
               <div className="grid gap-4">
                 {group(
-                  "Changes in the tool",
+                  "Token updates",
                   `The code already has ${inTool.length === 1 ? "this value" : "these values"}. Nothing is sent to developers${renamedCount ? ", except new names" : ""}.`,
                   inTool,
                 )}
                 {group(
-                  "Sent to developers",
+                  "Code changes for developers",
                   `1 pull request asks developers to change the code. Your ${toCode.length === 1 ? "note is" : "notes are"} in its description.`,
                   toCode,
                 )}

@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     }
     // The signed-in person is the author of every new history entry.
     const history = body.history.map((e) => (e.by === "pending" ? { ...e, by: user.viewer.login } : e));
-    const message = (body.message?.trim() || "Update tokens") + `\n\nSaved by ${user.viewer.login} from the token tool.`;
+    const message = (body.message?.trim() || "Update tokens") + `\n\nSaved by ${user.viewer.login} from Token Library.`;
     const head = await saveData(user.host, syncConfig(), { expectedHead: body.expectedHead, set: parseDtcg(body.tokens), history, message });
     return NextResponse.json({ head, history });
   } catch (e) {

@@ -56,7 +56,7 @@ export function AccountPanel() {
       {mode === "demo" ? (
         <div className="flex items-start gap-2 rounded-md bg-warning/10 px-2 py-1.5 text-[11px] leading-snug text-foreground">
           <FlaskConical className="mt-0.5 size-3.5 shrink-0 text-warning" />
-          Demo mode: a fake GitHub inside the tool. It resets when the server restarts.
+          Demo mode: a fake GitHub inside Token Library. It resets when the server restarts.
         </div>
       ) : null}
 

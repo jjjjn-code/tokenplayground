@@ -103,7 +103,7 @@ export async function saveData(
     cfg.dataBranch,
     input.expectedHead,
     [
-      { path: DATA_FILES.tokens, content: toJson(serialiseDtcg(input.set, "UAL design tokens. Managed by the token tool.")) },
+      { path: DATA_FILES.tokens, content: toJson(serialiseDtcg(input.set, "UAL design tokens. Managed by Token Library.")) },
       { path: DATA_FILES.history, content: toJson(input.history) },
     ],
     input.message,
@@ -240,21 +240,21 @@ export async function pushToCode(
 export function seedFiles(set: TokenSet, history: HistoryEntry[], at = new Date().toISOString()) {
   const lastPush: LastPush = { at, by: "set-up", prUrl: null, branch: null, title: "Initial set-up", tokens: serialiseDtcg(set) };
   const data: Record<string, string> = {
-    [DATA_FILES.tokens]: toJson(serialiseDtcg(set, "UAL design tokens. Managed by the token tool.")),
+    [DATA_FILES.tokens]: toJson(serialiseDtcg(set, "UAL design tokens. Managed by Token Library.")),
     [DATA_FILES.history]: toJson(history),
     [DATA_FILES.lastPush]: toJson(lastPush),
     "README.md":
-      "# UAL token data\n\nThe master copy of the UAL design tokens, in the W3C design tokens format. Written by the token tool; please do not edit by hand.\n\n- `tokens.json`: every token\n- `history.json`: the decision log\n- `last-push.json`: what the code repo was last given\n",
+      "# UAL token data\n\nThe master copy of the UAL design tokens, in the W3C design tokens format. Written by Token Library. Do not edit it by hand.\n\n- `tokens.json`: every token\n- `history.json`: the decision log\n- `last-push.json`: what the code repo was last given\n",
   };
   const components = [...new Set(set.tokens.map((t) => t.component).filter(Boolean) as string[])];
   const code: Record<string, string> = {
     [PARENT_CSS_PATH]: `${parentCss(set)}\n`,
     "README.md":
-      "# UAL token sandbox\n\nA copy of the code repo's CSS structure, for testing push and pull from the token tool. The tool only changes what sits between `tokens:start` and `tokens:end`.\n",
+      "# UAL token sandbox\n\nA copy of the code repo's CSS structure, for testing push and pull from Token Library. Token Library only changes what sits between `tokens:start` and `tokens:end`.\n",
   };
   for (const c of components) {
     code[`components/${c}/${c}.css`] =
-      `${componentCss(set, c)}\n\n/* Component styles below are written by developers and never touched by the tool. */\n.${c} {\n  display: inline-flex;\n  align-items: center;\n  background: var(--${c}-surface${c === "button" ? "-primary" : ""}-default);\n  color: var(--${c}-content${c === "button" ? "-primary" : ""}-default);\n}\n`;
+      `${componentCss(set, c)}\n\n/* Component styles below are written by developers and never changed by Token Library. */\n.${c} {\n  display: inline-flex;\n  align-items: center;\n  background: var(--${c}-surface${c === "button" ? "-primary" : ""}-default);\n  color: var(--${c}-content${c === "button" ? "-primary" : ""}-default);\n}\n`;
   }
   return { data, code };
 }
@@ -375,7 +375,7 @@ export async function applyPull(
   }
   const accepted = res.history.filter((e) => e.action === "accepted").length;
   const fileChanges = [
-    { path: DATA_FILES.tokens, content: toJson(serialiseDtcg(res.set, "UAL design tokens. Managed by the token tool.")) },
+    { path: DATA_FILES.tokens, content: toJson(serialiseDtcg(res.set, "UAL design tokens. Managed by Token Library.")) },
     { path: DATA_FILES.history, content: toJson(history) },
     ...(lastPush ? [{ path: DATA_FILES.lastPush, content: toJson(lastPush) }] : []),
   ];
@@ -384,7 +384,7 @@ export async function applyPull(
     cfg.dataBranch,
     data.head,
     fileChanges,
-    `Pull review: ${accepted} accepted, ${res.declined.length} declined${restorePr ? ` (${restorePr.url})` : ""}\n\nReviewed by ${input.author} in the token tool.`,
+    `Pull review: ${accepted} accepted, ${res.declined.length} declined${restorePr ? ` (${restorePr.url})` : ""}\n\nReviewed by ${input.author} in Token Library.`,
   );
   return { dataHead: head, history, lastPush, accepted, declined: res.declined.length, restorePr, problems: [] };
 }

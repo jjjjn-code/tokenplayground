@@ -96,7 +96,7 @@ export function changelogMarkdown({ title, summary, author, changes }: Changelog
     "",
     `${changes.length} ${changes.length === 1 ? "token" : "tokens"}: ${counts || "no changes"}. Changed values are in bold.`,
     "",
-    `Pushed by ${author} from the token tool. Only the managed blocks between \`tokens:start\` and \`tokens:end\` were changed.`,
+    `Pushed by ${author} from Token Library. Only the managed blocks between \`tokens:start\` and \`tokens:end\` were changed.`,
   ].join("\n");
 }
 

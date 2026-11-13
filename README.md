@@ -1,4 +1,4 @@
-# Token tool
+# Token Library
 
 The single source of truth for UAL design tokens. Designers name and create tokens here; the tool pushes CSS to the code repo as pull requests, pulls developer changes back for review, and syncs approved tokens to Figma.
 

@@ -11,7 +11,7 @@ import { StoreProvider } from "./_lib/store";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Token tool",
+  title: "Token Library",
   description: "UAL design tokens: one source of truth.",
 };
 

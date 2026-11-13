@@ -92,7 +92,7 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
           <Blocks className="size-4" />
         </div>
         <div className="leading-tight">
-          <div className="text-sm font-semibold">Token tool</div>
+          <div className="text-sm font-semibold">Token Library</div>
           <div className="text-[11px] text-muted-foreground">UAL design system</div>
         </div>
       </div>

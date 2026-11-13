@@ -17,7 +17,7 @@ export function Gate({ children }: { children: React.ReactNode }) {
         <div className="flex size-11 items-center justify-center rounded-full bg-muted">
           <GitBranch className="size-5" />
         </div>
-        <h1 className="text-lg font-semibold">Sign in to the token tool</h1>
+        <h1 className="text-lg font-semibold">Sign in to Token Library</h1>
         <p className="max-w-sm text-center text-sm text-muted-foreground">
           Your GitHub account is used to read tokens, save tokens and open pull requests.
         </p>
