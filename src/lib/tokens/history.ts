@@ -10,7 +10,18 @@ export const REASON_REQUIRED: HistoryAction[] = ["accepted", "declined", "restor
 
 /** A token's timeline, oldest first. */
 export function historyFor(log: HistoryEntry[], token: string): HistoryEntry[] {
-  return log.filter((e) => e.token === token).sort((a, b) => a.at.localeCompare(b.at));
+  // Follow renames back, so a renamed token keeps its earlier history.
+  const names = new Set([token]);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const e of log) {
+      if (e.action === "renamed" && e.from && names.has(e.token) && !names.has(e.from)) {
+        names.add(e.from);
+        grew = true;
+      }
+    }
+  }
+  return log.filter((e) => names.has(e.token)).sort((a, b) => a.at.localeCompare(b.at));
 }
 
 /** The most recent entry for a token, for the "last change" column (F1). */

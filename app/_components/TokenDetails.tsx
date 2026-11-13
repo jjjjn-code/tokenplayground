@@ -39,6 +39,7 @@ const ACTION_LABEL: Record<string, string> = {
   declined: "Declined",
   restored: "Restored",
   synced: "Synced to Figma",
+  renamed: "Renamed",
 };
 
 /** Contents of the details side sheet: values, code, references (F3) and history (F7). */
@@ -182,7 +183,14 @@ export function TokenDetails({
                 <span className="absolute -left-[5px] top-1.5 size-2.5 rounded-full border-2 border-background bg-foreground" aria-hidden="true" />
                 <div className="font-medium">{ACTION_LABEL[e.action] ?? e.action} <span className="font-normal text-muted-foreground">by {e.by}</span></div>
                 <div className="text-xs text-muted-foreground">{formatDate(e.at)}</div>
-                {e.reason ? <div className="mt-1">{e.reason}</div> : null}
+                {e.action === "renamed" && e.from ? (
+                  <div className="mt-1 flex flex-wrap items-center gap-1 font-mono text-[12px]">
+                    <span className="rounded bg-destructive/10 px-1 text-destructive line-through">{e.from}</span>
+                    <span className="text-muted-foreground">→</span>
+                    <span className="rounded bg-success/10 px-1 text-success">{e.token}</span>
+                  </div>
+                ) : null}
+                {e.reason && !(e.action === "renamed" && e.reason === `Renamed from ${e.from}`) ? <div className="mt-1">{e.reason}</div> : null}
                 {(e.before || e.after) && JSON.stringify(e.before?.values) !== JSON.stringify(e.after?.values) ? (
                   <div className="mt-1.5 rounded-md border bg-muted/20 p-2">
                     <ValueChange before={e.before} after={e.after} layer={token.layer} index={index} />

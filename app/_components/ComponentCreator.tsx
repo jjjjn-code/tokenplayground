@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Check, ChevronUp, Copy, Plus, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import {
   checkBeforeSave,
   COMPONENT_CATEGORIES,
+  componentVocabulary,
   DEFAULT_FIGMA_GROUP,
   figmaPath,
   FORBIDDEN_STATES,
@@ -81,6 +82,30 @@ export function ComponentCreator() {
   const [mapping, setMapping] = useState<Record<string, { light?: string; dark?: string }>>({});
   const [reason, setReason] = useState("");
   const [showIssues, setShowIssues] = useState(false);
+  const params = useSearchParams();
+  const prefilled = useRef(false);
+
+  // Opened from the sheet with ?component=tag&state=hover: start from what
+  // the component already has, plus the new category, role or state.
+  useEffect(() => {
+    if (prefilled.current) return;
+    const c = params.get("component");
+    if (!c) return;
+    prefilled.current = true;
+    const v = componentVocabulary(set, c);
+    const add = (list: string[], extra: string | null) => (extra && !list.includes(extra) ? [...list, extra] : list);
+    const wantCats = add(v.categories, params.get("category"));
+    const wantRoles = add(v.roles, params.get("role"));
+    const wantStates = add(v.states, params.get("state"));
+    const apply = (chips: Chip[], want: string[]) => [
+      ...chips.map((x) => ({ ...x, on: x.locked || want.includes(x.v) })),
+      ...want.filter((w) => !chips.some((x) => x.v === w)).map((w) => ({ v: w, on: true, custom: true })),
+    ];
+    setRawName(c);
+    if (wantCats.length) setCats((x) => apply(x, wantCats));
+    setRoles((x) => apply(x, wantRoles));
+    if (wantStates.length) setStates((x) => apply(x, wantStates));
+  }, [params, set]);
 
   const { slug: component, changed } = normaliseComponentName(rawName);
   const on = (a: Chip[]) => a.filter((c) => c.on).map((c) => c.v);
@@ -90,7 +115,11 @@ export function ComponentCreator() {
   const comp = component || "component";
 
   const list = generateComponentTokens({ component: comp, categories: C, roles: R, states: S, excluded });
-  const candidates: Token[] = list.map((t) => ({
+  // Tokens that already exist are shown but left as they are.
+  const existingNames = new Set(set.tokens.map((t) => t.name));
+  const fresh = list.filter((t) => !existingNames.has(t.name));
+  const already = list.length - fresh.length;
+  const candidates: Token[] = fresh.map((t) => ({
     name: t.name,
     layer: "component",
     kind: "color",
@@ -109,14 +138,14 @@ export function ComponentCreator() {
   const extra: Issue[] = [];
   if (!component) extra.push({ severity: "error", code: "component.name", message: "Add a component name." });
   if (component && changed) extra.push({ severity: "info", code: "component.normalised", message: `Name normalised to "${component}". Confirm this is what developers expect in code.` });
-  if (existing.length) extra.push({ severity: "info", code: "component.exists", message: `${component} already has ${existing.length} tokens. New tokens are added to them; names that already exist are blocked.` });
-  if (!list.length) extra.push({ severity: "error", code: "component.empty", message: "No tokens to create. Pick at least 1 category and tick at least 1 cell." });
-  if (unmapped) extra.push({ severity: "error", code: "value.empty", message: `${unmapped} of ${list.length} tokens still need a light and dark value.` });
+  if (existing.length && already) extra.push({ severity: "info", code: "component.exists", message: `${already} of these already ${already === 1 ? "exists" : "exist"} in ${component} and ${already === 1 ? "is" : "are"} left as ${already === 1 ? "it is" : "they are"}. Only the ${fresh.length} new ${fresh.length === 1 ? "token is" : "tokens are"} created.` });
+  if (!fresh.length) extra.push({ severity: "error", code: "component.empty", message: list.length ? "Every token here already exists. Add a category, role or state, or tick another cell." : "No tokens to create. Pick at least 1 category and tick at least 1 cell." });
+  if (unmapped) extra.push({ severity: "error", code: "value.empty", message: `${unmapped} of ${fresh.length} new tokens still need a light and dark value.` });
   const allIssues = [...extra, ...issues.filter((i) => i.code !== "value.empty")];
   const errors = allIssues.filter((i) => i.severity === "error").length;
   const warnings = allIssues.filter((i) => i.severity === "warning").length;
-  const canSave = ok && !!component && list.length > 0;
-  const published = list.filter((t) => t.state === "default").length;
+  const canSave = ok && !!component && fresh.length > 0;
+  const published = fresh.filter((t) => t.state === "default").length;
 
   const toggle = (setter: React.Dispatch<React.SetStateAction<Chip[]>>, i: number) =>
     setter((a) => a.map((c, n) => (n === i && !c.locked ? { ...c, on: !c.on } : c)));
@@ -165,7 +194,7 @@ export function ComponentCreator() {
   const save = () => {
     if (!canSave) return;
     saveTokens(candidates, [], reason);
-    toast.success(`Created ${list.length} ${component} tokens`, { description: "Saved as drafts." });
+    toast.success(`Created ${fresh.length} ${component} tokens`, { description: "Saved as drafts in your unsaved changes." });
     router.push(`/?set=component/${component}`);
   };
 
@@ -244,6 +273,20 @@ export function ComponentCreator() {
                         {S.map((s) => {
                           const key = [c, r, s].filter(Boolean).join("|");
                           const isOn = !excluded.has(key);
+                          const exists = existingNames.has([comp, c, r, s].filter(Boolean).join("-"));
+                          if (exists) {
+                            return (
+                              <td key={s} className="p-1 text-center">
+                                <span
+                                  className="inline-flex size-6 items-center justify-center rounded-md border border-dashed text-muted-foreground"
+                                  title="Already exists"
+                                  aria-label={`${[c, r, s].filter(Boolean).join(" ")}: already exists`}
+                                >
+                                  <Check className="size-3.5" />
+                                </span>
+                              </td>
+                            );
+                          }
                           return (
                             <td key={s} className="p-1 text-center">
                               <button
@@ -274,8 +317,11 @@ export function ComponentCreator() {
         <div className="flex min-h-0 flex-col">
           <div className="flex flex-wrap items-center gap-3 border-b px-5 py-3">
             <div>
-              <div className="text-sm font-medium">{list.length} tokens</div>
-              <div className="text-xs text-muted-foreground">{published} published in Figma, {list.length - published} hidden</div>
+              <div className="text-sm font-medium">
+                {fresh.length} new {fresh.length === 1 ? "token" : "tokens"}
+                {already ? <span className="font-normal text-muted-foreground"> · {already} already {already === 1 ? "exists" : "exist"}</span> : null}
+              </div>
+              <div className="text-xs text-muted-foreground">{published} published in Figma, {fresh.length - published} hidden</div>
             </div>
             <Button
               variant="outline"
@@ -307,8 +353,18 @@ export function ComponentCreator() {
                   </tr>
                 </thead>
                 <tbody>
-                  {list.map((t, i) => {
-                    const cand = candidates[i];
+                  {list.map((t) => {
+                    if (existingNames.has(t.name)) {
+                      return (
+                        <tr key={t.name} className="text-muted-foreground">
+                          <td className="px-3 py-1.5">
+                            <span className="truncate font-mono text-[12.5px]">{t.name}</span>
+                          </td>
+                          <td colSpan={2} className="px-3 text-[12px]">Already exists, left as it is</td>
+                        </tr>
+                      );
+                    }
+                    const cand = candidates.find((x) => x.name === t.name)!;
                     return (
                       <tr key={t.name}>
                         <td className="px-3 py-1.5">
@@ -353,7 +409,7 @@ export function ComponentCreator() {
                 </Button>
               </CollapsibleTrigger>
               <Input aria-label="Reason, saved in the history" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (optional), for example new hover states" className="h-8 min-w-48 flex-1 text-[13px]" autoComplete="off" />
-              <Button onClick={save} disabled={!canSave}>Create {list.length} tokens</Button>
+              <Button onClick={save} disabled={!canSave}>Create {fresh.length} {fresh.length === 1 ? "token" : "tokens"}</Button>
             </div>
           </Collapsible>
         </div>

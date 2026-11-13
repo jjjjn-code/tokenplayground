@@ -14,6 +14,7 @@ import rawTokens from "@/data/dummy/tokens.json";
 import rawHistory from "@/data/dummy/history.json";
 import {
   mergeEdits,
+  renameToken,
   parseDtcg,
   serialiseDtcg,
   type HistoryAction,
@@ -65,6 +66,8 @@ interface Store {
   unsavedNames: string[];
   saveTokens: (tokens: Token[], replacing: string[], reason?: string) => void;
   deprecate: (name: string, reason: string) => void;
+  /** Rename a token and repoint every reference to it. */
+  rename: (from: string, to: string, reason?: string) => void;
   reactivate: (name: string, reason: string) => void;
   reset: () => void;
   saveToRepo: (message: string) => Promise<SaveResult>;
@@ -269,6 +272,31 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   );
 
   const deprecate = useCallback((name: string, reason: string) => changeStatus(name, "deprecated", "deprecated", reason), [changeStatus]);
+
+  const rename = useCallback(
+    (from: string, to: string, reason?: string) => {
+      const res = renameToken(set, from, to);
+      const before = new Map(set.tokens.map((t) => [t.name, t]));
+      setSet(res.set);
+      log([
+        { token: to, action: "renamed", from, reason: reason?.trim() || `Renamed from ${from}` },
+        ...res.repointed
+          .filter((n) => n !== to)
+          .map((n) => {
+            const prev = before.get(n)!;
+            const now = res.set.tokens.find((t) => t.name === n)!;
+            return {
+              token: n,
+              action: "edited" as HistoryAction,
+              reason: `Points to the renamed token ${to} (was ${from})`,
+              before: { values: prev.values, status: prev.status },
+              after: { values: now.values, status: now.status },
+            };
+          }),
+      ]);
+    },
+    [set, log],
+  );
   const reactivate = useCallback((name: string, reason: string) => changeStatus(name, "active", "edited", reason), [changeStatus]);
 
   /** Local mode: back to the dummy set. GitHub mode: throw away unsaved edits. */
@@ -370,6 +398,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       unsavedNames,
       saveTokens,
       deprecate,
+      rename,
       reactivate,
       reset,
       saveToRepo,
@@ -378,7 +407,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       applyPush,
       signOut,
     }),
-    [mode, viewer, repos, loadError, ready, remote, set, history, lastPush, author, setAuthor, localChanges, unsavedNames, saveTokens, deprecate, reactivate, reset, saveToRepo, saving, reload, applyPush, signOut],
+    [mode, viewer, repos, loadError, ready, remote, set, history, lastPush, author, setAuthor, localChanges, unsavedNames, saveTokens, deprecate, rename, reactivate, reset, saveToRepo, saving, reload, applyPush, signOut],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

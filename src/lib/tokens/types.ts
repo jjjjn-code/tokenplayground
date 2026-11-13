@@ -89,7 +89,8 @@ export type HistoryAction =
   | "accepted"
   | "declined"
   | "restored"
-  | "synced";
+  | "synced"
+  | "renamed";
 
 export interface HistoryEntry {
   id: string;
@@ -105,6 +106,8 @@ export interface HistoryEntry {
   after?: Pick<Token, "values" | "status">;
   /** Pull request link, for pushed and declined entries. */
   prUrl?: string;
+  /** For "renamed": the previous name. */
+  from?: string;
 }
 
 export const isReference = (v: unknown): v is Reference =>

@@ -68,6 +68,7 @@ import { TokenDetails, type DetailsTab } from "./TokenDetails";
 import { TokenEditor } from "./TokenEditor";
 import { TokenCommandList } from "./ValuePicker";
 import { NewTokenRow } from "./NewTokenRow";
+import { RenameTitle } from "./RenameTitle";
 import { AliasPill, relativeDate, resolvedText, StatusBadge, Swatch } from "./ui";
 
 const COLS = 6; // name, light, dark, status, last change, in code
@@ -608,7 +609,14 @@ export function Overview() {
           {selectedToken ? (
             <>
               <SheetHeader>
-                <SheetTitle className="font-mono text-base break-all">{selectedToken.name}</SheetTitle>
+                <RenameTitle
+                  key={selectedToken.name}
+                  token={selectedToken}
+                  onRenamed={(n) => {
+                    setOpen(n);
+                    toast.success(`Renamed to ${n}`, { description: "References were updated. Save to keep it." });
+                  }}
+                />
                 <SheetDescription className="sr-only">Details, references and history</SheetDescription>
               </SheetHeader>
               <TokenDetails token={selectedToken} tab={tab} onTab={setTab} onSelect={(n) => setOpen(n)} onEdit={() => setEditing(selectedToken)} />
