@@ -51,7 +51,7 @@ const TYPE_STYLE: Record<Change["type"], string> = {
   removed: "border-destructive/40 text-destructive",
 };
 
-/** Push to code (F5): change set, title and summary, preview, pull request. */
+/** Send to code (F5): change set, title and summary, preview, pull request. */
 export default function PushPage() {
   const { mode, set, repos, lastPush, unsavedNames, savedHead, applyPush, author } = useStore();
   const remote = mode === "demo" || mode === "github";
