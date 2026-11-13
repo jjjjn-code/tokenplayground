@@ -54,6 +54,8 @@ import {
   lastChange,
   resolveToken,
   validateTokenSet,
+  type Kind,
+  type Layer,
   type Mode,
   type SimpleValue,
   type Status,
@@ -65,6 +67,7 @@ import { inSet, KIND_ORDER, KIND_TITLE, LAYER_TITLE, parseSet, setTitle } from "
 import { TokenDetails, type DetailsTab } from "./TokenDetails";
 import { TokenEditor } from "./TokenEditor";
 import { TokenCommandList } from "./ValuePicker";
+import { NewTokenRow } from "./NewTokenRow";
 import { AliasPill, relativeDate, resolvedText, StatusBadge, Swatch } from "./ui";
 
 const COLS = 6; // name, light, dark, status, last change, in code
@@ -140,9 +143,11 @@ export function Overview() {
   const [selection, setSelection] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<string | null>(params.get("token"));
   const [tab, setTab] = useState<DetailsTab>("references");
-  const [editCell, setEditCell] = useState<{ name: string; mode: Mode } | null>(null);
+  const [editCell, setEditCell] = useState<{ name: string; mode: Mode; seed: string } | null>(null);
   const [editing, setEditing] = useState<Token | null>(null);
   const [creating, setCreating] = useState(params.get("new") === "token");
+  const [preset, setPreset] = useState<{ layer: Layer; kind: Kind } | null>(null);
+  const [adding, setAdding] = useState<string | null>(null);
   const [statusChange, setStatusChange] = useState<{ names: string[]; to: "deprecated" | "active" } | null>(null);
   const [reason, setReason] = useState("");
 
@@ -194,6 +199,11 @@ export function Overview() {
 
   /** Inline edit of 1 mode, checked by the rules engine before saving. */
   const commitCell = (token: Token, mode: Mode, value: SimpleValue) => {
+    const current = mode === "dark" ? token.values.dark : token.values.light;
+    if (JSON.stringify(current) === JSON.stringify(value)) {
+      setEditCell(null);
+      return;
+    }
     const updated: Token = { ...token, values: { ...token.values, [mode]: value } };
     const res = checkBeforeSave(set, [updated], [token.name]);
     const firstError = res.issues.find((i) => i.severity === "error");
@@ -279,19 +289,41 @@ export function Overview() {
       );
     }
     const current = mode === "dark" ? t.values.dark : t.values.light;
+    const currentText = current === undefined || current === "" ? "" : formatValue(current).replace(/[{}]/g, "");
+    const modeLabel = t.layer === "primitive" ? "Value" : mode === "light" ? "Light" : "Dark";
     return (
       <td key={mode}>
-        <Popover open={isOpen} onOpenChange={(o) => setEditCell(o ? { name: t.name, mode } : null)}>
+        <Popover open={isOpen} onOpenChange={(o) => setEditCell(o ? { name: t.name, mode, seed: currentText } : null)}>
           <PopoverTrigger asChild>
-            <button type="button" className={cn("cell-btn", isOpen && "bg-accent")} data-editable="true" data-row={r} data-col={c} aria-label={label}>
+            <button
+              type="button"
+              className={cn("cell-btn", isOpen && "bg-accent")}
+              data-editable="true"
+              data-row={r}
+              data-col={c}
+              aria-label={label}
+              onKeyDown={(e) => {
+                // Like a spreadsheet: start typing on a selected cell to edit it.
+                if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey && e.key !== " ") {
+                  e.preventDefault();
+                  setEditCell({ name: t.name, mode, seed: e.key });
+                }
+              }}
+            >
               <ValueDisplay token={t} mode={mode} index={index} />
             </button>
           </PopoverTrigger>
-          <PopoverContent className="w-[340px] p-0" align="start" sideOffset={2}>
-            <div className="border-b px-3 py-2 text-xs text-muted-foreground">
-              <span className="font-mono text-foreground">{t.name}</span> · {t.layer === "primitive" ? "value" : mode}
-            </div>
+          <PopoverContent
+            className="w-[max(var(--radix-popover-trigger-width),340px)] p-0"
+            align="start"
+            side="bottom"
+            sideOffset={-40}
+            avoidCollisions
+          >
             <TokenCommandList
+              key={`${t.name}-${mode}-${editCell?.seed ?? ""}`}
+              initialSearch={editCell?.seed ?? ""}
+              placeholder={`${modeLabel}: ${t.layer === "primitive" ? "type a value, for example #FF5000" : t.layer === "component" ? "type a token name" : "type a token name or a value"}`}
               candidates={candidatesFor(t)}
               index={index}
               mode={mode}
@@ -389,7 +421,7 @@ export function Overview() {
             <col style={{ width: 104 }} />
             <col style={{ width: 120 }} />
             <col />
-            <col style={{ width: 44 }} />
+            <col style={{ width: 64 }} />
           </colgroup>
           <thead>
             <tr>
@@ -515,6 +547,49 @@ export function Overview() {
                     </ContextMenu>
                   );
                 })}
+                {(() => {
+                  const [gLayer, rest] = g.key.split("/") as [Layer, string];
+                  const gKind: Kind = gLayer === "component" ? "color" : (rest as Kind);
+                  const gComponent = gLayer === "component" ? rest : undefined;
+                  if (adding === g.key) {
+                    return (
+                      <NewTokenRow
+                        key={`new-${g.key}`}
+                        layer={gLayer}
+                        kind={gKind}
+                        component={gComponent}
+                        set={set}
+                        index={index}
+                        onCancel={() => setAdding(null)}
+                        onCreate={(t) => {
+                          saveTokens([t], []);
+                          setAdding(null);
+                          toast.success(`Created ${t.name}`, { description: "Saved as a draft in your unsaved changes." });
+                        }}
+                      />
+                    );
+                  }
+                  const composite = gLayer === "semantic" && ["typography", "border", "shadow"].includes(gKind);
+                  return (
+                    <tr className="group-row" key={`add-${g.key}`}>
+                      <td colSpan={7} className="sticky-col">
+                        <button
+                          type="button"
+                          className="flex h-full w-full items-center gap-2 px-3 text-left text-[13px] text-muted-foreground hover:bg-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                          onClick={() => {
+                            if (composite) {
+                              setPreset({ layer: gLayer, kind: gKind });
+                              setCreating(true);
+                            } else setAdding(g.key);
+                          }}
+                        >
+                          <Plus className="size-3.5" /> Create token
+                          <span className="text-xs opacity-70">in {g.title}</span>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })()}
               </Fragment>
             ))}
           </tbody>
@@ -562,8 +637,11 @@ export function Overview() {
           </DialogHeader>
           {creating ? (
             <TokenEditor
+              initialLayer={preset?.layer}
+              initialKind={preset?.kind}
               onDone={(saved) => {
                 setCreating(false);
+                setPreset(null);
                 if (saved) {
                   toast.success(`Created ${saved.name}`);
                   router.replace(`/?set=${saved.layer}/${saved.kind}&token=${saved.name}`);

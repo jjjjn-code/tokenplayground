@@ -11,8 +11,8 @@ export async function POST(req: NextRequest) {
   const user = await currentUser();
   if (!user) return notSignedIn();
   try {
-    const { title, summary } = (await req.json()) as { title?: string; summary?: string };
-    const res = await pushToCode(user.host, syncConfig(), { title: title ?? "", summary: summary ?? "", author: user.viewer.login });
+    const { title, summary, dataHead } = (await req.json()) as { title?: string; summary?: string; dataHead?: string };
+    const res = await pushToCode(user.host, syncConfig(), { title: title ?? "", summary: summary ?? "", author: user.viewer.login, dataHead: dataHead || undefined });
     return NextResponse.json(res);
   } catch (e) {
     return errorResponse(e);

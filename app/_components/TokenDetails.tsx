@@ -25,6 +25,7 @@ import {
 import { useStore } from "../_lib/store";
 import { KIND_TITLE, LAYER_TITLE } from "../_lib/sets";
 import { AliasPill, formatDate, IssueList, resolvedText, StatusBadge, Swatch } from "./ui";
+import { ValueChange } from "./ValueChange";
 
 export type DetailsTab = "references" | "history";
 
@@ -182,11 +183,9 @@ export function TokenDetails({
                 <div className="font-medium">{ACTION_LABEL[e.action] ?? e.action} <span className="font-normal text-muted-foreground">by {e.by}</span></div>
                 <div className="text-xs text-muted-foreground">{formatDate(e.at)}</div>
                 {e.reason ? <div className="mt-1">{e.reason}</div> : null}
-                {e.before && e.after && JSON.stringify(e.before.values) !== JSON.stringify(e.after.values) ? (
-                  <div className="mt-1 font-mono text-xs text-muted-foreground">
-                    {formatValue(e.before.values.light)}
-                    {e.before.values.dark !== undefined ? ` / ${formatValue(e.before.values.dark)}` : ""} → {formatValue(e.after.values.light)}
-                    {e.after.values.dark !== undefined ? ` / ${formatValue(e.after.values.dark)}` : ""}
+                {(e.before || e.after) && JSON.stringify(e.before?.values) !== JSON.stringify(e.after?.values) ? (
+                  <div className="mt-1.5 rounded-md border bg-muted/20 p-2">
+                    <ValueChange before={e.before} after={e.after} layer={token.layer} index={index} />
                   </div>
                 ) : null}
                 {e.before && e.after && e.before.status !== e.after.status ? (

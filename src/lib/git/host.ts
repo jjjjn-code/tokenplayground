@@ -197,8 +197,9 @@ export class GitHubHost implements GitHost {
   }
 
   async commit(repo: string, branch: string, parent: string, files: FileChange[], message: string) {
-    const current = await this.head(repo, branch);
-    if (current !== parent) throw new ConflictError();
+    // No separate "is the branch still at parent?" read first: GitHub can
+    // return a slightly old answer just after a write. The ref update below
+    // refuses anything that is not a fast-forward, which is the real guard.
     const base = await this.json<{ tree: { sha: string } }>("GET", `/repos/${repo}/git/commits/${parent}`);
     const tree = await this.json<{ sha: string }>("POST", `/repos/${repo}/git/trees`, {
       base_tree: base.tree.sha,

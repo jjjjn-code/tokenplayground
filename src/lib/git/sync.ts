@@ -53,8 +53,13 @@ export interface DataState {
 
 const toJson = (v: unknown) => JSON.stringify(v, null, 2) + "\n";
 
-export async function loadData(host: GitHost, cfg: SyncConfig): Promise<DataState> {
-  const head = await host.head(cfg.dataRepo, cfg.dataBranch);
+/**
+ * Load the saved tokens. Pass `atHead` (a commit the caller just saved or
+ * loaded) to read exactly that version: GitHub can briefly report an older
+ * branch head straight after a write.
+ */
+export async function loadData(host: GitHost, cfg: SyncConfig, atHead?: string): Promise<DataState> {
+  const head = atHead || (await host.head(cfg.dataRepo, cfg.dataBranch));
   if (!head) throw new HostError(`${cfg.dataRepo} is empty or has no ${cfg.dataBranch} branch. Run the set-up step in docs/SETUP.md first.`, 404);
   const [tokens, history, lastPush] = await Promise.all([
     host.readFile(cfg.dataRepo, head, DATA_FILES.tokens),
@@ -102,6 +107,8 @@ export interface PlannedFile {
 
 export interface PushPlan {
   dataHead: string;
+  /** The saved tokens this plan pushes. */
+  set: TokenSet;
   codeHead: string;
   changes: Change[];
   files: PlannedFile[];
@@ -111,8 +118,8 @@ export interface PushPlan {
 const emptyBlock = `${BLOCK_START}\n${BLOCK_END}`;
 
 /** Work out what a push would change, without writing anything. */
-export async function planPush(host: GitHost, cfg: SyncConfig): Promise<PushPlan> {
-  const data = await loadData(host, cfg);
+export async function planPush(host: GitHost, cfg: SyncConfig, atHead?: string): Promise<PushPlan> {
+  const data = await loadData(host, cfg, atHead);
   const codeHead = await host.head(cfg.codeRepo, cfg.codeBranch);
   if (!codeHead) throw new HostError(`${cfg.codeRepo} is empty or has no ${cfg.codeBranch} branch.`, 404);
   const baseline = data.lastPush ? parseDtcg(data.lastPush.tokens) : { tokens: [] };
@@ -128,10 +135,14 @@ export async function planPush(host: GitHost, cfg: SyncConfig): Promise<PushPlan
     }
     files.push({ path, before, after: replaceManagedBlock(before ?? "", block) });
   }
-  return { dataHead: data.head, codeHead, changes, files, lastPush: data.lastPush };
+  return { dataHead: data.head, set: data.set, codeHead, changes, files, lastPush: data.lastPush };
 }
 
 export interface PushResult {
+  /** The data repo version after the push was recorded. */
+  dataHead: string;
+  history: HistoryEntry[];
+  lastPush: LastPush;
   prUrl: string;
   prNumber: number;
   branch: string;
@@ -145,12 +156,12 @@ export interface PushResult {
 export async function pushToCode(
   host: GitHost,
   cfg: SyncConfig,
-  input: { title: string; summary: string; author: string; now?: Date },
+  input: { title: string; summary: string; author: string; now?: Date; dataHead?: string },
 ): Promise<PushResult> {
   const now = input.now ?? new Date();
   const title = input.title.trim();
   if (!title) throw new HostError("Give the push a title.", 422);
-  const plan = await planPush(host, cfg);
+  const plan = await planPush(host, cfg, input.dataHead);
   if (!plan.changes.length) throw new HostError("Nothing to push: the saved tokens match the last push.", 422);
 
   // A fresh branch, numbered if the name is taken.
@@ -174,11 +185,14 @@ export async function pushToCode(
   const body = changelogMarkdown({ title, summary: input.summary, author: input.author, changes: plan.changes });
   const pr = await host.openPullRequest(cfg.codeRepo, { head: branch, base: cfg.codeBranch, title: `Token update: ${title}`, body });
 
-  // Record the push. Retry once if someone saved in between.
+  // Record the push. The baseline is exactly what was pushed, so anything
+  // someone else saved meanwhile still shows as unpushed next time.
+  // Retry once if someone saved in between.
+  const at = now.toISOString();
+  const lastPush: LastPush = { at, by: input.author, prUrl: pr.url, branch, title, tokens: serialiseDtcg(plan.set) };
+  let recorded: { head: string; history: HistoryEntry[] } | null = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const data = await loadData(host, cfg);
-    const at = now.toISOString();
-    const lastPush: LastPush = { at, by: input.author, prUrl: pr.url, branch, title, tokens: serialiseDtcg(data.set) };
+    const data = attempt === 0 ? await loadData(host, cfg, plan.dataHead) : await loadData(host, cfg);
     const entries: HistoryEntry[] = plan.changes.map((c, i) => ({
       id: `p-${now.getTime().toString(36)}-${i}`,
       token: c.name,
@@ -190,23 +204,25 @@ export async function pushToCode(
       ...(c.before ? { before: { values: c.before.values, status: c.before.status } } : {}),
       ...(c.after ? { after: { values: c.after.values, status: c.after.status } } : {}),
     }));
+    const history = [...data.history, ...entries];
     try {
-      await host.commit(
+      const head = await host.commit(
         cfg.dataRepo,
         cfg.dataBranch,
         data.head,
         [
           { path: DATA_FILES.lastPush, content: toJson(lastPush) },
-          { path: DATA_FILES.history, content: toJson([...data.history, ...entries]) },
+          { path: DATA_FILES.history, content: toJson(history) },
         ],
         `Record push: ${title} (${pr.url})`,
       );
+      recorded = { head, history };
       break;
     } catch (e) {
       if (!(e instanceof ConflictError) || attempt === 1) throw e;
     }
   }
-  return { prUrl: pr.url, prNumber: pr.number, branch, changes: plan.changes };
+  return { dataHead: recorded!.head, history: recorded!.history, lastPush, prUrl: pr.url, prNumber: pr.number, branch, changes: plan.changes };
 }
 
 /** Starting files for the 2 repos, generated from a token set. */

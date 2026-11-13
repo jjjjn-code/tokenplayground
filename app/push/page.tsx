@@ -30,7 +30,8 @@ import {
   type Token,
 } from "@/src/lib/tokens";
 import { useStore } from "../_lib/store";
-import { relativeDate, Swatch } from "../_components/ui";
+import { relativeDate } from "../_components/ui";
+import { ValueChange } from "../_components/ValueChange";
 
 interface PlannedFile {
   path: string;
@@ -52,7 +53,7 @@ const TYPE_STYLE: Record<Change["type"], string> = {
 
 /** Push to code (F5): change set, title and summary, preview, pull request. */
 export default function PushPage() {
-  const { mode, set, repos, lastPush, unsavedNames, savedHead, reload, author } = useStore();
+  const { mode, set, repos, lastPush, unsavedNames, savedHead, applyPush, author } = useStore();
   const remote = mode === "demo" || mode === "github";
   const [plan, setPlan] = useState<Plan | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
@@ -80,7 +81,7 @@ export default function PushPage() {
     setLoading(true);
     setPlanError(null);
     try {
-      const res = await fetch("/api/push/preview", { cache: "no-store" });
+      const res = await fetch(`/api/push/preview${savedHead ? `?head=${savedHead}` : ""}`, { cache: "no-store" });
       const body = await res.json();
       if (!res.ok) throw new Error(body.message);
       setPlan(body as Plan);
@@ -89,7 +90,7 @@ export default function PushPage() {
     } finally {
       setLoading(false);
     }
-  }, [remote]);
+  }, [remote, savedHead]);
 
   useEffect(() => {
     void fetchPlan();
@@ -105,39 +106,19 @@ export default function PushPage() {
     if (!canPush) return;
     setPushing(true);
     try {
-      const res = await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, summary }) });
+      const res = await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, summary, dataHead: savedHead }) });
       const body = await res.json();
       if (!res.ok) throw new Error(body.message);
       setDone({ prUrl: body.prUrl, prNumber: body.prNumber, branch: body.branch, count: body.changes.length });
       toast.success(`Pull request #${body.prNumber} opened`);
       setTitle("");
       setSummary("");
-      await reload();
+      applyPush(body);
     } catch (e) {
       toast.error("Push failed", { description: e instanceof Error ? e.message : undefined });
     } finally {
       setPushing(false);
     }
-  };
-
-  const valueOf = (t: Token | undefined) => {
-    if (!t) return <span className="text-muted-foreground">none</span>;
-    const modes = t.layer === "primitive" ? (["light"] as const) : (["light", "dark"] as const);
-    return (
-      <div className="grid min-w-0 gap-0.5">
-        {modes.map((m) => {
-          const v = m === "dark" ? t.values.dark ?? t.values.light : t.values.light;
-          const r = resolveToken(index, t.name, m);
-          return (
-            <div key={m} className="flex min-w-0 items-center gap-1.5 font-mono text-[12px]" title={m}>
-              <Swatch value={typeof v === "string" ? v : r.value} size="sm" />
-              <span className="truncate">{formatValue(v).replace(/[{}]/g, "")}</span>
-            </div>
-          );
-        })}
-        {t.status === "deprecated" ? <span className="text-[11px] text-muted-foreground">deprecated</span> : null}
-      </div>
-    );
   };
 
   return (
@@ -202,16 +183,14 @@ export default function PushPage() {
                 <table className="w-full table-fixed text-[13px]">
                   <colgroup>
                     <col style={{ width: 96 }} />
+                    <col style={{ width: "38%" }} />
                     <col />
-                    <col style={{ width: "24%" }} />
-                    <col style={{ width: "24%" }} />
                   </colgroup>
                   <thead>
                     <tr className="border-b text-left text-xs text-muted-foreground">
                       <th className="px-4 py-2 font-medium">Change</th>
                       <th className="px-2 py-2 font-medium">Token</th>
-                      <th className="px-2 py-2 font-medium">Before <span className="font-normal">(light, dark)</span></th>
-                      <th className="px-2 py-2 font-medium">After <span className="font-normal">(light, dark)</span></th>
+                      <th className="px-2 py-2 font-medium">Before and after</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -224,8 +203,10 @@ export default function PushPage() {
                           <div className="truncate font-mono text-[12.5px]">{c.name}</div>
                           <div className="truncate font-mono text-[11px] text-muted-foreground">{c.file}</div>
                         </td>
-                        <td className="px-2 py-2">{valueOf(c.before)}</td>
-                        <td className="px-2 py-2">{valueOf(c.after)}</td>
+                        <td className="px-2 py-2">
+                          <ValueChange before={c.before} after={c.after} layer={(c.after ?? c.before)!.layer} index={index} />
+                          {(c.after ?? c.before)!.status === "deprecated" ? <div className="mt-1 text-[11px] text-muted-foreground">deprecated</div> : null}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

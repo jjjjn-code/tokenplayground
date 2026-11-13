@@ -68,7 +68,7 @@ describe("push", () => {
     expect(res.branch).toBe("tokens/2026-11-12-button-selected-state");
     const code = host.repos.get(cfg.codeRepo)!;
     expect(code.pulls[0]).toMatchObject({ head: res.branch, base: "main", title: "Token update: Button selected state" });
-    expect(code.pulls[0].body).toContain("| Changed | red-700 | #A80000 | #B00000 | styles/colors.css |");
+    expect(code.pulls[0].body).toContain("| Changed | red-700 | #A80000 | **#B00000** | styles/colors.css |");
     expect(await host.readFile(cfg.codeRepo, res.branch, "styles/colors.css")).toContain("--color-red-700: #B00000;");
     expect(await host.readFile(cfg.codeRepo, "main", "styles/colors.css")).toContain("--color-red-700: #A80000;");
 
@@ -86,5 +86,25 @@ describe("push", () => {
     await host.createBranch(cfg.codeRepo, "tokens/2026-11-12-fix", (await host.head(cfg.codeRepo, "main"))!);
     const res = await pushToCode(host, cfg, { title: "Fix", summary: "", author: "jane", now });
     expect(res.branch).toBe("tokens/2026-11-12-fix-2");
+  });
+});
+
+describe("exact versions", () => {
+  it("reads the version it is given, not only the latest", async () => {
+    const first = await loadData(host, cfg);
+    first.set.tokens.find((t) => t.name === "red-700")!.values.light = "#B00000";
+    await saveData(host, cfg, { expectedHead: first.head, set: first.set, history: first.history, message: "x" });
+    const old = await loadData(host, cfg, first.head);
+    expect(old.set.tokens.find((t) => t.name === "red-700")!.values.light).toBe("#A80000");
+  });
+
+  it("returns the new version, history and last push after a push", async () => {
+    const d = await loadData(host, cfg);
+    d.set.tokens.find((t) => t.name === "red-700")!.values.light = "#B00000";
+    const head = await saveData(host, cfg, { expectedHead: d.head, set: d.set, history: d.history, message: "x" });
+    const res = await pushToCode(host, cfg, { title: "Red", summary: "", author: "jane", dataHead: head });
+    expect(res.dataHead).toBe(await host.head(cfg.dataRepo, "main"));
+    expect(res.history.at(-1)).toMatchObject({ action: "pushed", token: "red-700", prUrl: res.prUrl });
+    expect(res.lastPush.prUrl).toBe(res.prUrl);
   });
 });

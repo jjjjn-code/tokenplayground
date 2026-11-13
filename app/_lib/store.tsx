@@ -70,6 +70,8 @@ interface Store {
   saveToRepo: (message: string) => Promise<SaveResult>;
   saving: boolean;
   reload: () => Promise<void>;
+  /** After a push: take the new saved version straight from the push result. */
+  applyPush: (r: { dataHead: string; history: HistoryEntry[]; lastPush: LastPush }) => void;
   signOut: () => Promise<void>;
 }
 
@@ -326,6 +328,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, [repos, applyRemote, fetchData]);
 
+  const applyPush = useCallback((r: { dataHead: string; history: HistoryEntry[]; lastPush: LastPush }) => {
+    setRemote((rem) => (rem ? { ...rem, head: r.dataHead, savedHistory: r.history } : rem));
+    setHistory([...r.history, ...pending]);
+    setLastPush({ at: r.lastPush.at, by: r.lastPush.by, prUrl: r.lastPush.prUrl, branch: r.lastPush.branch, title: r.lastPush.title });
+  }, [pending]);
+
   const signOut = useCallback(async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     window.location.href = "/";
@@ -367,9 +375,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       saveToRepo,
       saving,
       reload,
+      applyPush,
       signOut,
     }),
-    [mode, viewer, repos, loadError, ready, remote, set, history, lastPush, author, setAuthor, localChanges, unsavedNames, saveTokens, deprecate, reactivate, reset, saveToRepo, saving, reload, signOut],
+    [mode, viewer, repos, loadError, ready, remote, set, history, lastPush, author, setAuthor, localChanges, unsavedNames, saveTokens, deprecate, reactivate, reset, saveToRepo, saving, reload, applyPush, signOut],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

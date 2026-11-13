@@ -44,13 +44,23 @@ export function filesTouched(changes: Change[]): string[] {
   return files.sort((a, b) => (a.startsWith("components/") ? 1 : 0) - (b.startsWith("components/") ? 1 : 0) || a.localeCompare(b));
 }
 
-/** A value for the changelog: references as bare names, light / dark when they differ. */
-function cellValue(t: Token | undefined): string {
+/**
+ * A value for the changelog: references as bare names, each mode labelled.
+ * Pass `other` (the version on the other side of the change) to bold the
+ * modes that changed.
+ */
+function cellValue(t: Token | undefined, other?: Token): string {
   if (!t) return "none";
   const v = (x: TokenValue | undefined) => formatValue(x).replace(/[{}]/g, "");
-  const light = v(t.values.light);
-  const dark = t.values.dark !== undefined ? v(t.values.dark) : undefined;
-  const value = dark !== undefined && dark !== light ? `${light} / ${dark}` : light;
+  const mark = (now: TokenValue | undefined, then: TokenValue | undefined) =>
+    other && JSON.stringify(now) !== JSON.stringify(then) ? `**${v(now)}**` : v(now);
+  let value: string;
+  if (t.layer === "primitive" || t.values.dark === undefined) {
+    value = mark(t.values.light, other?.values.light);
+  } else {
+    const otherDark = other ? other.values.dark ?? other.values.light : undefined;
+    value = `Light: ${mark(t.values.light, other?.values.light)}<br>Dark: ${mark(t.values.dark, otherDark)}`;
+  }
   return t.status === "deprecated" ? `${value} (deprecated)` : value;
 }
 
@@ -68,7 +78,7 @@ export interface ChangelogInput {
 export function changelogMarkdown({ title, summary, author, changes }: ChangelogInput): string {
   const rows = changes.map(
     (c) =>
-      `| ${LABEL[c.type]} | ${escapeCell(c.name)} | ${escapeCell(cellValue(c.before))} | ${escapeCell(cellValue(c.after))} | ${c.file} |`,
+      `| ${LABEL[c.type]} | ${escapeCell(c.name)} | ${escapeCell(cellValue(c.before))} | ${escapeCell(cellValue(c.after, c.before))} | ${c.file} |`,
   );
   const counts = (["added", "changed", "removed"] as const)
     .map((t) => [t, changes.filter((c) => c.type === t).length] as const)
@@ -84,7 +94,7 @@ export function changelogMarkdown({ title, summary, author, changes }: Changelog
     "| --- | --- | --- | --- | --- |",
     ...rows,
     "",
-    `${changes.length} ${changes.length === 1 ? "token" : "tokens"}: ${counts || "no changes"}. Where a token differs between modes, values are shown as light / dark.`,
+    `${changes.length} ${changes.length === 1 ? "token" : "tokens"}: ${counts || "no changes"}. Changed values are in bold.`,
     "",
     `Pushed by ${author} from the token tool. Only the managed blocks between \`tokens:start\` and \`tokens:end\` were changed.`,
   ].join("\n");

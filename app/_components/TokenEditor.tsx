@@ -60,16 +60,31 @@ function emptyValue(layer: Layer, kind: Kind): TokenValue {
  * Create a primitive or semantic token, or edit any token (F2, F3).
  * Every change is checked by the rules engine; errors block saving.
  */
-export function TokenEditor({ token, onDone }: { token?: Token; onDone: (saved?: Token) => void }) {
+export function TokenEditor({
+  token,
+  onDone,
+  initialLayer,
+  initialKind,
+}: {
+  token?: Token;
+  onDone: (saved?: Token) => void;
+  /** For a new token: start in this layer and type, for example from "Create token" in a group. */
+  initialLayer?: Layer;
+  initialKind?: Kind;
+}) {
   const { set, saveTokens } = useStore();
   const editing = !!token;
   const index = useMemo(() => indexTokens(set), [set]);
 
-  const [layer, setLayer] = useState<Layer>(token?.layer ?? "semantic");
-  const [kind, setKind] = useState<Kind>(token?.kind ?? "color");
+  const startLayer: Layer = token?.layer ?? (initialLayer === "primitive" ? "primitive" : "semantic");
+  const startKind: Kind = token?.kind ?? initialKind ?? "color";
+  const [layer, setLayer] = useState<Layer>(startLayer);
+  const [kind, setKind] = useState<Kind>(startKind);
   const [name, setName] = useState(token?.name ?? "");
-  const [light, setLight] = useState<TokenValue>(token?.values.light ?? emptyValue("semantic", "color"));
-  const [dark, setDark] = useState<TokenValue | undefined>(token ? token.values.dark : "");
+  const [light, setLight] = useState<TokenValue>(token?.values.light ?? emptyValue(startLayer, startKind));
+  const [dark, setDark] = useState<TokenValue | undefined>(
+    token ? token.values.dark : startLayer === "primitive" || startKind !== "color" ? undefined : "",
+  );
   const [status, setStatus] = useState<Token["status"]>(token?.status ?? "draft");
   const [description, setDescription] = useState(token?.description ?? "");
   const [reason, setReason] = useState("");

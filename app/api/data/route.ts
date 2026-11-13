@@ -7,12 +7,12 @@ import { parseDtcg, serialiseDtcg, type HistoryEntry } from "@/src/lib/tokens";
 
 export const dynamic = "force-dynamic";
 
-/** Load the saved token set from the token data repo. */
-export async function GET() {
+/** Load the saved token set from the token data repo. `?head=` reads an exact version. */
+export async function GET(req: NextRequest) {
   const user = await currentUser();
   if (!user) return notSignedIn();
   try {
-    const d = await loadData(user.host, syncConfig());
+    const d = await loadData(user.host, syncConfig(), req.nextUrl.searchParams.get("head") || undefined);
     return NextResponse.json({ head: d.head, tokens: serialiseDtcg(d.set), history: d.history, lastPush: d.lastPush });
   } catch (e) {
     return errorResponse(e);

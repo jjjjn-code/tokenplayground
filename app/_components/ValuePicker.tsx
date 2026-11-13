@@ -30,6 +30,7 @@ export function TokenCommandList({
   allowRef = true,
   onPick,
   placeholder,
+  initialSearch = "",
 }: {
   candidates: Token[];
   index: TokenIndex;
@@ -39,8 +40,13 @@ export function TokenCommandList({
   allowRef?: boolean;
   onPick: (v: SimpleValue) => void;
   placeholder?: string;
+  /** Text already in the box when it opens: a typed first letter, or the current value to overwrite. */
+  initialSearch?: string;
 }) {
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch);
+  // A prefilled current value is selected, so typing replaces it; a typed
+  // first letter is not, so typing carries on after it.
+  const selectAll = initialSearch.length > 1;
   const layers: Layer[] = ["primitive", "semantic"];
   const raw = search.trim();
   // Offer the typed text as a raw value only when it looks like one, or when
@@ -51,6 +57,11 @@ export function TokenCommandList({
       <CommandInput
         value={search}
         onValueChange={setSearch}
+        autoFocus
+        onFocus={(e) => {
+          if (selectAll) e.currentTarget.select();
+          else e.currentTarget.setSelectionRange(e.currentTarget.value.length, e.currentTarget.value.length);
+        }}
         placeholder={placeholder ?? (allowRaw && allowRef ? "Search tokens or type a value" : allowRaw ? "Type a value, for example #FF5000" : "Search tokens")}
       />
       <CommandList className="max-h-72">
@@ -114,12 +125,19 @@ export function ValuePicker({
   invalid?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [seed, setSeed] = useState("");
   const refName = isReference(value) ? value.ref : "";
   const resolved = refName ? resolveToken(index, refName, mode) : null;
   const rawValue = !isReference(value) && value !== "" ? String(value) : "";
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) setSeed("");
+      }}
+    >
       <PopoverTrigger asChild>
         <button
           id={id}
@@ -127,6 +145,14 @@ export function ValuePicker({
           role="combobox"
           aria-expanded={open}
           aria-label={label}
+          onKeyDown={(e) => {
+            // Start typing on the box to search straight away.
+            if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey && e.key !== " ") {
+              e.preventDefault();
+              setSeed(e.key);
+              setOpen(true);
+            }
+          }}
           className={cn(
             "flex h-9 w-full items-center gap-2 rounded-md border border-input bg-transparent px-2.5 text-left text-sm shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30",
             invalid && "border-destructive/60",
@@ -156,6 +182,7 @@ export function ValuePicker({
           selected={refName}
           allowRaw={allowRaw}
           allowRef={allowRef}
+          initialSearch={seed}
           onPick={(v) => {
             onChange(v);
             setOpen(false);

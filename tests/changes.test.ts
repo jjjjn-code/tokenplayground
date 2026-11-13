@@ -36,6 +36,14 @@ describe("diffSets", () => {
 });
 
 describe("changelog", () => {
+  it("labels light and dark and bolds only what changed", () => {
+    const base = dummy();
+    const after = structuredClone(base);
+    after.tokens.find((t) => t.name === "surface-default")!.values.dark = { ref: "neutral-800" };
+    const md = changelogMarkdown({ title: "x", summary: "", author: "jane", changes: diffSets(base, after) });
+    expect(md).toContain("| Changed | surface-default | Light: neutral-100<br>Dark: neutral-700 | Light: neutral-100<br>Dark: **neutral-800** | styles/colors.css |");
+  });
+
   it("follows the PRD format", () => {
     const base = dummy();
     const after = structuredClone(base);
@@ -45,9 +53,9 @@ describe("changelog", () => {
     expect(md).toContain("## Token update: button hover states");
     expect(md).toContain("Summary (written by the author): new selected state.");
     expect(md).toContain("| Change | Token | Before | After | File |");
-    expect(md).toContain("| Changed | red-700 | #A80000 | #B00000 | styles/colors.css |");
-    expect(md).toContain("| Added | button-surface-primary-selected | none | orange-700-aa / orange-400 | components/button/button.css |");
-    expect(md).toContain("2 tokens: 1 added, 1 changed.");
+    expect(md).toContain("| Changed | red-700 | #A80000 | **#B00000** | styles/colors.css |");
+    expect(md).toContain("| Added | button-surface-primary-selected | none | Light: orange-700-aa<br>Dark: orange-400 | components/button/button.css |");
+    expect(md).toContain("2 tokens: 1 added, 1 changed. Changed values are in bold.");
   });
 });
 
