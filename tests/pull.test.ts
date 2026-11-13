@@ -36,6 +36,29 @@ describe("findDiscrepancies", () => {
     expect(byId["button-surface-primary-hover"]).toMatchObject({ kind: "flattened", differences: [{ mode: "light", tool: "var(--color-orange-700-aa)", code: "#D33704" }] });
     expect(found).toHaveLength(9);
   });
+
+  it("reviews only active tokens", () => {
+    const set = dummy();
+    for (const t of set.tokens) {
+      if (t.name === "red-700") t.status = "draft";
+      if (t.name === "orange-700-aa") t.status = "deprecated";
+    }
+    const ids = findDiscrepancies(set, pick(codeFiles(true))).map((d) => d.id);
+    expect(ids).not.toContain("red-700");
+    expect(ids).not.toContain("orange-700-aa");
+    // Their code names are known, so they do not come back as new code tokens.
+    expect(ids.filter((i) => i.includes("red-700") || i.includes("orange-700-aa"))).toEqual([]);
+    expect(ids).toContain("line-default");
+  });
+
+  it("a draft token that is not in the code yet is not listed as missing", () => {
+    const set = dummy();
+    set.tokens.push({ name: "spacing-6", layer: "primitive", kind: "spacing", status: "draft", values: { light: "20px" } } as (typeof set.tokens)[number]);
+    const files = pick(codeFiles(false));
+    expect(findDiscrepancies(set, files)).toEqual([]);
+    set.tokens[set.tokens.length - 1].status = "active";
+    expect(findDiscrepancies(set, files).map((d) => `${d.kind}:${d.id}`)).toEqual(["missing:spacing-6"]);
+  });
 });
 
 describe("applyDecisions", () => {

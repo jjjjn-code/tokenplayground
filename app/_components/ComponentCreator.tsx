@@ -130,7 +130,7 @@ export function ComponentCreator() {
       light: mapping[t.name]?.light ? { ref: mapping[t.name]!.light! } : "",
       dark: mapping[t.name]?.dark ? { ref: mapping[t.name]!.dark! } : "",
     },
-    status: "draft",
+    status: "active",
   }));
   const colourTargets = set.tokens.filter((t) => t.kind === "color" && t.layer !== "component" && t.status !== "deprecated");
 
@@ -200,7 +200,7 @@ export function ComponentCreator() {
       return;
     }
     saveTokens(candidates, [], reason);
-    toast.success(`${fresh.length} ${component} ${fresh.length === 1 ? "token is" : "tokens are"} added.`, { description: "They are drafts. Save to keep them." });
+    toast.success(`${fresh.length} ${component} ${fresh.length === 1 ? "token is" : "tokens are"} added.`, { description: "Save to keep them." });
     router.push(`/?set=component/${component}`);
   };
 

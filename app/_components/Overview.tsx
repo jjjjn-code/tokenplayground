@@ -31,6 +31,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -132,7 +134,7 @@ function ValueDisplay({ token, mode, index }: { token: Token; mode: Mode; index:
 
 /** Token overview (F1) as a spreadsheet, with inline editing (F3) and the row menu (F4). */
 export function Overview() {
-  const { set, history, saveTokens, deprecate, reactivate } = useStore();
+  const { set, history, saveTokens, deprecate, reactivate, setStatus: setTokenStatus } = useStore();
   const params = useSearchParams();
   const router = useRouter();
   const filter = parseSet(params.get("set"));
@@ -503,7 +505,34 @@ export function Overview() {
                           {valueCell(t, "light", r, 1)}
                           {valueCell(t, "dark", r, 2)}
                           <td>
-                            <div className="cell-btn" tabIndex={-1} data-row={r} data-col={3}><StatusBadge status={t.status} /></div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button type="button" className="cell-btn group/st" data-row={r} data-col={3} aria-label={`Status of ${t.name}: ${t.status}. Change status`}>
+                                  <StatusBadge status={t.status} />
+                                  <ChevronDown className="ml-auto size-3.5 text-muted-foreground opacity-0 transition-opacity group-hover/st:opacity-100 group-focus-visible/st:opacity-100 group-data-[state=open]/st:opacity-100" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="start" className="w-44">
+                                <DropdownMenuRadioGroup
+                                  value={t.status}
+                                  onValueChange={(v) => {
+                                    if (v === t.status) return;
+                                    if (v === "deprecated" || t.status === "deprecated") {
+                                      setReason("");
+                                      setStatusChange({ names: [t.name], to: v === "deprecated" ? "deprecated" : "active" });
+                                      return;
+                                    }
+                                    setTokenStatus(t.name, v as "draft" | "active");
+                                    toast.success(v === "draft" ? `${t.name} is a draft.` : `${t.name} is active.`, { description: "Save to keep the change." });
+                                  }}
+                                >
+                                  <DropdownMenuRadioItem value="active">Active</DropdownMenuRadioItem>
+                                  <DropdownMenuRadioItem value="draft" disabled={t.status === "deprecated"}>Draft</DropdownMenuRadioItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuRadioItem value="deprecated">Deprecated</DropdownMenuRadioItem>
+                                </DropdownMenuRadioGroup>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </td>
                           <td>
                             <div className="cell-btn text-[12px] whitespace-nowrap text-muted-foreground" title={last ? `${last.action} by ${last.by}` : undefined}>

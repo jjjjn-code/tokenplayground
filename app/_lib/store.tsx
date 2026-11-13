@@ -69,6 +69,8 @@ interface Store {
   /** Rename a token and repoint every reference to it. */
   rename: (from: string, to: string, reason?: string) => void;
   reactivate: (name: string, reason: string) => void;
+  /** Change a token between draft and active, without a reason. */
+  setStatus: (name: string, status: "draft" | "active") => void;
   reset: () => void;
   saveToRepo: (message: string) => Promise<SaveResult>;
   saving: boolean;
@@ -301,6 +303,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [set, log],
   );
   const reactivate = useCallback((name: string, reason: string) => changeStatus(name, "active", "edited", reason), [changeStatus]);
+  const setStatus = useCallback(
+    (name: string, status: "draft" | "active") => changeStatus(name, status, "edited", status === "draft" ? "Put back to draft" : "Made active"),
+    [changeStatus],
+  );
 
   /** Local mode: back to the dummy set. GitHub mode: throw away unsaved edits. */
   const reset = useCallback(() => {
@@ -413,6 +419,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       deprecate,
       rename,
       reactivate,
+      setStatus,
       reset,
       saveToRepo,
       saving,
@@ -421,7 +428,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       applyPush,
       signOut,
     }),
-    [mode, viewer, repos, loadError, ready, remote, set, history, lastPush, author, setAuthor, localChanges, unsavedNames, saveTokens, deprecate, rename, reactivate, reset, saveToRepo, saving, reload, restoreVersion, applyPush, signOut],
+    [mode, viewer, repos, loadError, ready, remote, set, history, lastPush, author, setAuthor, localChanges, unsavedNames, saveTokens, deprecate, rename, reactivate, setStatus, reset, saveToRepo, saving, reload, restoreVersion, applyPush, signOut],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

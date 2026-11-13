@@ -74,7 +74,7 @@ export function NewTokenRow({
     kind,
     ...(component ? { component } : {}),
     values: { light, ...(hasDark ? { dark: darkTouched ? dark : light } : {}) },
-    status: "draft",
+    status: "active",
   };
 
   const { ok, issues } = useMemo(() => checkBeforeSave(set, [draft], []), [set, JSON.stringify(draft)]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -192,7 +192,7 @@ export function NewTokenRow({
         )}
       </td>
       <td className="align-top">
-        <div className="cell-btn h-auto"><StatusBadge status="draft" /></div>
+        <div className="cell-btn h-auto"><StatusBadge status="active" /></div>
       </td>
       <td colSpan={2} className="align-top">
         <div className="cell-btn h-auto text-[12px] text-muted-foreground">Esc to cancel</div>

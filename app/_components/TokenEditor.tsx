@@ -86,7 +86,7 @@ export function TokenEditor({
   const [dark, setDark] = useState<TokenValue | undefined>(
     token ? token.values.dark : startLayer === "primitive" || startKind !== "color" ? undefined : "",
   );
-  const [status, setStatus] = useState<Token["status"]>(token?.status ?? "draft");
+  const [status, setStatus] = useState<Token["status"]>(token?.status ?? "active");
   const [description, setDescription] = useState(token?.description ?? "");
   const [reason, setReason] = useState("");
   // Messages wait until the person finishes: after leaving the name field

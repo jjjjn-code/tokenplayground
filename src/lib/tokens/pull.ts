@@ -175,6 +175,8 @@ export function findDiscrepancies(set: TokenSet, files: Record<string, string | 
 
     for (const [name, diffs] of perToken) {
       const t = byName.get(name)!;
+      // Only active tokens are reviewed. Drafts and deprecated tokens are left out.
+      if (t.status !== "active") continue;
       const allMissing = diffs.every((d) => d.code === null);
       const expectedName = cssVariableName(t);
       // Renamed in code: the tool's name is missing, and a code name with the same bare name is extra.
@@ -318,7 +320,7 @@ export function applyDecisions(set: TokenSet, discrepancies: Discrepancy[], deci
         kind: "color",
         ...(component ? { component } : {}),
         values: { light, ...(layer !== "primitive" ? { dark: dark ?? light } : {}) },
-        status: "draft",
+        status: "active",
       };
       if (component && !parseComponentTokenName(name)) {
         problems.push({ id: d.id, message: `Type a name in the format ${component}-[category]-[role]-[state].` });

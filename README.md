@@ -92,6 +92,8 @@ These are working assumptions until the open questions in the PRD are answered:
 - Component tokens have no `--color-` prefix in code.
 - Semantic tokens may only use the categories `surface`, `content` and `line`. `icon` is for component tokens only.
 - Figma paths are only defined for component tokens.
+- New tokens start as active. Change the status in the Status column of the sheet. Draft and active change straight away; deprecating needs a reason.
+- Review code changes compares only active tokens. Drafts and deprecated tokens are left out.
 - Figma variable names: primitives and non-colour semantic tokens are grouped by type (`Colour/orange-700`), semantic colours by category (`Surface/surface-default`), component tokens by their Figma path.
 - Typography, border and shadow tokens are not synced to Figma, because Figma variables hold 1 value only. They could become Figma styles later.
 - The plugin network address is `https://tokenplayground-drab.vercel.app`, set in `figma-plugin/manifest.json`. Change it there and in `figma-plugin/src/ui.ts` if the address changes.
