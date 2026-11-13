@@ -89,12 +89,23 @@ Then go to **Deployments**, open the menu on the latest deployment and choose **
 3. Change a value, press **Save** at the bottom of the sidebar, then open **Push to code**, give it a title and press **Open pull request**.
 4. The pull request appears in `ual-tokens-sandbox` with the changelog.
 
+## 7. Set up the Figma plugin
+
+1. In Token Library, open **Sync to Figma** and push **Download plugin**. Unzip the file and keep the folder.
+2. In the Figma desktop app, open a design file. Select **Plugins**, then **Development**, then **Import plugin from manifest**, and select `manifest.json` in the folder.
+3. In Token Library, push **Make a sync key** and copy the key.
+4. In Figma, select **Plugins**, then **Development**, then **Token Library**. Paste the key and push **Check for changes**, then **Sync**.
+
+The plugin reads only saved tokens. A sync key holds your sign-in in a sealed form; treat it like a password. When the plugin says the key is not valid, make a new one.
+
 ## If something goes wrong
 
 - **"GitHub refused access (403 or 404)"**: the app is not installed on that repo, or is missing a permission from step 3. Check **Install App** and **Permissions & events**.
 - **Sign-in returns to the tool with no change, or GitHub shows a redirect error**: the Redirect URI in step 3 does not match the address you are using exactly.
 - **"... is empty"**: the repo has no files yet; ask Claude to fill it (step 1).
 - **Someone else changed this**: another person saved first. Your edits are reapplied on top of theirs; check the tokens it lists and save again.
+
+- **The plugin says it cannot reach Token Library**: the Vercel address changed. Update `allowedDomains` in `figma-plugin/manifest.json` and the address in `figma-plugin/src/ui.ts`, run `npm run plugin:build`, and import the plugin again.
 
 ## Moving to UAL's organisation later
 

@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<style>
+  body { margin: 0; font: 12px/1.5 Inter, system-ui, sans-serif; color: var(--figma-color-text, #1e1e1e); background: var(--figma-color-bg, #fff); }
+  main { padding: 16px; display: grid; gap: 12px; }
+  h1 { font-size: 13px; margin: 0; }
+  .sub { color: var(--figma-color-text-secondary, #6b6b6b); display: block; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; display: block; overflow-wrap: anywhere; }
+  label { display: grid; gap: 4px; font-weight: 500; }
+  input[type=text], input[type=password] { font: inherit; padding: 6px 8px; border: 1px solid var(--figma-color-border, #e6e6e6); border-radius: 5px; background: var(--figma-color-bg, #fff); color: inherit; }
+  details.settings { border: 1px solid var(--figma-color-border, #e6e6e6); border-radius: 6px; padding: 8px 10px; }
+  details.settings > div { display: grid; gap: 8px; margin-top: 8px; }
+  summary { cursor: pointer; font-weight: 600; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  button { font: inherit; font-weight: 600; border-radius: 6px; padding: 7px 12px; cursor: pointer; border: 1px solid var(--figma-color-border, #e6e6e6); background: var(--figma-color-bg, #fff); color: inherit; }
+  button.primary { background: var(--figma-color-bg-brand, #0d99ff); color: var(--figma-color-text-onbrand, #fff); border-color: transparent; }
+  .status { margin: 0; color: var(--figma-color-text-secondary, #6b6b6b); }
+  .status.error { color: var(--figma-color-text-danger, #dc3412); }
+  .status.ok { color: var(--figma-color-text-success, #14ae5c); }
+  details.group { border-top: 1px solid var(--figma-color-border, #e6e6e6); padding-top: 6px; }
+  ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
+  .hint { color: var(--figma-color-text-secondary, #6b6b6b); margin: 0; }
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <h1>Token Library</h1>
+    <span class="sub">File: <span id="file">this file</span></span>
+  </div>
+  <details class="settings" id="settings">
+    <summary>Settings</summary>
+    <div>
+      <label>Sync key <input type="password" id="key" autocomplete="off" placeholder="Paste the key from Token Library"></label>
+      <p class="hint">In Token Library, open Sync to Figma and push Make a sync key.</p>
+      <label>Token Library address <input type="text" id="url" autocomplete="off"></label>
+      <label>Primitives collection <input type="text" id="n-primitives" autocomplete="off"></label>
+      <label>Semantic collection <input type="text" id="n-semantic" autocomplete="off"></label>
+      <label>Components collection <input type="text" id="n-components" autocomplete="off"></label>
+      <label class="row" style="display:flex;font-weight:400"><input type="checkbox" id="drafts"> Include draft tokens</label>
+      <div class="row"><button id="save" type="button">Save settings</button></div>
+    </div>
+  </details>
+  <div class="row">
+    <button class="primary" id="check" type="button">Check for changes</button>
+    <button class="primary" id="sync" type="button" hidden>Sync</button>
+  </div>
+  <p class="status" id="status" role="status">Push Check for changes to compare Token Library with this file.</p>
+  <div id="result"></div>
+</main>
+<script>"use strict";
+(() => {
+  var __defProp = Object.defineProperty;
+  var __defProps = Object.defineProperties;
+  var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
+  var __getOwnPropSymbols = Object.getOwnPropertySymbols;
+  var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __propIsEnum = Object.prototype.propertyIsEnumerable;
+  var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+  var __spreadValues = (a, b) => {
+    for (var prop in b || (b = {}))
+      if (__hasOwnProp.call(b, prop))
+        __defNormalProp(a, prop, b[prop]);
+    if (__getOwnPropSymbols)
+      for (var prop of __getOwnPropSymbols(b)) {
+        if (__propIsEnum.call(b, prop))
+          __defNormalProp(a, prop, b[prop]);
+      }
+    return a;
+  };
+  var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
+
+  // figma-plugin/src/ui.ts
+  var DEFAULTS = {
+    url: "https://tokenplayground-drab.vercel.app",
+    key: "",
+    includeDrafts: false,
+    names: { primitives: "Primitives", semantic: "Semantic", components: "Components" }
+  };
+  var settings = DEFAULTS;
+  var fileName = "this file";
+  var plan = null;
+  var $ = (id) => document.getElementById(id);
+  var post = (msg) => parent.postMessage({ pluginMessage: msg }, "*");
+  var el = (tag, cls = "", text = "") => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text) n.textContent = text;
+    return n;
+  };
+  function setStatus(text, tone = "") {
+    const s = $("status");
+    s.textContent = text;
+    s.className = `status ${tone}`;
+  }
+  function readForm() {
+    return {
+      url: $("url").value.trim().replace(/\/+$/, "") || DEFAULTS.url,
+      key: $("key").value.trim(),
+      includeDrafts: $("drafts").checked,
+      names: {
+        primitives: $("n-primitives").value.trim() || DEFAULTS.names.primitives,
+        semantic: $("n-semantic").value.trim() || DEFAULTS.names.semantic,
+        components: $("n-components").value.trim() || DEFAULTS.names.components
+      }
+    };
+  }
+  function fillForm() {
+    $("url").value = settings.url;
+    $("key").value = settings.key;
+    $("drafts").checked = settings.includeDrafts;
+    $("n-primitives").value = settings.names.primitives;
+    $("n-semantic").value = settings.names.semantic;
+    $("n-components").value = settings.names.components;
+    $("settings").open = !settings.key;
+  }
+  function saveSettings() {
+    settings = readForm();
+    post({ type: "save-settings", settings });
+  }
+  async function check() {
+    var _a;
+    saveSettings();
+    plan = null;
+    render();
+    if (!settings.key) {
+      setStatus("Add your sync key. In Token Library, open Sync to Figma and push Make a sync key.", "error");
+      $("settings").open = true;
+      return;
+    }
+    setStatus("Reading tokens from Token Library\u2026");
+    try {
+      const res = await fetch(`${settings.url}/api/figma/tokens`, { headers: { Authorization: `Bearer ${settings.key}` } });
+      const body = await res.json();
+      if (!res.ok) throw new Error((_a = body.message) != null ? _a : `Token Library sent an error (${res.status}).`);
+      if (body.newKey) {
+        settings = __spreadProps(__spreadValues({}, settings), { key: body.newKey });
+        post({ type: "save-settings", settings });
+      }
+      setStatus("Comparing with the variables in this file\u2026");
+      post({ type: "plan", tokens: body.tokens, includeDrafts: settings.includeDrafts, names: settings.names });
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e);
+      setStatus(m.includes("Failed to fetch") ? "Token Library cannot be reached. Make sure that the address is correct." : m, "error");
+    }
+  }
+  function section(title, count, items, open = true) {
+    const d = el("details", "group");
+    d.open = open && count > 0 && count <= 40;
+    d.appendChild(el("summary", "", `${title} (${count})`));
+    const list = el("ul");
+    items.forEach((i) => list.appendChild(i));
+    d.appendChild(list);
+    return d;
+  }
+  function render() {
+    const out = $("result");
+    out.replaceChildren();
+    const btn = $("sync");
+    if (!plan) {
+      btn.hidden = true;
+      return;
+    }
+    const total = plan.add.length + plan.change.length + plan.remove.length;
+    const item = (main, sub) => {
+      const li = el("li");
+      li.appendChild(el("span", "mono", main));
+      if (sub) li.appendChild(el("span", "sub", sub));
+      return li;
+    };
+    out.appendChild(section("Add", plan.add.length, plan.add.map((a) => item(a.name, a.collection))));
+    out.appendChild(section("Change", plan.change.length, plan.change.map((c) => item(c.name, c.differences.join(" \xB7 ")))));
+    out.appendChild(section("Remove", plan.remove.length, plan.remove.map((r) => item(r.name, "Made by an earlier sync. The token is no longer in Token Library."))));
+    out.appendChild(section("Not synced", plan.skipped.length, plan.skipped.map((s) => item(s.token, s.reason)), false));
+    out.appendChild(el("p", "sub", `${plan.unchanged} ${plan.unchanged === 1 ? "variable is" : "variables are"} up to date.`));
+    btn.hidden = total === 0;
+    btn.textContent = `Sync ${total} ${total === 1 ? "change" : "changes"}`;
+    setStatus(total ? "Examine the changes, then push Sync." : "Everything in this file is up to date.", total ? "" : "ok");
+  }
+  async function report(result) {
+    try {
+      const res = await fetch(`${settings.url}/api/figma/report`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${settings.key}`, "Content-Type": "application/json" },
+        body: JSON.stringify(__spreadValues({ fileName }, result))
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.message);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+  window.onmessage = async (event) => {
+    var _a, _b;
+    const msg = event.data.pluginMessage;
+    if (!msg) return;
+    if (msg.type === "settings") {
+      settings = __spreadProps(__spreadValues(__spreadValues({}, DEFAULTS), msg.settings), { names: __spreadValues(__spreadValues({}, DEFAULTS.names), (_b = (_a = msg.settings) == null ? void 0 : _a.names) != null ? _b : {}) });
+      fileName = msg.fileName;
+      $("file").textContent = fileName;
+      fillForm();
+    }
+    if (msg.type === "plan") {
+      plan = msg.plan;
+      render();
+    }
+    if (msg.type === "applied") {
+      const r = msg.result;
+      plan = null;
+      render();
+      setStatus("Recording the sync in Token Library\u2026");
+      const logged = await report(r);
+      setStatus(
+        `Sync done: ${r.added.length} added, ${r.changed.length} changed, ${r.removed.length} removed.` + (logged ? " Each token's history shows the sync." : " The sync is not in Token Library history. Check the sync key."),
+        logged ? "ok" : "error"
+      );
+    }
+    if (msg.type === "error") setStatus(msg.message, "error");
+  };
+  $("check").onclick = () => void check();
+  $("sync").onclick = () => {
+    setStatus("Syncing variables\u2026");
+    post({ type: "apply" });
+  };
+  $("save").onclick = () => {
+    saveSettings();
+    setStatus("Settings saved.", "ok");
+  };
+  post({ type: "init" });
+})();
+</script>
+</body>
+</html>

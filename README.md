@@ -11,8 +11,8 @@ The product requirements are in [`docs/PRD.md`](docs/PRD.md).
 | 1 | Foundations: data model, rules engine, references, dummy set | Done |
 | 2 | Overview and creation (F1 to F4) | Done |
 | 3 | Push to repo (F5) | Done, tested live on the sandbox |
-| 4 | Pull and history (F6 to F8) | Built and tested in demo mode |
-| 5 | Figma plugin (F9) | Next |
+| 4 | Pull and history (F6 to F8) | Done, deployed |
+| 5 | Figma plugin (F9) | Built and tested with a fake Figma. Next: test in a real Figma file |
 
 ## Running it
 
@@ -72,6 +72,8 @@ The tool runs in 1 of 3 modes:
 | `app/` | The screens. Shared pieces are in `app/_components/`; the working copy is in `app/_lib/store.tsx` |
 | `src/lib/git/` | Saving to the token data repo and pushing to the code repo, with a fake GitHub for tests and demo mode |
 | `src/lib/server/` and `app/api/` | Sign-in with the GitHub App and the endpoints the screens call |
+| `src/lib/figma/` | Figma sync: tokens to variable specs, the compare plan, and writing variables |
+| `figma-plugin/` | The Figma plugin. Build with `npm run plugin:build`; this also makes `public/token-library-figma-plugin.zip` |
 | `components/ui/` | shadcn/ui components, added with the shadcn command line tool |
 | `data/dummy/` | Dummy token set and history. Moves to the token data repo in phase 3 |
 | `fixtures/` | Test material: release branch CSS sample, the 6 drift cases, simulated component usage |
@@ -90,5 +92,8 @@ These are working assumptions until the open questions in the PRD are answered:
 - Component tokens have no `--color-` prefix in code.
 - Semantic tokens may only use the categories `surface`, `content` and `line`. `icon` is for component tokens only.
 - Figma paths are only defined for component tokens.
+- Figma variable names: primitives and non-colour semantic tokens are grouped by type (`Colour/orange-700`), semantic colours by category (`Surface/surface-default`), component tokens by their Figma path.
+- Typography, border and shadow tokens are not synced to Figma, because Figma variables hold 1 value only. They could become Figma styles later.
+- The plugin network address is `https://tokenplayground-drab.vercel.app`, set in `figma-plugin/manifest.json`. Change it there and in `figma-plugin/src/ui.ts` if the address changes.
 - Parent CSS path is `styles/colors.css`; component files are `components/[name]/[name].css`.
 - Typography tokens are written Tailwind style: the font size is the main value, with `--line-height`, `--font-weight` and `--font-family` alongside.

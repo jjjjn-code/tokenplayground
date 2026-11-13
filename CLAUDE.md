@@ -49,4 +49,5 @@ Follow the 5 phases in `docs/PRD.md`. Build and test each phase against a dummy 
 - Provisional decisions are listed in `README.md`.
 - GitHub: a GitHub App with user sign-in (`app/api/auth`). Tokens are saved to `TOKENS_DATA_REPO` and pushed to `TOKENS_CODE_REPO`; see `docs/SETUP.md` and `.env.example`. Never commit secrets.
 - Demo mode (`npm run demo`) uses an in-memory fake GitHub (`src/lib/git/host.ts`), which the tests also use.
+- Figma sync: shared logic in `src/lib/figma/`, the plugin in `figma-plugin/`. Run `npm run plugin:build` after changing either, and commit `figma-plugin/dist` and `public/token-library-figma-plugin.zip`.
 - UI: shadcn/ui on Tailwind. Add components with `npx shadcn@latest add <name>` and check the imports point at `@/lib/utils`.

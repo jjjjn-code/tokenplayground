@@ -1,0 +1,14 @@
+{
+  "name": "Token Library",
+  "id": "token-library-ual-dev",
+  "api": "1.0.0",
+  "main": "dist/code.js",
+  "ui": "dist/ui.html",
+  "editorType": ["figma"],
+  "documentAccess": "dynamic-page",
+  "networkAccess": {
+    "allowedDomains": ["https://tokenplayground-drab.vercel.app"],
+    "reasoning": "Reads the saved design tokens from Token Library and records each sync.",
+    "devAllowedDomains": ["http://localhost:3000", "http://localhost:3123"]
+  }
+}

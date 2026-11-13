@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<style>
+  body { margin: 0; font: 12px/1.5 Inter, system-ui, sans-serif; color: var(--figma-color-text, #1e1e1e); background: var(--figma-color-bg, #fff); }
+  main { padding: 16px; display: grid; gap: 12px; }
+  h1 { font-size: 13px; margin: 0; }
+  .sub { color: var(--figma-color-text-secondary, #6b6b6b); display: block; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; display: block; overflow-wrap: anywhere; }
+  label { display: grid; gap: 4px; font-weight: 500; }
+  input[type=text], input[type=password] { font: inherit; padding: 6px 8px; border: 1px solid var(--figma-color-border, #e6e6e6); border-radius: 5px; background: var(--figma-color-bg, #fff); color: inherit; }
+  details.settings { border: 1px solid var(--figma-color-border, #e6e6e6); border-radius: 6px; padding: 8px 10px; }
+  details.settings > div { display: grid; gap: 8px; margin-top: 8px; }
+  summary { cursor: pointer; font-weight: 600; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  button { font: inherit; font-weight: 600; border-radius: 6px; padding: 7px 12px; cursor: pointer; border: 1px solid var(--figma-color-border, #e6e6e6); background: var(--figma-color-bg, #fff); color: inherit; }
+  button.primary { background: var(--figma-color-bg-brand, #0d99ff); color: var(--figma-color-text-onbrand, #fff); border-color: transparent; }
+  .status { margin: 0; color: var(--figma-color-text-secondary, #6b6b6b); }
+  .status.error { color: var(--figma-color-text-danger, #dc3412); }
+  .status.ok { color: var(--figma-color-text-success, #14ae5c); }
+  details.group { border-top: 1px solid var(--figma-color-border, #e6e6e6); padding-top: 6px; }
+  ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
+  .hint { color: var(--figma-color-text-secondary, #6b6b6b); margin: 0; }
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <h1>Token Library</h1>
+    <span class="sub">File: <span id="file">this file</span></span>
+  </div>
+  <details class="settings" id="settings">
+    <summary>Settings</summary>
+    <div>
+      <label>Sync key <input type="password" id="key" autocomplete="off" placeholder="Paste the key from Token Library"></label>
+      <p class="hint">In Token Library, open Sync to Figma and push Make a sync key.</p>
+      <label>Token Library address <input type="text" id="url" autocomplete="off"></label>
+      <label>Primitives collection <input type="text" id="n-primitives" autocomplete="off"></label>
+      <label>Semantic collection <input type="text" id="n-semantic" autocomplete="off"></label>
+      <label>Components collection <input type="text" id="n-components" autocomplete="off"></label>
+      <label class="row" style="display:flex;font-weight:400"><input type="checkbox" id="drafts"> Include draft tokens</label>
+      <div class="row"><button id="save" type="button">Save settings</button></div>
+    </div>
+  </details>
+  <div class="row">
+    <button class="primary" id="check" type="button">Check for changes</button>
+    <button class="primary" id="sync" type="button" hidden>Sync</button>
+  </div>
+  <p class="status" id="status" role="status">Push Check for changes to compare Token Library with this file.</p>
+  <div id="result"></div>
+</main>
+<script>/*UI_SCRIPT*/</script>
+</body>
+</html>

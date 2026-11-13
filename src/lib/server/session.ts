@@ -112,3 +112,43 @@ export async function currentUser(): Promise<{ viewer: Viewer; host: GitHost } |
   }
   return { viewer: { login: s.login, name: s.name, avatar: s.avatar }, host: new GitHubHost(s.token) };
 }
+
+// ---------- Figma sync keys ----------
+
+const FIGMA_PREFIX = "tlk_";
+
+/**
+ * Make a sync key for the Figma plugin from the signed-in person's session.
+ * The key is encrypted like the sign-in cookie; it lets the plugin read
+ * tokens and record syncs as that person. Demo mode uses the key "demo".
+ */
+export async function makeFigmaKey(): Promise<string | null> {
+  const m = mode();
+  if (m === "demo") return "demo";
+  if (m !== "github") return null;
+  const raw = (await cookies()).get(SESSION_COOKIE)?.value;
+  const s = raw ? unseal(raw) : null;
+  return s ? FIGMA_PREFIX + seal(s) : null;
+}
+
+/**
+ * The person and a Git host for a sync key. When the GitHub token inside
+ * has expired, it is refreshed and `newKey` holds the key to store instead.
+ */
+export async function userFromFigmaKey(key: string | null): Promise<{ viewer: Viewer; host: GitHost; newKey?: string } | null> {
+  const m = mode();
+  if (!key) return null;
+  if (m === "demo") return key === "demo" ? { viewer: { login: "demo-designer", name: "Demo designer", avatar: "" }, host: demoHost() } : null;
+  if (m !== "github" || !key.startsWith(FIGMA_PREFIX)) return null;
+  let s = unseal(key.slice(FIGMA_PREFIX.length));
+  if (!s) return null;
+  let newKey: string | undefined;
+  if (s.expiresAt && Date.now() > s.expiresAt) {
+    if (!s.refreshToken) return null;
+    const t = await requestToken({ grant_type: "refresh_token", refresh_token: s.refreshToken });
+    if (!t.access_token) return null;
+    s = sessionFromToken(t, s);
+    newKey = FIGMA_PREFIX + seal(s);
+  }
+  return { viewer: { login: s.login, name: s.name, avatar: s.avatar }, host: new GitHubHost(s.token), newKey };
+}

@@ -11,6 +11,7 @@ import {
   Layers,
   GitPullRequestArrow,
   ArrowDownToLine,
+  Frame,
   Menu,
   Palette,
   PlusCircle,
@@ -102,6 +103,7 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
         {item("/create", null, "Create tokens", undefined, <PlusCircle className="size-4 text-muted-foreground" />)}
         {item("/push", null, "Send to code", undefined, <GitPullRequestArrow className="size-4 text-muted-foreground" />)}
         {item("/pull", null, "Review code changes", undefined, <ArrowDownToLine className="size-4 text-muted-foreground" />)}
+        {item("/figma", null, "Sync to Figma", undefined, <Frame className="size-4 text-muted-foreground" />)}
         {item("/export", null, "Export CSS", undefined, <FileCode2 className="size-4 text-muted-foreground" />)}
       </nav>
 
