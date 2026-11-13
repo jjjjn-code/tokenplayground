@@ -40,14 +40,14 @@ export function AccountPanel() {
   const save = async () => {
     const res = await saveToRepo(message.trim() || `Update ${n} ${n === 1 ? "token" : "tokens"}`);
     if (res.ok) {
-      toast.success(`Saved ${n} ${n === 1 ? "change" : "changes"}`, { description: repos ? `Committed to ${repos.data}` : undefined });
+      toast.success(`${n} ${n === 1 ? "change is" : "changes are"} saved.`, { description: repos ? `Saved to ${repos.data} as 1 commit.` : undefined });
       setOpen(false);
       setMessage("");
     } else if (res.conflicts) {
       setOpen(false);
       setConflicts(res.conflicts);
     } else {
-      toast.error("Not saved", { description: res.message });
+      toast.error("Your changes are not saved.", { description: res.message });
     }
   };
 
@@ -76,7 +76,7 @@ export function AccountPanel() {
                 className="h-8"
                 aria-label="Discard unsaved changes"
                 onClick={() => {
-                  if (window.confirm(`Throw away ${n} unsaved ${n === 1 ? "change" : "changes"}?`)) reset();
+                  if (window.confirm(`Delete ${n} unsaved ${n === 1 ? "change" : "changes"}? You cannot undo this.`)) reset();
                 }}
               >
                 <Undo2 className="size-3.5" />
@@ -96,7 +96,7 @@ export function AccountPanel() {
             size="sm"
             className="h-7 px-2 text-xs"
             onClick={() => {
-              if (window.confirm("Throw away every local change and reload the dummy token set?")) reset();
+              if (window.confirm("Delete all local changes and load the dummy token set again? You cannot undo this.")) reset();
             }}
           >
             <RotateCcw className="size-3.5" /> Reset
@@ -141,7 +141,7 @@ export function AccountPanel() {
           <DialogHeader>
             <DialogTitle>Save {n} {n === 1 ? "change" : "changes"}</DialogTitle>
             <DialogDescription>
-              Saves to {repos?.data ?? "the token data repo"} as 1 commit. Saving does not change the code; use Push to code for that.
+              Your changes are saved to {repos?.data ?? "the token data repo"} as 1 commit. Saving does not change the code. To change the code, use Push to code.
             </DialogDescription>
           </DialogHeader>
           <ul className="max-h-40 overflow-y-auto rounded-md border bg-muted/30 p-2 font-mono text-[12px]">
@@ -169,20 +169,20 @@ export function AccountPanel() {
       <Dialog open={!!conflicts} onOpenChange={(o) => !o && setConflicts(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Someone else changed this</DialogTitle>
+            <DialogTitle>A different person saved changes</DialogTitle>
             <DialogDescription>
-              Another save reached {repos?.data ?? "the token data repo"} while you were working. Nothing of yours was lost: the tool loaded their version and reapplied your edits on top.
+              A different person saved changes to {repos?.data ?? "the token data repo"}. Your changes are added to their version. You did not lose your changes.
             </DialogDescription>
           </DialogHeader>
           {conflicts?.length ? (
             <div className="grid gap-2 text-sm">
-              <p>You both changed {conflicts.length === 1 ? "this token" : "these tokens"}. Your version is kept for now; check {conflicts.length === 1 ? "it" : "them"} before saving again.</p>
+              <p>{conflicts.length === 1 ? "You and the other person changed this token. Your version is kept. Examine the token, then save again." : "You and the other person changed these tokens. Your versions are kept. Examine the tokens, then save again."}</p>
               <ul className="rounded-md border bg-muted/30 p-2 font-mono text-[12px]">
                 {conflicts.map((t) => <li key={t}>{t}</li>)}
               </ul>
             </div>
           ) : (
-            <p className="text-sm">None of the tokens you changed were changed by them, so you can save again straight away.</p>
+            <p className="text-sm">The other person did not change your tokens. You can save again now.</p>
           )}
           <DialogFooter>
             <Button onClick={() => setConflicts(null)}>OK</Button>

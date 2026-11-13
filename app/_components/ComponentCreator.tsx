@@ -138,11 +138,11 @@ export function ComponentCreator() {
   const { ok, issues } = checkBeforeSave(set, candidates);
   const unmapped = candidates.filter((t) => t.values.light === "" || t.values.dark === "").length;
   const extra: Issue[] = [];
-  if (!component) extra.push({ severity: "error", code: "component.name", message: "Add a component name." });
-  if (component && changed) extra.push({ severity: "info", code: "component.normalised", message: `Name normalised to "${component}". Confirm this is what developers expect in code.` });
-  if (existing.length && already) extra.push({ severity: "info", code: "component.exists", message: `${already} of these already ${already === 1 ? "exists" : "exist"} in ${component} and ${already === 1 ? "is" : "are"} left as ${already === 1 ? "it is" : "they are"}. Only the ${fresh.length} new ${fresh.length === 1 ? "token is" : "tokens are"} created.` });
-  if (!fresh.length) extra.push({ severity: "error", code: "component.empty", message: list.length ? "Every token here already exists. Add a category, role or state, or tick another cell." : "No tokens to create. Pick at least 1 category and tick at least 1 cell." });
-  if (unmapped) extra.push({ severity: "error", code: "value.empty", message: `${unmapped} of ${fresh.length} new tokens still need a light and dark value.` });
+  if (!component) extra.push({ severity: "error", code: "component.name", message: "Type a component name." });
+  if (component && changed) extra.push({ severity: "info", code: "component.normalised", message: `Component names are 1 word in lower case. "${rawName.trim()}" is now "${component}". Make sure that developers use this name in the code.` });
+  if (existing.length && already) extra.push({ severity: "info", code: "component.exists", message: `${already} of these tokens already ${already === 1 ? "exists" : "exist"}. They are marked "Already exists" and do not change. Only the ${fresh.length} new ${fresh.length === 1 ? "token is" : "tokens are"} added.` });
+  if (!fresh.length) extra.push({ severity: "error", code: "component.empty", message: list.length ? "All these tokens exist. Add a category, a role or a state, or select a different combination." : "Select 1 category or more. Then select 1 combination or more." });
+  if (unmapped) extra.push({ severity: "error", code: "value.empty", message: `${unmapped} of ${fresh.length} new tokens do not have values. Select a light value and a dark value for each token.` });
   const allIssues = [...extra, ...issues.filter((i) => i.code !== "value.empty")];
   const errors = allIssues.filter((i) => i.severity === "error").length;
   const warnings = allIssues.filter((i) => i.severity === "warning").length;
@@ -156,7 +156,7 @@ export function ComponentCreator() {
     const v = slug(value);
     if (!v) return;
     if (isState && (FORBIDDEN_STATES as readonly string[]).includes(v)) {
-      setStateMsg("There are no focus tokens. Focus uses the system default.");
+      setStateMsg("Do not make focus tokens. The system default shows focus.");
       clear();
       return;
     }
@@ -200,7 +200,7 @@ export function ComponentCreator() {
       return;
     }
     saveTokens(candidates, [], reason);
-    toast.success(`Created ${fresh.length} ${component} tokens`, { description: "Saved as drafts in your unsaved changes." });
+    toast.success(`${fresh.length} ${component} ${fresh.length === 1 ? "token is" : "tokens are"} added.`, { description: "They are drafts. Save to keep them." });
     router.push(`/?set=component/${component}`);
   };
 

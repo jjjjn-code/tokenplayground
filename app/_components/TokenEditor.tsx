@@ -14,6 +14,7 @@ import {
   isComposite,
   LAYER_RANK,
   NON_COLOUR_PREFIXES,
+  normaliseTokenInput,
   SEMANTIC_CATEGORIES,
   SEMANTIC_VARIANTS,
   type CompositeValue,
@@ -237,7 +238,7 @@ export function TokenEditor({
               </Select>
               <span className="text-muted-foreground">-</span>
               <Input id="ed-var" list="variants" value={variant} placeholder="variant, for example brand" className="font-mono"
-                onChange={(e) => { setVariant(e.target.value.toLowerCase().replace(/\s+/g, "-")); typedName(); }} onBlur={leftName} autoComplete="off" />
+                onChange={(e) => { setVariant(normaliseTokenInput(e.target.value)); typedName(); }} onBlur={leftName} autoComplete="off" />
               <datalist id="variants">
                 {SEMANTIC_VARIANTS.map((v) => <option key={v} value={v} />)}
               </datalist>
@@ -247,7 +248,7 @@ export function TokenEditor({
         ) : (
           <div className="grid gap-1.5">
             <Label htmlFor="ed-name">Name</Label>
-            <Input id="ed-name" value={name} onChange={(e) => { setName(e.target.value); typedName(); }} onBlur={leftName} className="font-mono" autoComplete="off"
+            <Input id="ed-name" value={name} onChange={(e) => { setName(normaliseTokenInput(e.target.value)); typedName(); }} onBlur={leftName} className="font-mono" autoComplete="off"
               placeholder={kind === "color" ? "orange-700" : `${NON_COLOUR_PREFIXES[kind as Exclude<Kind, "color">][0]}-name`} />
             <p className="text-xs text-muted-foreground">
               {kind === "color"

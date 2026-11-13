@@ -14,8 +14,10 @@ import {
   directDependants,
   historyFor,
   namingGuide,
+  normaliseTokenInput,
   noveltyMessage,
   parseComponentTokenName,
+  type Novelty,
   type Token,
 } from "@/src/lib/tokens";
 import { useStore } from "../_lib/store";
@@ -28,6 +30,33 @@ export function createComponentHref(component: string, name: string): string {
   if (p?.role) q.set("role", p.role);
   if (p?.state) q.set("state", p.state);
   return `/create?${q.toString()}`;
+}
+
+/**
+ * What a component name adds that the component does not have yet. A
+ * missing role is a plain mistake (red). A new category, role or state is
+ * amber, with a link to the guided flow; a new state alone does not block.
+ */
+export function NoveltyNotice({ component, novelty, name, className }: { component: string; novelty: Novelty; name: string; className?: string }) {
+  const message = noveltyMessage(component, novelty, name);
+  if (novelty.roleShapeChanges && !novelty.role) {
+    return (
+      <p className={cn("flex gap-1.5 text-destructive", className)} role="alert">
+        <CircleX className="mt-px size-3.5 shrink-0" /> {message}
+      </p>
+    );
+  }
+  return (
+    <div className={cn("flex gap-1.5 rounded-md border border-warning/40 bg-warning/10 p-2", className)} role="alert">
+      <AlertTriangle className="mt-px size-3.5 shrink-0 text-warning" />
+      <div className="grid gap-1.5">
+        <span>{message}</span>
+        <Button asChild size="sm" variant="outline" className="h-7 justify-self-start text-xs">
+          <Link href={createComponentHref(component, name)}>Open Create component tokens</Link>
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 /** The token name at the top of the details panel, with a pencil to rename it. */
@@ -51,7 +80,7 @@ export function RenameTitle({ token, onRenamed }: { token: Token; onRenamed: (na
   const dependants = allDependants(set, token.name).length;
   const direct = directDependants(set, token.name).length;
   const pushed = historyFor(history, token.name).some((e) => e.action === "pushed");
-  const canSave = changed && !!next && !errors.length && !novelty;
+  const canSave = changed && !!next && !errors.length && !novelty?.blocking;
 
   const start = () => {
     setName(token.name);
@@ -96,7 +125,7 @@ export function RenameTitle({ token, onRenamed }: { token: Token; onRenamed: (na
           aria-label="New name"
           value={name}
           onChange={(e) => {
-            setName(e.target.value.toLowerCase().replace(/\s+/g, "-"));
+            setName(normaliseTokenInput(e.target.value));
             setRevealed(false);
           }}
           onBlur={(e) => {
@@ -115,7 +144,7 @@ export function RenameTitle({ token, onRenamed }: { token: Token; onRenamed: (na
           className={cn(
             "h-9 min-w-0 flex-1 rounded-md border bg-background px-2.5 font-mono text-[14px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
             show && errors.length && "border-destructive/60",
-            show && !errors.length && novelty && "border-warning/60",
+            show && !errors.length && novelty?.blocking && "border-warning/60",
           )}
         />
         <Button type="submit" size="icon" className="size-9" aria-label="Save new name" disabled={!changed} data-rename-action>
@@ -132,29 +161,22 @@ export function RenameTitle({ token, onRenamed }: { token: Token; onRenamed: (na
         </p>
       ) : null}
       {show && !errors.length && novelty && token.component ? (
-        <div className="flex gap-1.5 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs" role="alert">
-          <AlertTriangle className="mt-px size-3.5 shrink-0 text-warning" />
-          <div className="grid gap-1.5">
-            <span>{noveltyMessage(token.component, novelty)}</span>
-            <Button asChild size="sm" variant="outline" className="h-7 justify-self-start text-xs">
-              <Link href={createComponentHref(token.component, next)}>Open Create component tokens</Link>
-            </Button>
-          </div>
-        </div>
+        <NoveltyNotice component={token.component} novelty={novelty} name={next} className="text-xs" />
       ) : null}
       {show && canSave ? (
         <div className="grid gap-1 text-xs text-muted-foreground">
           <span>
-            In code: <span className="font-mono text-foreground">{cssVariableName(candidate)}</span>
+            New code name: <span className="font-mono text-foreground">{cssVariableName(candidate)}</span>
           </span>
           {dependants ? (
             <span>
-              {direct} {direct === 1 ? "token points" : "tokens point"} to it{dependants > direct ? ` (${dependants} in total, through others)` : ""}; they will be updated to the new name.
+              {direct === 1 ? "1 token refers to this token. The reference changes to the new name." : `${direct} tokens refer to this token. The references change to the new name.`}
+              {dependants > direct ? ` ${dependants - direct} more ${dependants - direct === 1 ? "token uses" : "tokens use"} it through other tokens.` : ""}
             </span>
           ) : null}
           {pushed ? (
             <span className="flex gap-1.5 text-warning">
-              <AlertTriangle className="mt-px size-3.5 shrink-0" /> Already in code as {cssVariableName(token)}. After the next push, developers will need to update anything that uses the old name.
+              <AlertTriangle className="mt-px size-3.5 shrink-0" /> The code uses the name {cssVariableName(token)}. After the next push, developers must change all uses of the old name.
             </span>
           ) : null}
         </div>

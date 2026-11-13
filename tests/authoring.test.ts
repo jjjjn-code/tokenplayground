@@ -58,3 +58,44 @@ describe("history across a rename", () => {
     expect(historyFor(log, "surface-accent").map((e) => e.action)).toEqual(["created", "renamed"]);
   });
 });
+
+describe("messages people asked for", async () => {
+  const { checkName, normaliseTokenInput, componentNovelty: novelty, noveltyMessage } = await import("@/src/lib/tokens");
+  const { colour } = await import("./helpers");
+  const msg = (t: Parameters<typeof checkName>[0]) => checkName(t)[0]?.message;
+
+  it("tidies typing: lower case, spaces and underscores become hyphens", () => {
+    expect(normaliseTokenInput("Surface Brand")).toBe("surface-brand");
+    expect(normaliseTokenInput("orange_700")).toBe("orange-700");
+    expect(normaliseTokenInput("--color-orange-700")).toBe("--color-orange-700");
+    expect(normaliseTokenInput("tag--surface")).toBe("tag-surface");
+  });
+
+  it("asks 'Do you mean ...?' for common category words", () => {
+    expect(msg(colour("background-brand", "semantic", { ref: "white" }))).toBe('"background" is not a category in our system. Do you mean "surface"?');
+    expect(msg(colour("tag-border-default", "component", { ref: "white" }, { component: "tag" }))).toBe('"border" is not a category in our system. Do you mean "line"?');
+    expect(msg(colour("shade-brand", "semantic", { ref: "white" }))).toBe('"shade" is not a category. Use surface, content or line.');
+  });
+
+  it("says which part is missing or extra", () => {
+    expect(msg(colour("tag-surface", "component", { ref: "white" }, { component: "tag" }))).toBe("The state is missing. Add a state to the end of the name. Example: tag-surface-default.");
+    expect(msg(colour("button-surface-primary-hover-strong", "component", { ref: "white" }, { component: "button" }))).toBe(
+      'Token names use the format [component]-[category]-[role]-[state]. This name has 1 extra part: "strong". Ask the design system team if you need help.',
+    );
+  });
+
+  it("names the symbols to remove", () => {
+    expect(msg(colour("orange&700", "primitive", "#FF5000"))).toBe('Use only letters, numbers and hyphens. Remove "&".');
+  });
+
+  it("allows a new state with a note, but sends new roles and categories to the guided flow", () => {
+    const set = dummy();
+    expect(novelty(set, "tag", "tag-surface-hover")).toMatchObject({ state: "hover", blocking: false });
+    expect(novelty(set, "button", "button-surface-tertiary-default")).toMatchObject({ role: "tertiary", blocking: true });
+    expect(novelty(set, "tag", "tag-icon-default")).toMatchObject({ category: "icon", blocking: true });
+    const missingRole = novelty(set, "button", "button-surface-hover")!;
+    expect(noveltyMessage("button", missingRole, "button-surface-hover")).toBe(
+      "Each button token has a role, such as primary or secondary. Add a role after the category. Example: button-surface-primary-hover.",
+    );
+  });
+});

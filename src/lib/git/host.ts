@@ -30,7 +30,7 @@ export interface GitHost {
 
 /** Someone else moved the branch first. */
 export class ConflictError extends Error {
-  constructor(message = "Someone else changed this since you loaded it.") {
+  constructor(message = "A different person saved changes. Your changes are not saved.") {
     super(message);
     this.name = "ConflictError";
   }
@@ -167,14 +167,14 @@ export class GitHubHost implements GitHost {
     } catch {
       // ignore
     }
-    if (res.status === 401) return new HostError("Your GitHub sign-in has expired. Sign in again.", 401);
+    if (res.status === 401) return new HostError("Your GitHub sign-in is not valid now. Sign in again.", 401);
     if (res.status === 403 || res.status === 404) {
       return new HostError(
-        `GitHub refused access (${res.status}) to ${path.split("/").slice(2, 4).join("/")}. Check the GitHub App is installed on this repo with read and write access to contents and pull requests.${detail ? ` GitHub said: ${detail}` : ""}`,
+        `GitHub did not give access to ${path.split("/").slice(2, 4).join("/")}. Make sure that the GitHub App is on this repo. It must have read and write access.${detail ? ` GitHub says: ${detail}` : ""}`,
         res.status,
       );
     }
-    return new HostError(`GitHub error ${res.status}${detail ? `: ${detail}` : ""}`, res.status);
+    return new HostError(`GitHub sent an error (${res.status}).${detail ? ` GitHub says: ${detail}` : ""} Try again.`, res.status);
   }
 
   async head(repo: string, branch: string) {

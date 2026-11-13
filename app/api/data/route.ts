@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as { expectedHead: string; tokens: Record<string, unknown>; history: HistoryEntry[]; message?: string };
     if (!body.expectedHead || !body.tokens || !Array.isArray(body.history)) {
-      return NextResponse.json({ error: "input", message: "Missing tokens, history or version." }, { status: 400 });
+      return NextResponse.json({ error: "input", message: "The request is not complete. Reload the page and try again." }, { status: 400 });
     }
     // The signed-in person is the author of every new history entry.
     const history = body.history.map((e) => (e.by === "pending" ? { ...e, by: user.viewer.login } : e));

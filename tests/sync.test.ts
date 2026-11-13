@@ -34,7 +34,7 @@ describe("load and save", () => {
   it("refuses to save a set with rule errors", async () => {
     const d = await loadData(host, cfg);
     d.set.tokens.push(colour("Bad-Name", "primitive", "#000000"));
-    await expect(saveData(host, cfg, { expectedHead: d.head, set: d.set, history: d.history, message: "x" })).rejects.toThrow(/rule errors/);
+    await expect(saveData(host, cfg, { expectedHead: d.head, set: d.set, history: d.history, message: "x" })).rejects.toThrow(/tokens? ha(s|ve) errors/);
   });
 });
 
@@ -48,7 +48,7 @@ describe("push", () => {
 
   it("has nothing to push straight after set-up", async () => {
     expect((await planPush(host, cfg)).changes).toEqual([]);
-    await expect(pushToCode(host, cfg, { title: "x", summary: "", author: "jane" })).rejects.toThrow(/Nothing to push/);
+    await expect(pushToCode(host, cfg, { title: "x", summary: "", author: "jane" })).rejects.toThrow(/no changes to push/);
   });
 
   it("plans only the files that change, touching only the managed block", async () => {

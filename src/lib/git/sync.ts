@@ -60,13 +60,13 @@ const toJson = (v: unknown) => JSON.stringify(v, null, 2) + "\n";
  */
 export async function loadData(host: GitHost, cfg: SyncConfig, atHead?: string): Promise<DataState> {
   const head = atHead || (await host.head(cfg.dataRepo, cfg.dataBranch));
-  if (!head) throw new HostError(`${cfg.dataRepo} is empty or has no ${cfg.dataBranch} branch. Run the set-up step in docs/SETUP.md first.`, 404);
+  if (!head) throw new HostError(`${cfg.dataRepo} is empty. Do the set-up steps in docs/SETUP.md.`, 404);
   const [tokens, history, lastPush] = await Promise.all([
     host.readFile(cfg.dataRepo, head, DATA_FILES.tokens),
     host.readFile(cfg.dataRepo, head, DATA_FILES.history),
     host.readFile(cfg.dataRepo, head, DATA_FILES.lastPush),
   ]);
-  if (tokens === null) throw new HostError(`${cfg.dataRepo} has no ${DATA_FILES.tokens}. Run the set-up step in docs/SETUP.md first.`, 404);
+  if (tokens === null) throw new HostError(`${cfg.dataRepo} does not have ${DATA_FILES.tokens}. Do the set-up steps in docs/SETUP.md.`, 404);
   return {
     head,
     set: parseDtcg(JSON.parse(tokens)),
@@ -86,7 +86,10 @@ export async function saveData(
   input: { expectedHead: string; set: TokenSet; history: HistoryEntry[]; message: string },
 ): Promise<string> {
   const errors = validateTokenSet(input.set).filter((i) => i.severity === "error");
-  if (errors.length) throw new HostError(`Not saved: ${errors.length} rule errors, for example: ${errors[0].message}`, 422);
+  if (errors.length) {
+    const tokens = new Set(errors.map((e) => e.token ?? e.component)).size;
+    throw new HostError(`${tokens} ${tokens === 1 ? "token has" : "tokens have"} errors. Correct the errors, then save again.`, 422);
+  }
   return host.commit(
     cfg.dataRepo,
     cfg.dataBranch,
@@ -121,7 +124,7 @@ const emptyBlock = `${BLOCK_START}\n${BLOCK_END}`;
 export async function planPush(host: GitHost, cfg: SyncConfig, atHead?: string): Promise<PushPlan> {
   const data = await loadData(host, cfg, atHead);
   const codeHead = await host.head(cfg.codeRepo, cfg.codeBranch);
-  if (!codeHead) throw new HostError(`${cfg.codeRepo} is empty or has no ${cfg.codeBranch} branch.`, 404);
+  if (!codeHead) throw new HostError(`${cfg.codeRepo} is empty. Do the set-up steps in docs/SETUP.md.`, 404);
   const baseline = data.lastPush ? parseDtcg(data.lastPush.tokens) : { tokens: [] };
   const changes = diffSets(baseline, data.set);
   const files: PlannedFile[] = [];
@@ -160,9 +163,9 @@ export async function pushToCode(
 ): Promise<PushResult> {
   const now = input.now ?? new Date();
   const title = input.title.trim();
-  if (!title) throw new HostError("Give the push a title.", 422);
+  if (!title) throw new HostError("Type a title for the pull request.", 422);
   const plan = await planPush(host, cfg, input.dataHead);
-  if (!plan.changes.length) throw new HostError("Nothing to push: the saved tokens match the last push.", 422);
+  if (!plan.changes.length) throw new HostError("There are no changes to push. The saved tokens are the same as the last push.", 422);
 
   // A fresh branch, numbered if the name is taken.
   let branch = branchName(title, now);

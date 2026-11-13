@@ -10,7 +10,7 @@ import {
   componentNovelty,
   cssVariableName,
   namingGuide,
-  noveltyMessage,
+  normaliseTokenInput,
   LAYER_RANK,
   NON_COLOUR_PREFIXES,
   type Kind,
@@ -22,7 +22,7 @@ import {
 } from "@/src/lib/tokens";
 import { ValuePicker } from "./ValuePicker";
 import { StatusBadge } from "./ui";
-import { createComponentHref } from "./RenameTitle";
+import { NoveltyNotice } from "./RenameTitle";
 
 function placeholderFor(layer: Layer, kind: Kind, component?: string): string {
   if (layer === "component") return `${component}-category-role-state`;
@@ -83,7 +83,7 @@ export function NewTokenRow({
   const firstWarning = issues.find((i) => i.severity === "warning");
   // A new role, state or category belongs in the guided component flow.
   const novelty = layer === "component" && component && nameTyped && !nameError ? componentNovelty(set, component, draft.name) : null;
-  const canCreate = ok && nameTyped && !novelty;
+  const canCreate = ok && nameTyped && !novelty?.blocking;
   const guide = namingGuide(set, layer, kind, component);
 
   const candidates = set.tokens.filter((t) => LAYER_RANK[t.layer] < LAYER_RANK[layer] && t.kind === kind && t.status !== "deprecated");
@@ -107,7 +107,7 @@ export function NewTokenRow({
             aria-describedby="new-token-guide new-token-message"
             value={name}
             onChange={(e) => {
-              setName(e.target.value.toLowerCase().replace(/\s+/g, "-"));
+              setName(normaliseTokenInput(e.target.value));
               setReveal("none");
             }}
             onBlur={() => {
@@ -117,7 +117,7 @@ export function NewTokenRow({
               if (e.key === "Enter") {
                 e.preventDefault();
                 if (canCreate) create();
-                else if (!nameError && !novelty && nameTyped) {
+                else if (!nameError && !novelty?.blocking && nameTyped) {
                   setReveal("name");
                   focusLight();
                 } else setReveal("name");
@@ -129,21 +129,13 @@ export function NewTokenRow({
             className={cn(
               "h-8 w-full min-w-0 rounded-md border bg-background px-2 font-mono text-[12.5px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
               showName && nameError && "border-destructive/60",
-              showName && novelty && "border-warning/60",
+              showName && novelty?.blocking && "border-warning/60",
             )}
           />
           <p id="new-token-guide" className="text-[11.5px] leading-snug text-muted-foreground">{guide}</p>
           <div id="new-token-message" aria-live="polite" className="text-[12px] leading-snug">
-            {!showName ? null : novelty && component ? (
-              <div className="flex gap-1.5 rounded-md border border-warning/40 bg-warning/10 p-2">
-                <AlertTriangle className="mt-px size-3.5 shrink-0 text-warning" />
-                <div className="grid gap-1.5">
-                  <span>{noveltyMessage(component, novelty)}</span>
-                  <Button asChild size="sm" variant="outline" className="h-7 justify-self-start text-xs">
-                    <Link href={createComponentHref(component, draft.name)}>Open Create component tokens</Link>
-                  </Button>
-                </div>
-              </div>
+            {!showName ? null : novelty?.blocking && component ? (
+              <NoveltyNotice component={component} novelty={novelty} name={draft.name} />
             ) : nameError ? (
               <p className="flex gap-1.5 text-destructive"><CircleX className="mt-px size-3.5 shrink-0" />{nameError.message}</p>
             ) : reveal === "all" && valueError ? (
@@ -159,6 +151,9 @@ export function NewTokenRow({
                 <span>The name is correct. Select the values.</span>
               </p>
             )}
+            {showName && novelty && !novelty.blocking && !nameError && component ? (
+              <NoveltyNotice component={component} novelty={novelty} name={draft.name} className="mt-1.5" />
+            ) : null}
             {showName && !novelty && !nameError && canCreate && firstWarning ? (
               <p className="mt-1 flex gap-1.5 text-warning"><AlertTriangle className="mt-px size-3.5 shrink-0" />{firstWarning.message}</p>
             ) : null}

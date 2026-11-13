@@ -57,23 +57,74 @@ function issue(severity: Issue["severity"], code: string, message: string, token
   return { severity, code, message, token };
 }
 
+/**
+ * Words people often use for a category, mapped to the category our system
+ * uses, so a message can ask "Do you mean ...?".
+ */
+const CATEGORY_SYNONYMS: Record<string, string> = {
+  background: "surface",
+  bg: "surface",
+  fill: "surface",
+  backdrop: "surface",
+  text: "content",
+  foreground: "content",
+  fg: "content",
+  font: "content",
+  label: "content",
+  border: "line",
+  stroke: "line",
+  outline: "line",
+  divider: "line",
+  separator: "line",
+  rule: "line",
+  icons: "icon",
+  glyph: "icon",
+};
+
+function categoryMessage(category: string, allowed: readonly string[]): string {
+  const suggestion = CATEGORY_SYNONYMS[category];
+  if (suggestion && allowed.includes(suggestion)) {
+    return `"${category}" is not a category in our system. Do you mean "${suggestion}"?`;
+  }
+  const list = allowed.length === 3 ? `${allowed[0]}, ${allowed[1]} or ${allowed[2]}` : `${allowed.slice(0, -1).join(", ")} or ${allowed[allowed.length - 1]}`;
+  return `"${category}" is not a category. Use ${list}.`;
+}
+
+/**
+ * Tidy what a person types into a name: lower case, and spaces or
+ * underscores become hyphens. A leading "--" stays, so the prefix message
+ * can still explain it.
+ */
+export function normaliseTokenInput(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-")
+    .replace(/(?!^)-{2,}/g, (m, offset: number) => (offset === 0 ? m : "-"));
+}
+
 /** Check the name of 1 token on its own. Set-level checks live in `validate.ts`. */
 export function checkName(token: Token): Issue[] {
   const n = token.name;
   const out: Issue[] = [];
 
-  if (!n) return [issue("error", "name.empty", "The token has no name.")];
+  if (!n) return [issue("error", "name.empty", "The name is empty. Type a name for the token.")];
 
-  if (n.startsWith("--") || n.startsWith("color-")) {
-    out.push(
-      issue("error", "name.prefix", `Leave out the code prefix. Write "${n.replace(/^--/, "").replace(/^color-/, "")}"; the push script adds the prefix.`, n),
-    );
+  const prefix = n.startsWith("--color-") ? "--color-" : n.startsWith("--") ? "--" : n.startsWith("color-") ? "color-" : null;
+  if (prefix) {
+    const clean = n.slice(prefix.length);
+    out.push(issue("error", "name.prefix", `Do not type the prefix "${prefix}". Type "${clean}". The prefix is added in the code.`, n));
     return out;
   }
 
   if (!HYPHENATED.test(n)) {
+    const bad = [...new Set(n.replace(/[a-z0-9-]/g, "").split(""))].join("");
     out.push(
-      issue("error", "name.characters", `"${n}" can only use lower-case letters, numbers and single hyphens.`, n),
+      issue(
+        "error",
+        "name.characters",
+        bad ? `Use only letters, numbers and hyphens. Remove "${bad}".` : "Use 1 hyphen between parts. Do not start or end the name with a hyphen.",
+        n,
+      ),
     );
     return out;
   }
@@ -97,15 +148,11 @@ export function checkName(token: Token): Issue[] {
 function checkPrimitiveColourName(n: string): Issue[] {
   const first = n.split("-")[0];
   if ((COMPONENT_CATEGORIES as readonly string[]).includes(first)) {
-    return [
-      issue("error", "name.primitive.category", `"${n}" looks like a semantic name. Primitives are named [colour]-[step], for example orange-700.`, n),
-    ];
+    return [issue("error", "name.primitive.category", "This is a semantic name. For a primitive, use the format [colour]-[step]. Example: orange-700.", n)];
   }
   // `white`, `orange-700`, `orange-700-aa`
   if (!/^[a-z]+(-\d+)?(-[a-z0-9]+)?$/.test(n)) {
-    return [
-      issue("error", "name.primitive.pattern", `"${n}" does not follow [colour]-[step], for example orange-700 or neutral-100.`, n),
-    ];
+    return [issue("error", "name.primitive.pattern", "Use the format [colour]-[step]. Example: orange-700.", n)];
   }
   return [];
 }
@@ -114,20 +161,16 @@ function checkSemanticColourName(n: string): Issue[] {
   const [category, ...rest] = n.split("-");
   const variant = rest.join("-");
   if (category === "icon") {
-    return [issue("error", "name.semantic.category", `"icon" is only used for component tokens. Semantic categories are ${SEMANTIC_CATEGORIES.join(", ")}.`, n)];
+    return [issue("error", "name.semantic.category", 'Do not use "icon" for a semantic token. Start the name with surface, content or line.', n)];
   }
   if (!(SEMANTIC_CATEGORIES as readonly string[]).includes(category)) {
-    return [
-      issue("error", "name.semantic.category", `"${n}" must start with a category: ${SEMANTIC_CATEGORIES.join(", ")}. The pattern is [category]-[variant].`, n),
-    ];
+    return [issue("error", "name.semantic.category", categoryMessage(category, SEMANTIC_CATEGORIES), n)];
   }
   if (!variant) {
-    return [issue("error", "name.semantic.variant", `"${n}" has no variant. Write ${category}-default rather than ${category}.`, n)];
+    return [issue("error", "name.semantic.variant", `Add a variant to the name. Example: ${category}-default.`, n)];
   }
   if (!(SEMANTIC_VARIANTS as readonly string[]).includes(variant)) {
-    return [
-      issue("info", "name.semantic.new-variant", `"${variant}" is a new semantic variant. Check it is needed before adding it.`, n),
-    ];
+    return [issue("info", "name.semantic.new-variant", `"${variant}" is a new variant. Make sure that the design system needs it.`, n)];
   }
   return [];
 }
@@ -136,34 +179,41 @@ function checkComponentName(token: Token): Issue[] {
   const n = token.name;
   const out: Issue[] = [];
   const segs = n.split("-");
+  const component = token.component ?? segs[0];
 
   if (segs.length < 3) {
-    return [issue("error", "name.component.segments", `"${n}" has too few segments. The pattern is [component]-[category]-[role]-[state].`, n)];
+    const missing = segs.length === 1 ? "The category and the state are missing." : "The state is missing. Add a state to the end of the name.";
+    const example = segs.length === 2 ? `${segs[0]}-${segs[1]}-default` : `${component}-surface-default`;
+    return [issue("error", "name.component.segments", `${missing} Example: ${example}.`, n)];
   }
   if (segs.length > 4) {
+    const extra = segs.slice(4);
     return [
-      issue("error", "name.component.segments", `"${n}" has too many segments. Component, role and state names must be single words, so the pattern is [component]-[category]-[role]-[state].`, n),
+      issue(
+        "error",
+        "name.component.segments",
+        `Token names use the format [component]-[category]-[role]-[state]. This name has ${extra.length} extra ${extra.length === 1 ? "part" : "parts"}: "${extra.join("-")}". Ask the design system team if you need help.`,
+        n,
+      ),
     ];
   }
 
   const p = parseComponentTokenName(n)!;
   if (!token.component) {
-    out.push(issue("error", "name.component.missing", `"${n}" is a component token but has no component set.`, n));
+    out.push(issue("error", "name.component.missing", "Select a component for this token.", n));
   } else if (p.component !== token.component) {
-    out.push(issue("error", "name.component.mismatch", `"${n}" must start with its component name, "${token.component}".`, n));
+    out.push(issue("error", "name.component.mismatch", `Start the name with "${token.component}-".`, n));
   }
   if (!(COMPONENT_CATEGORIES as readonly string[]).includes(p.category)) {
-    out.push(
-      issue("error", "name.component.category", `"${p.category}" is not a category. Pick from ${COMPONENT_CATEGORIES.join(", ")}.`, n),
-    );
+    out.push(issue("error", "name.component.category", categoryMessage(p.category, COMPONENT_CATEGORIES), n));
   }
   for (const s of [p.component, p.role, p.state]) {
     if (s !== undefined && !SEGMENT.test(s)) {
-      out.push(issue("error", "name.component.segment", `"${s}" must be a single lower-case word.`, n));
+      out.push(issue("error", "name.component.segment", `Use 1 word for each part. Change "${s}".`, n));
     }
   }
   if ((FORBIDDEN_STATES as readonly string[]).includes(p.state)) {
-    out.push(issue("error", "name.component.focus", `"${n}": there are no focus tokens. Focus uses the system default.`, n));
+    out.push(issue("error", "name.component.focus", "Do not make focus tokens. The system default shows focus.", n));
   }
   return out;
 }
@@ -174,7 +224,7 @@ function checkNonColourName(token: Token): Issue[] {
   const ok = prefixes.some((p) => n === p || n.startsWith(`${p}-`));
   if (!ok) {
     return [
-      issue("error", "name.kind.prefix", `"${n}" must start with ${prefixes.map((p) => `"${p}-"`).join(" or ")} (provisional rule for ${token.kind} tokens).`, n),
+      issue("error", "name.kind.prefix", `Start the name with "${prefixes[0]}-". Example: ${prefixes[0]}-small. This rule is temporary.`, n),
     ];
   }
   return [];

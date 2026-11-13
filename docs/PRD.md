@@ -239,3 +239,6 @@ Comparing the sample `colors.css` (`reference/colors-sample.css`) with the Colou
 - [ ] Figma: which files and collections the plugin writes to.
 - [ ] Internal hosting: when and how to move from the hosted service to UAL infrastructure.
 - [ ] Sketch note "during the sync, cannot just add or replace": confirm it means references must be kept, not flattened.
+- [ ] Token structure: can a role or state ever be more than 1 word (for example `on-hover`)? Today each part must be 1 word. (From the message review, N14.)
+- [ ] Focus tokens: today there are none. If they arrive later, they would sit in the semantic layer, not the component layer. (N15.)
+- [ ] Spacing tokens: spacing works differently from colour. Space primitives feed a semantic layer with min and max (fluid) values instead of light and dark; people make customised pairs of spacing tokens; grid tokens exist too. Define the naming and data rules before building spacing, as it changes the Light and Dark columns for those tokens. (N16.)

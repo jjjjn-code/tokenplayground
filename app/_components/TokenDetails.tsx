@@ -71,7 +71,7 @@ export function TokenDetails({
       await navigator.clipboard.writeText(text);
       toast.success(`Copied ${text}`);
     } catch {
-      toast.error("Copy failed");
+      toast.error("The copy did not work.");
     }
   };
 

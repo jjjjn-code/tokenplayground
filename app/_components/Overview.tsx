@@ -183,13 +183,14 @@ export function Overview() {
   const flat = groups.flatMap((g) => g.tokens);
   const issuesFor = useCallback((name: string) => issues.filter((i) => i.token === name && i.severity !== "info"), [issues]);
   const errorCount = issues.filter((i) => i.severity === "error").length;
+  const errorTokens = new Set(issues.filter((i) => i.severity === "error").map((i) => i.token ?? i.component)).size;
 
   const copy = async (text: string, label = text) => {
     try {
       await navigator.clipboard.writeText(text);
       toast.success(`Copied ${label}`);
     } catch {
-      toast.error("Copy failed");
+      toast.error("The copy did not work.");
     }
   };
 
@@ -209,14 +210,15 @@ export function Overview() {
     const res = checkBeforeSave(set, [updated], [token.name]);
     const firstError = res.issues.find((i) => i.severity === "error");
     if (firstError) {
-      toast.error("Not saved", { description: firstError.message });
+      toast.error("The change is not kept.", { description: firstError.message });
       return;
     }
     saveTokens([updated], [token.name]);
     setEditCell(null);
     const warning = res.issues.find((i) => i.severity === "warning");
-    if (warning) toast.warning(`Updated ${token.name}`, { description: warning.message });
-    else toast.success(`Updated ${token.name}`, { description: `${mode === "light" && token.layer !== "primitive" ? "Light" : mode === "dark" ? "Dark" : "Value"}: ${formatValue(value)}` });
+    const what = `${mode === "light" && token.layer !== "primitive" ? "Light" : mode === "dark" ? "Dark" : "Value"}: ${formatValue(value).replace(/[{}]/g, "")}.`;
+    if (warning) toast.warning(`${token.name} changed.`, { description: `${what} ${warning.message}` });
+    else toast.success(`${token.name} changed.`, { description: what });
   };
 
   const candidatesFor = (t: Token) =>
@@ -406,7 +408,7 @@ export function Overview() {
           <>
             <span className="hidden text-muted-foreground sm:inline">Click a value to change it. Right-click a row for more.</span>
             <span className={cn("ml-auto", errorCount ? "text-destructive" : "text-muted-foreground")}>
-              {errorCount ? `${errorCount} rule ${errorCount === 1 ? "error" : "errors"} in the set` : "All tokens pass the naming rules"}
+              {errorTokens ? `${errorTokens} ${errorTokens === 1 ? "token has" : "tokens have"} errors` : "All tokens obey the naming rules"}
             </span>
           </>
         )}
@@ -565,7 +567,7 @@ export function Overview() {
                         onCreate={(t) => {
                           saveTokens([t], []);
                           setAdding(null);
-                          toast.success(`Created ${t.name}`, { description: "Saved as a draft in your unsaved changes." });
+                          toast.success(`${t.name} is added.`, { description: "It is a draft. Save to keep it." });
                         }}
                       />
                     );
@@ -614,7 +616,7 @@ export function Overview() {
                   token={selectedToken}
                   onRenamed={(n) => {
                     setOpen(n);
-                    toast.success(`Renamed to ${n}`, { description: "References were updated. Save to keep it." });
+                    toast.success(`The name is now ${n}.`, { description: "The references changed. Save to keep the change." });
                   }}
                 />
                 <SheetDescription className="sr-only">Details, references and history</SheetDescription>
@@ -632,7 +634,7 @@ export function Overview() {
             <DialogTitle className="font-mono">{editing?.name}</DialogTitle>
             <DialogDescription>Change values, status or description. The rules are checked as you go.</DialogDescription>
           </DialogHeader>
-          {editing ? <TokenEditor key={editing.name} token={editing} onDone={(saved) => { setEditing(null); if (saved) toast.success(`Saved ${saved.name}`); }} /> : null}
+          {editing ? <TokenEditor key={editing.name} token={editing} onDone={(saved) => { setEditing(null); if (saved) toast.success(`${saved.name} changed.`, { description: "Save to keep the change." }); }} /> : null}
         </DialogContent>
       </Dialog>
 
@@ -651,7 +653,7 @@ export function Overview() {
                 setCreating(false);
                 setPreset(null);
                 if (saved) {
-                  toast.success(`Created ${saved.name}`);
+                  toast.success(`${saved.name} is added.`, { description: "It is a draft. Save to keep it." });
                   router.replace(`/?set=${saved.layer}/${saved.kind}&token=${saved.name}`);
                 } else if (params.get("new")) router.replace("/");
               }}
@@ -674,7 +676,7 @@ export function Overview() {
             <DialogDescription>
               {statusChange?.to === "active"
                 ? "The token will be treated as active again."
-                : "Deprecated tokens stay in code and in Figma, but the tool warns when anything points to them."}
+                : "A deprecated token stays in the code and in Figma. A warning shows when a token refers to it."}
             </DialogDescription>
           </DialogHeader>
           <form
@@ -686,7 +688,7 @@ export function Overview() {
                 if (statusChange.to === "active") reactivate(n, reason.trim());
                 else deprecate(n, reason.trim());
               }
-              toast.success(statusChange.to === "active" ? "Made active" : `Deprecated ${statusChange.names.length} ${statusChange.names.length === 1 ? "token" : "tokens"}`);
+              toast.success(statusChange.to === "active" ? "The token is active again." : `${statusChange.names.length} ${statusChange.names.length === 1 ? "token is" : "tokens are"} deprecated.`);
               setStatusChange(null);
               setSelection(new Set());
             }}

@@ -139,7 +139,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const fetchData = useCallback(async () => {
     const res = await fetch("/api/data", { cache: "no-store" });
     const body = await res.json();
-    if (!res.ok) throw new Error(body.message ?? "Could not load tokens.");
+    if (!res.ok) throw new Error(body.message ?? "The tokens cannot load.");
     return body as { head: string; tokens: Record<string, unknown>; history: HistoryEntry[]; lastPush: (LastPush & { tokens: unknown }) | null };
   }, []);
 
@@ -191,7 +191,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     try {
       applyRemote(await fetchData(), session.dataRepo!);
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Could not load tokens.");
+      setLoadError(e instanceof Error ? e.message : "The tokens cannot load.");
     }
   }, [applyRemote, fetchData]);
 
@@ -313,7 +313,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const saveToRepo = useCallback(
     async (message: string): Promise<SaveResult> => {
-      if (!remote || !repos) return { ok: false, message: "Not connected to GitHub." };
+      if (!remote || !repos) return { ok: false, message: "GitHub is not connected." };
       setSaving(true);
       try {
         const res = await fetch("/api/data", {
@@ -330,16 +330,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           setRemote({ head: theirs.head, saved: theirSet, savedHistory: theirs.history });
           setSet(merged);
           setHistory([...theirs.history, ...pending]);
-          return { ok: false, conflicts, message: "Someone else saved changes while you were working." };
+          return { ok: false, conflicts, message: "A different person saved changes." };
         }
-        if (!res.ok) return { ok: false, message: body.message ?? "Could not save." };
+        if (!res.ok) return { ok: false, message: body.message ?? "Try again." };
         const savedHistory = body.history as HistoryEntry[];
         setRemote({ head: body.head, saved: set, savedHistory });
         setHistory(savedHistory);
         setPending([]);
         return { ok: true };
       } catch {
-        return { ok: false, message: "Could not reach the server. Your edits are kept here." };
+        return { ok: false, message: "There is a problem with the server connection. Your changes are kept on this page. Try again later." };
       } finally {
         setSaving(false);
       }
@@ -352,7 +352,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     try {
       applyRemote(await fetchData(), repos.data);
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Could not load tokens.");
+      setLoadError(e instanceof Error ? e.message : "The tokens cannot load.");
     }
   }, [repos, applyRemote, fetchData]);
 

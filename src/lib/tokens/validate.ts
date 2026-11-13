@@ -10,6 +10,8 @@ import { isComposite, isReference, type Issue, type Token, type TokenSet, type T
 
 const HEX = /^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/;
 
+const kindWord = (k: string) => (k === "color" ? "colour" : k);
+
 export function validateTokenSet(set: TokenSet): Issue[] {
   const index = indexTokens(set);
   const out: Issue[] = [];
@@ -26,7 +28,7 @@ function checkDuplicates(set: TokenSet): Issue[] {
   return [...dupes].map((n) => ({
     severity: "error" as const,
     code: "name.duplicate",
-    message: `"${n}" already exists. Token names must be unique.`,
+    message: "This name is already used. Type a different name.",
     token: n,
   }));
 }
@@ -39,18 +41,18 @@ export function checkToken(t: Token, index: TokenIndex): Issue[] {
   const info = (code: string, message: string) => out.push({ severity: "info", code, message, token: t.name });
 
   if (!LAYERS_BY_KIND[t.kind].includes(t.layer)) {
-    err("layer.kind", `${t.kind} tokens have no ${t.layer} layer in v1. Only colour has component-specific tokens.`);
+    err("layer.kind", "Only colour tokens can be component tokens. Make this a primitive or a semantic token.");
   }
   if (t.layer !== "component" && t.component) {
-    err("layer.component", `"${t.name}" is a ${t.layer} token, so it cannot belong to a component.`);
+    err("layer.component", `A ${t.layer} token cannot be part of a component. Remove the component.`);
   }
 
   // Modes
   if (t.layer === "primitive" && t.values.dark !== undefined) {
-    err("mode.primitive", `Primitives do not change between modes. Remove the dark value from "${t.name}".`);
+    err("mode.primitive", "Remove the dark value. A primitive has 1 value for all modes.");
   }
   if (t.kind === "color" && t.layer !== "primitive" && t.values.dark === undefined) {
-    err("mode.missing", `"${t.name}" has no dark value. Colour tokens need a light and a dark value.`);
+    err("mode.missing", "The dark value is empty. Select a dark value.");
   }
   if (t.kind === "color" && t.layer !== "primitive" && t.values.dark !== undefined) {
     // Compare final colours, so a token pointing to a semantic token that
@@ -58,7 +60,7 @@ export function checkToken(t: Token, index: TokenIndex): Issue[] {
     const l = resolveToken(index, t.name, "light");
     const d = resolveToken(index, t.name, "dark");
     if (!l.error && !d.error && l.value !== "" && l.value === d.value) {
-      info("mode.same", `"${t.name}" is ${String(l.value)} in both light and dark. Correct for brand colours that do not change, worth checking otherwise.`);
+      info("mode.same", `This token is ${String(l.value)} in light and dark. This is correct for brand colours. For other tokens, make sure that this is correct.`);
     }
   }
 
@@ -66,50 +68,52 @@ export function checkToken(t: Token, index: TokenIndex): Issue[] {
   const isEmpty = (v: TokenValue | undefined) => v === "" || (v !== undefined && isComposite(v) && Object.values(v).some((p) => p === ""));
   const emptyModes = (["light", "dark"] as const).filter((m) => isEmpty(t.values[m]));
   if (emptyModes.length) {
-    err("value.empty", `"${t.name}" is missing a ${emptyModes.join(" and ")} value. Pick a token or enter a value.`);
+    if (t.layer === "primitive" || t.values.dark === undefined) err("value.empty", "The value is empty. Select a token or type a value.");
+    else if (emptyModes.length === 2) err("value.empty", "The light and dark values are empty. Select a light value and a dark value.");
+    else err("value.empty", `The ${emptyModes[0]} value is empty. Select a ${emptyModes[0]} value.`);
   }
   for (const v of [t.values.light, t.values.dark]) {
     if (v === undefined || isEmpty(v)) continue;
     if (t.layer === "primitive" && referencesIn(v).length) {
-      err("ref.primitive", `Primitives hold raw values. "${t.name}" points to another token.`);
+      err("ref.primitive", "A primitive cannot refer to a token. Type a raw value. Example: #A80000.");
     }
     if (t.layer !== "primitive" && hasRawSimpleValue(v)) {
-      warn("ref.raw", `"${t.name}" holds a raw value. Semantic and component tokens should point to another token.`);
+      warn("ref.raw", "This token has a raw value. Semantic and component tokens must refer to a token. Select a token.");
     }
     if (t.kind === "color" && typeof v === "string" && !HEX.test(v)) {
-      err("value.colour", `"${v}" is not a colour. Use a hex value such as #FF5000.`);
+      err("value.colour", `"${v}" is not a colour. Type a hex value. Example: #FF5000.`);
     }
   }
 
   for (const ref of referencesOf(t)) {
     const target = index.get(ref);
     if (!target) {
-      err("ref.missing", `"${t.name}" points to "${ref}", which does not exist.`);
+      err("ref.missing", `The token "${ref}" does not exist. Select a different token.`);
       continue;
     }
     if (LAYER_RANK[target.layer] >= LAYER_RANK[t.layer]) {
-      err("ref.layer", `"${t.name}" (${t.layer}) points to "${ref}" (${target.layer}). A token can only point to a token in a lower layer.`);
+      err("ref.layer", `A ${t.layer} token cannot refer to a ${target.layer} token. Select a token from a lower layer: ${t.layer === "component" ? "primitive or semantic" : "primitive"}.`);
     }
     const simple = [t.values.light, t.values.dark].some((v) => isReference(v) && v.ref === ref);
     if (simple && target.kind !== t.kind) {
-      err("ref.kind", `"${t.name}" is a ${t.kind} token but points to "${ref}", a ${target.kind} token.`);
+      err("ref.kind", `A ${kindWord(t.kind)} token cannot refer to a ${kindWord(target.kind)} token. Select a ${kindWord(t.kind)} token.`);
     }
     if (t.layer === "component" && target.layer === "semantic" && t.kind === "color") {
       const cat = t.name.split("-")[1];
       const targetCat = target.name.split("-")[0];
       if (cat && targetCat !== cat && !(cat === "icon" && targetCat === "content")) {
-        warn("ref.category", `"${t.name}" is a ${cat} token but points to "${ref}", a ${targetCat} token. Check this is intended.`);
+        warn("ref.category", `This ${cat} token refers to a ${targetCat} token. Make sure that this is correct.`);
       }
     }
     if (target.status === "deprecated" && t.status !== "deprecated") {
-      warn("ref.deprecated", `"${t.name}" points to "${ref}", which is deprecated.`);
+      warn("ref.deprecated", `"${ref}" is deprecated. Select a different token.`);
     }
   }
 
   for (const mode of ["light", "dark"] as const) {
     const r = resolveToken(index, t.name, mode);
     if (r.error?.kind === "cycle") {
-      err("ref.cycle", `References loop back on themselves: ${r.error.chain.join(" > ")}.`);
+      err("ref.cycle", `The references make a loop: ${r.error.chain.join(" > ")}. Change 1 of the references.`);
       break;
     }
   }
@@ -140,7 +144,7 @@ function checkComponents(set: TokenSet): Issue[] {
         out.push({
           severity: "error",
           code: "component.default",
-          message: `${component}-${g} has no -default token. -default is always written.`,
+          message: `${component}-${g} does not have a default token. Add ${component}-${g}-default.`,
           component,
         });
       }
@@ -150,7 +154,7 @@ function checkComponents(set: TokenSet): Issue[] {
       out.push({
         severity: "warning",
         code: "component.roles",
-        message: `${component} mixes tokens with and without a role. Either every token has a role or none do.`,
+        message: `Some ${component} tokens have a role and some do not. Use a role in all ${component} tokens or in no ${component} tokens.`,
         component,
       });
     }
@@ -158,7 +162,7 @@ function checkComponents(set: TokenSet): Issue[] {
       out.push({
         severity: "info",
         code: "component.no-role",
-        message: `${component} has no role segment. If a second variant is added later, every ${component} token must be renamed.`,
+        message: `${component} does not use roles. If you add a second variant later, you must change the names of all ${component} tokens.`,
         component,
       });
     }
@@ -184,7 +188,7 @@ export function checkComponentMix(set: TokenSet, usage: Record<string, string[]>
       out.push({
         severity: "warning",
         code: "component.mix",
-        message: `${component} mixes its own tokens with Base semantic tokens (${semantic.map((t) => t.name).join(", ")}). Use one or the other.`,
+        message: `A component must use only its own tokens or only Base semantic tokens, not both. ${component} uses its own tokens and ${semantic.map((t) => t.name).join(", ")}. Change ${component} to use 1 type for all its parts.`,
         component,
       });
     }
@@ -192,7 +196,7 @@ export function checkComponentMix(set: TokenSet, usage: Record<string, string[]>
       out.push({
         severity: "warning",
         code: "component.primitive",
-        message: `${component} uses primitives directly (${primitive.map((t) => t.name).join(", ")}). Use a semantic or component token instead.`,
+        message: `${component} uses primitives (${primitive.map((t) => t.name).join(", ")}). Use semantic tokens or component tokens.`,
         component,
       });
     }
@@ -200,7 +204,7 @@ export function checkComponentMix(set: TokenSet, usage: Record<string, string[]>
       out.push({
         severity: "warning",
         code: "component.foreign",
-        message: `${component} uses another component's tokens (${foreign.map((t) => t.name).join(", ")}).`,
+        message: `${component} uses tokens from a different component (${foreign.map((t) => t.name).join(", ")}). Use ${component} tokens or semantic tokens.`,
         component,
       });
     }

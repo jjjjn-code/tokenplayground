@@ -86,7 +86,7 @@ export default function PushPage() {
       if (!res.ok) throw new Error(body.message);
       setPlan(body as Plan);
     } catch (e) {
-      setPlanError(e instanceof Error ? e.message : "Could not work out the changes.");
+      setPlanError(e instanceof Error ? e.message : "The changes cannot load. Try again.");
     } finally {
       setLoading(false);
     }
@@ -110,12 +110,12 @@ export default function PushPage() {
       const body = await res.json();
       if (!res.ok) throw new Error(body.message);
       setDone({ prUrl: body.prUrl, prNumber: body.prNumber, branch: body.branch, count: body.changes.length });
-      toast.success(`Pull request #${body.prNumber} opened`);
+      toast.success(`Pull request #${body.prNumber} is open.`);
       setTitle("");
       setSummary("");
       applyPush(body);
     } catch (e) {
-      toast.error("Push failed", { description: e instanceof Error ? e.message : undefined });
+      toast.error("The changes are not pushed.", { description: e instanceof Error ? e.message : undefined });
     } finally {
       setPushing(false);
     }
@@ -146,19 +146,19 @@ export default function PushPage() {
           <div className="grid min-w-0 content-start gap-5">
             {mode === "local" ? (
               <Notice tone="info" title="Not connected to GitHub">
-                This preview compares your browser&apos;s tokens with the dummy set. To push for real, follow <span className="font-mono">docs/SETUP.md</span>, or run the tool in demo mode to try it with a fake GitHub.
+                This preview compares your tokens with the dummy token set. To push, connect GitHub. Refer to <span className="font-mono">docs/SETUP.md</span>.
               </Notice>
             ) : null}
             {remote && unsaved ? (
-              <Notice tone="warning" title={`${unsaved} unsaved ${unsaved === 1 ? "change" : "changes"}`}>
-                Push only sends saved tokens. Save first with the button at the bottom of the sidebar, then push.
+              <Notice tone="warning" title={`You have ${unsaved} unsaved ${unsaved === 1 ? "change" : "changes"}`}>
+                Push sends only saved changes. Save your changes first, then push.
               </Notice>
             ) : null}
             {done ? (
               <div className="flex flex-wrap items-center gap-3 rounded-lg border border-success/40 bg-success/5 p-4">
                 <CircleCheck className="size-5 text-success" />
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium">Pull request #{done.prNumber} opened with {done.count} {done.count === 1 ? "change" : "changes"}</div>
+                  <div className="text-sm font-medium">Pull request #{done.prNumber} is open with {done.count} {done.count === 1 ? "change" : "changes"}.</div>
                   <div className="truncate font-mono text-xs text-muted-foreground">{done.branch}</div>
                 </div>
                 <Button size="sm" variant="outline" asChild>
@@ -166,7 +166,7 @@ export default function PushPage() {
                 </Button>
               </div>
             ) : null}
-            {planError ? <Notice tone="warning" title="Could not work out the changes">{planError}</Notice> : null}
+            {planError ? <Notice tone="warning" title="The changes cannot load">{planError}</Notice> : null}
 
             <section className="overflow-hidden rounded-lg border">
               <div className="flex items-center justify-between gap-3 border-b bg-muted/40 px-4 py-2.5">
@@ -177,7 +177,7 @@ export default function PushPage() {
                 <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Working out what changed</div>
               ) : !shown.changes.length ? (
                 <div className="p-6 text-sm text-muted-foreground">
-                  Nothing to push: the saved tokens match the last push. Change tokens in the <Link href="/" className="underline">overview</Link>, save, then come back.
+                  There are no changes to push. The saved tokens are the same as the last push. To make changes, go to the <Link href="/" className="underline">overview</Link>.
                 </div>
               ) : (
                 <table className="w-full table-fixed text-[13px]">

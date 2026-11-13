@@ -19,7 +19,7 @@ export function Gate({ children }: { children: React.ReactNode }) {
         </div>
         <h1 className="text-lg font-semibold">Sign in to the token tool</h1>
         <p className="max-w-sm text-center text-sm text-muted-foreground">
-          The tool reads and saves tokens in {repos?.data ?? "the token data repo"} and opens pull requests as you, so it needs your GitHub account.
+          Your GitHub account is used to read tokens, save tokens and open pull requests.
         </p>
         <Button asChild>
           <a href="/api/auth/login"><LogIn className="size-4" /> Sign in with GitHub</a>
@@ -32,7 +32,7 @@ export function Gate({ children }: { children: React.ReactNode }) {
     return (
       <Centre>
         <AlertTriangle className="size-6 text-warning" />
-        <h1 className="text-lg font-semibold">Could not load the tokens</h1>
+        <h1 className="text-lg font-semibold">The tokens cannot load</h1>
         <p className="max-w-md text-center text-sm text-muted-foreground">{loadError}</p>
         <Button variant="outline" onClick={() => void reload()}><RotateCw className="size-4" /> Try again</Button>
       </Centre>
