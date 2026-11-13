@@ -439,27 +439,67 @@ export default function PullPage() {
             <DialogTitle>Review {chosen.length} {chosen.length === 1 ? "decision" : "decisions"}</DialogTitle>
             <DialogDescription>Examine your decisions. Nothing changes until you push {needsPr ? "Save and open pull request" : "Save decisions"}.</DialogDescription>
           </DialogHeader>
-          <ul className="grid gap-2 text-sm">
-            {chosen.map((d) => {
+          {(() => {
+            const inTool = chosen.filter((d) => drafts[d.id].decision === "accept");
+            const toCode = chosen.filter((d) => drafts[d.id].decision === "decline");
+            /** What changes for 1 decision, in plain words, with from and to values. */
+            const change = (d: Discrepancy) => {
               const dr = drafts[d.id];
+              const accept = dr.decision === "accept";
+              if (d.kind === "missing") return <span>{accept ? "Deleted from the tool." : "Added back to the code."}</span>;
+              if (d.kind === "extra") {
+                return accept ? (
+                  <span>Added to the tool as <span className="font-mono">{dr.name ?? d.suggestedName}</span>.{(dr.name ?? d.suggestedName) !== d.suggestedName ? " Its new name also goes to developers." : ""}</span>
+                ) : (
+                  <span>Removed from the code.</span>
+                );
+              }
+              if (d.kind === "renamed") return <span>Code name corrected to <span className="font-mono">{d.expectedCodeName}</span>.</span>;
               return (
-                <li key={d.id} className="grid gap-0.5 rounded-md border p-2.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-[13px]">{d.token ?? d.codeName}</span>
-                    <Badge variant={dr.decision === "accept" ? "secondary" : "outline"}>{dr.decision === "accept" ? (d.kind === "extra" ? `Accept as ${dr.name ?? d.suggestedName}` : "Accept") : "Decline"}</Badge>
-                  </div>
-                  <span className="text-muted-foreground">{dr.reason}</span>
-                </li>
+                <span className="grid gap-0.5">
+                  {d.differences.map((x) => (
+                    <span key={x.mode} className="flex flex-wrap items-center gap-1.5">
+                      <span className="w-10 text-xs text-muted-foreground">{x.mode === "light" ? "Light" : "Dark"}</span>
+                      <CssValue value={accept ? x.tool : x.code} mode={x.mode} />
+                      <ArrowRight className="size-3 text-muted-foreground" aria-label="changes to" />
+                      <CssValue value={accept ? x.code : x.tool} mode={x.mode} />
+                    </span>
+                  ))}
+                </span>
               );
-            })}
-          </ul>
-          <div className="grid gap-1 rounded-md bg-muted/40 p-3 text-sm">
-            <span className="font-medium">What happens next</span>
-            {acceptCount ? <span>{acceptCount} {acceptCount === 1 ? "token changes" : "tokens change"} in the tool to match the code. Nothing is sent to the code for {acceptCount === 1 ? "it" : "them"}, because the code already has {acceptCount === 1 ? "this value" : "these values"}.</span> : null}
-            {declineCount ? <span>{declineCount} {declineCount === 1 ? "value goes" : "values go"} back to the code in 1 pull request for developers, with your notes.</span> : null}
-            {renamedCount ? <span>{renamedCount} {renamedCount === 1 ? "token gets its new name" : "tokens get their new names"} in the code in the same pull request.</span> : null}
-            <span>Each decision goes in the token history with your name and note.</span>
-          </div>
+            };
+            const group = (title: string, caption: string, items: Discrepancy[]) =>
+              items.length ? (
+                <section className="grid gap-2">
+                  <h3 className="text-sm font-medium">{title} ({items.length})</h3>
+                  <ul className="grid gap-2">
+                    {items.map((d) => (
+                      <li key={d.id} className="grid gap-1 rounded-md border p-2.5 text-sm">
+                        <span className="font-mono text-[13px]">{d.token ?? d.codeName}</span>
+                        {change(d)}
+                        <span className="text-muted-foreground">Note: {drafts[d.id].reason}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-xs text-muted-foreground">{caption}</p>
+                </section>
+              ) : null;
+            return (
+              <div className="grid gap-4">
+                {group(
+                  "Changes in the tool",
+                  `The code already has ${inTool.length === 1 ? "this value" : "these values"}. Nothing is sent to developers${renamedCount ? ", except new names" : ""}.`,
+                  inTool,
+                )}
+                {group(
+                  "Sent to developers",
+                  `1 pull request asks developers to change the code. Your ${toCode.length === 1 ? "note is" : "notes are"} in its description.`,
+                  toCode,
+                )}
+                <p className="text-sm text-muted-foreground">All decisions go in each token's history with your name and note.</p>
+              </div>
+            );
+          })()}
           <DialogFooter>
             <Button variant="outline" onClick={() => setReviewOpen(false)}>Back</Button>
             <Button onClick={() => void apply()} disabled={applying}>
