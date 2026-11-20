@@ -4,10 +4,26 @@
  * Figma plugin and the tests; it never touches the Figma API itself.
  */
 import { cssVariableName, figmaPath, isPublishedInFigma, parseComponentTokenName } from "../tokens/naming";
-import { DEFAULT_FIGMA_GROUP } from "../tokens/rules";
+import { columnSetOf, modesOf, valueInMode } from "../tokens/references";
+import { COLUMN_SETS, DEFAULT_FIGMA_GROUP, type ColumnSetId } from "../tokens/rules";
 import { isComposite, isReference, type Kind, type Mode, type SimpleValue, type Token, type TokenSet } from "../tokens/types";
 
-export type CollectionKey = "primitives" | "semantic" | "components";
+/**
+ * The Figma collections the tool writes to, as in the UAL UI Kit file. Each
+ * collection has 1 column set; its modes are the Figma modes.
+ */
+export const COLLECTIONS = {
+  "colour-primitives": { name: "Colour primitives", columns: "value" },
+  "type-primitives": { name: "Type primitives", columns: "value" },
+  "space-primitives": { name: "Space primitives", columns: "value" },
+  "other-primitives": { name: "Other primitives", columns: "value" },
+  motion: { name: "Motion", columns: "motion" },
+  "colour-tokens": { name: "Colour tokens", columns: "theme" },
+  "fluid-tokens": { name: "Fluid tokens", columns: "fluid" },
+  "other-tokens": { name: "Other tokens", columns: "value" },
+} as const satisfies Record<string, { name: string; columns: ColumnSetId }>;
+
+export type CollectionKey = keyof typeof COLLECTIONS;
 export type FigmaType = "COLOR" | "FLOAT" | "STRING";
 
 export type FigmaValue =
@@ -23,9 +39,8 @@ export interface VariableSpec {
   /** Figma variable name. Slashes make groups. */
   name: string;
   type: FigmaType;
-  light: FigmaValue;
-  /** Only for semantic and component collections. */
-  dark?: FigmaValue;
+  /** Values by mode key (`value`, `light`, `dark`, `min`, `max`, `default`, `reduced-motion`). */
+  values: Record<Mode, FigmaValue>;
   hiddenFromPublishing: boolean;
   description: string;
   /** Shown to developers in Figma Dev Mode. */
@@ -43,11 +58,37 @@ export interface SyncOptions {
   group?: string;
 }
 
-export const COLLECTION_MODES: Record<CollectionKey, string[]> = {
-  primitives: ["Value"],
-  semantic: ["Light", "Dark"],
-  components: ["Light", "Dark"],
-};
+/** The modes a collection has, default first. */
+export const collectionModes = (key: CollectionKey) => COLUMN_SETS[COLLECTIONS[key].columns].modes;
+
+/**
+ * A Figma mode name as a mode key, so "Reduced motion", "reduced-motion" and
+ * "Reduced-Motion" all match `reduced-motion`.
+ */
+export const modeKeyOf = (name: string): string => name.trim().toLowerCase().replace(/\s+/g, "-");
+
+/** The collection a token goes in. Component tokens sit in Colour tokens, under the Interactive group. */
+export function collectionFor(t: Pick<Token, "layer" | "kind">): CollectionKey {
+  if (t.layer === "primitive") {
+    switch (t.kind) {
+      case "color":
+        return "colour-primitives";
+      case "typography":
+        return "type-primitives";
+      case "spacing":
+      case "sizing":
+        return "space-primitives";
+      case "motion":
+        return "motion";
+      default:
+        return "other-primitives";
+    }
+  }
+  const set = columnSetOf(t);
+  if (set === "theme") return "colour-tokens";
+  if (set === "fluid") return "fluid-tokens";
+  return "other-tokens";
+}
 
 const KIND_TITLE: Record<Kind, string> = {
   color: "Colour",
@@ -57,6 +98,7 @@ const KIND_TITLE: Record<Kind, string> = {
   radius: "Radius",
   border: "Border",
   shadow: "Shadow",
+  motion: "Motion",
 };
 
 const title = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
@@ -71,18 +113,23 @@ export function hexToRgba(hex: string): { r: number; g: number; b: number; a: nu
   return { r: n(0), g: n(2), b: n(4), a: h.length === 8 ? n(6) : 1 };
 }
 
-/** The Figma variable name for a token: groups by type, category or component. */
+/**
+ * The Figma variable name for a token. A token keeps the name it has in
+ * Figma (`figma`), so groups such as `spacing/max/3xs` stay as they are.
+ * Without one: colour primitives sit at the top, semantic colours under
+ * Base, component tokens under Interactive, and other tokens under their type.
+ */
 export function variableName(t: Token, group = DEFAULT_FIGMA_GROUP): string {
+  if (t.figma) return t.figma;
   if (t.layer === "component") return figmaPath(t, group) ?? `${group}/${t.name}`;
-  if (t.layer === "semantic" && t.kind === "color") return `${title(t.name.split("-")[0])}/${t.name}`;
+  if (t.kind === "color") return t.layer === "primitive" ? t.name : `Base/${title(t.name.split("-")[0])}/${t.name}`;
   return `${KIND_TITLE[t.kind]}/${t.name}`;
 }
 
 function typeFor(t: Token): FigmaType | null {
   if (t.kind === "color") return "COLOR";
-  const v = t.values.light;
-  if (isComposite(v)) return null;
-  if (t.name.startsWith("font-family")) return "STRING";
+  if (Object.values(t.values).some((v) => isComposite(v))) return null;
+  if (t.name.startsWith("font-family") || t.name.startsWith("ease")) return "STRING";
   return "FLOAT";
 }
 
@@ -93,6 +140,7 @@ function valueFor(v: SimpleValue, type: FigmaType): FigmaValue | null {
     return c ? { kind: "color", ...c } : null;
   }
   if (type === "STRING") return { kind: "string", value: String(v) };
+  // Durations such as 150ms are numbers in Figma.
   const n = typeof v === "number" ? v : parseFloat(String(v));
   return Number.isFinite(n) ? { kind: "float", value: n } : null;
 }
@@ -117,14 +165,19 @@ export function buildSpecs(set: TokenSet, opts: SyncOptions = {}): { specs: Vari
       skipped.push({ token: t.name, reason: `Figma variables cannot hold a ${t.kind} token with several parts. Use a Figma style for it.` });
       continue;
     }
-    const light = valueFor(t.values.light as SimpleValue, type);
-    const darkRaw = t.layer === "primitive" ? undefined : ((t.values.dark ?? t.values.light) as SimpleValue);
-    const dark = darkRaw === undefined ? undefined : valueFor(darkRaw, type);
-    if (!light || (darkRaw !== undefined && !dark)) {
+    const collection = collectionFor(t);
+    const values: Record<Mode, FigmaValue> = {};
+    let bad = false;
+    for (const m of modesOf(t)) {
+      const v = valueFor(valueInMode(t, m.key) as SimpleValue, type);
+      if (!v) bad = true;
+      else values[m.key] = v;
+    }
+    if (bad) {
       skipped.push({ token: t.name, reason: "The value cannot become a Figma variable value." });
       continue;
     }
-    const missingAlias = [light, dark].find((v) => v?.kind === "alias" && !syncable(v.token));
+    const missingAlias = Object.values(values).find((v) => v.kind === "alias" && !syncable(v.token));
     if (missingAlias && missingAlias.kind === "alias") {
       skipped.push({ token: t.name, reason: `It refers to ${missingAlias.token}, which is not synced.` });
       continue;
@@ -132,11 +185,10 @@ export function buildSpecs(set: TokenSet, opts: SyncOptions = {}): { specs: Vari
     const p = t.layer === "component" ? parseComponentTokenName(t.name) : null;
     specs.push({
       token: t.name,
-      collection: t.layer === "primitive" ? "primitives" : t.layer === "semantic" ? "semantic" : "components",
+      collection,
       name: variableName(t, opts.group),
       type,
-      light,
-      ...(dark ? { dark } : {}),
+      values,
       hiddenFromPublishing: !isPublishedInFigma(t) || t.status === "deprecated",
       description: [t.status === "deprecated" ? "Deprecated." : "", t.description ?? "", p && p.state !== "default" ? `State: ${p.state}.` : ""]
         .filter(Boolean)
@@ -151,7 +203,7 @@ export function buildSpecs(set: TokenSet, opts: SyncOptions = {}): { specs: Vari
     const names = new Set(specs.map((s) => s.token));
     for (let i = specs.length - 1; i >= 0; i -= 1) {
       const s = specs[i];
-      const bad = [s.light, s.dark].find((v) => v?.kind === "alias" && !names.has(v.token));
+      const bad = Object.values(s.values).find((v) => v.kind === "alias" && !names.has(v.token));
       if (bad && bad.kind === "alias") {
         skipped.push({ token: s.token, reason: `It refers to ${bad.token}, which is not synced.` });
         specs.splice(i, 1);
@@ -170,8 +222,8 @@ export interface ExistingVariable {
   collection: CollectionKey | null;
   name: string;
   type: FigmaType | string;
-  light?: FigmaValue;
-  dark?: FigmaValue;
+  /** Values by mode key, read from the collection's modes. */
+  values: Record<Mode, FigmaValue | undefined>;
   hiddenFromPublishing: boolean;
   description: string;
   codeSyntax?: string;
@@ -218,7 +270,8 @@ export function describeValue(v?: FigmaValue): string {
  * name, so an existing hand-made variable is adopted instead of copied.
  * Only variables made by a sync are ever removed.
  */
-export function planSync(specs: VariableSpec[], existing: ExistingVariable[], skipped: SkippedToken[] = []): SyncPlan {
+export function planSync(specs: VariableSpec[], existing: ExistingVariable[], alreadySkipped: SkippedToken[] = []): SyncPlan {
+  const skipped = [...alreadySkipped];
   const byToken = new Map(existing.filter((e) => e.token).map((e) => [e.token!, e]));
   const byName = new Map(existing.filter((e) => e.collection).map((e) => [`${e.collection}|${e.name}`, e]));
   const used = new Set<string>();
@@ -233,12 +286,16 @@ export function planSync(specs: VariableSpec[], existing: ExistingVariable[], sk
       continue;
     }
     used.add(e.id);
+    if (e.type !== s.type) {
+      // Changing the type means deleting the variable, which unbinds every layer that uses it. Leave it to a person.
+      skipped.push({ token: s.token, reason: `In Figma, ${e.name} is a ${e.type} variable; the tool would make a ${s.type} variable. Change it by hand in Figma.` });
+      continue;
+    }
     const d: string[] = [];
     if (e.name !== s.name) d.push(`Name: ${e.name} → ${s.name}`);
-    if (e.type !== s.type) d.push(`Type: ${e.type} → ${s.type}`);
-    const lightLabel = s.collection === "primitives" ? "Value" : "Light";
-    if (!sameValue(e.light, s.light)) d.push(`${lightLabel}: ${describeValue(e.light)} → ${describeValue(s.light)}`);
-    if (s.dark && !sameValue(e.dark, s.dark)) d.push(`Dark: ${describeValue(e.dark)} → ${describeValue(s.dark)}`);
+    for (const m of collectionModes(s.collection)) {
+      if (!sameValue(e.values[m.key], s.values[m.key])) d.push(`${m.label}: ${describeValue(e.values[m.key])} → ${describeValue(s.values[m.key])}`);
+    }
     if (e.hiddenFromPublishing !== s.hiddenFromPublishing) d.push(s.hiddenFromPublishing ? "Hidden from publishing" : "Published");
     if ((e.description ?? "") !== s.description) d.push("Description");
     if ((e.codeSyntax ?? "") !== s.codeSyntax) d.push("Code syntax");
@@ -249,10 +306,3 @@ export function planSync(specs: VariableSpec[], existing: ExistingVariable[], sk
   const remove = existing.filter((e) => e.token && !used.has(e.id) && !specs.some((s) => s.token === e.token));
   return { add, change, remove, unchanged, skipped };
 }
-
-/** Values per mode name, for the plugin. */
-export function modeValues(s: VariableSpec): Record<string, FigmaValue> {
-  return s.collection === "primitives" ? { Value: s.light } : { Light: s.light, Dark: s.dark ?? s.light };
-}
-
-export const MODE_FOR: Record<Mode, string> = { light: "Light", dark: "Dark" };

@@ -184,7 +184,7 @@ Figma sync runs through a companion plugin, because on our Pro plan the Figma Va
 1. A designer opens the plugin in the target Figma file.
 2. The plugin fetches the latest approved token set from the tool.
 3. It shows what will be added, changed or removed against the file's current variables.
-4. The designer confirms; the plugin creates or updates variables in the right collections and groups, keeps references as variable aliases, and sets light and dark modes.
+4. The designer confirms; the plugin creates or updates variables in the right collections and groups, keeps references as variable aliases, and sets each collection's modes (Value; Light and Dark; Min and Max; Default and Reduced motion).
 5. Non-default state tokens are hidden from publishing, so designers only see `-default` tokens.
 6. The plugin reports the sync back to the tool, which logs it on each token.
 
@@ -231,6 +231,10 @@ Comparing the sample `colors.css` (`reference/colors-sample.css`) with the Colou
 - [ ] Token data repo: name, who owns it, and who has write access.
 - [ ] Hover and active tokens in code (`--color-hover`, `--color-active`): rename to the semantic pattern, or retire.
 - [ ] Naming rules for spacing, sizing, typography, radius, border and shadow, and whether any of them get a component-specific layer.
+- [ ] Fluid tokens: the min and max screen widths of the UAL grid (provisional: 400 and 1600 pixels).
+- [ ] Fluid tokens in code: confirm developers want 1 `clamp()` value per token (Utopia style), and the code names (`--space-s`, `--space-s-l`, `--step-0`).
+- [ ] Negative font steps: Utopia writes `--step--1`, which breaks the 1 hyphen rule. Choose a name, for example `step-minus-1`.
+- [ ] Grid @min and Grid @max: which variables they hold.
 - [ ] Non-colour tokens: where spacing, typography, radius, border and shadow live in code today.
 - [ ] Component tokens in code: confirm with developers that dark values go under `.dark .button`, and whether component tokens take the `--color-` prefix.
 - [ ] Colour page: fix the light-mode reference labels (drift item 06).
@@ -241,4 +245,4 @@ Comparing the sample `colors.css` (`reference/colors-sample.css`) with the Colou
 - [ ] Sketch note "during the sync, cannot just add or replace": confirm it means references must be kept, not flattened.
 - [ ] Token structure: can a role or state ever be more than 1 word (for example `on-hover`)? Today each part must be 1 word. (From the message review, N14.)
 - [ ] Focus tokens: today there are none. If they arrive later, they would sit in the semantic layer, not the component layer. (N15.)
-- [ ] Spacing tokens: spacing works differently from colour. Space primitives feed a semantic layer with min and max (fluid) values instead of light and dark; people make customised pairs of spacing tokens; grid tokens exist too. Define the naming and data rules before building spacing, as it changes the Light and Dark columns for those tokens. (N16.)
+- [x] Spacing tokens: spacing works differently from colour. Space primitives feed a semantic layer with min and max (fluid) values instead of light and dark; people make customised pairs of spacing tokens; grid tokens exist too. (N16.) Decided 20 Nov 2026: each token set has a column set (Value; Light and Dark; Min and Max; Default and Reduced motion). Primitives have 1 Value, except Motion. Theming starts at the semantic layer: colour by light and dark, spacing and type by min and max. Space pairs and custom space pairs are fluid tokens with a min from 1 step and a max from another. Naming for these is still provisional (see README).

@@ -19,10 +19,15 @@ export type Kind =
   | "typography"
   | "radius"
   | "border"
-  | "shadow";
+  | "shadow"
+  | "motion";
 
-/** Colour modes. Light is the default (Tailwind `@theme`); dark overrides it (`.dark`). */
-export type Mode = "light" | "dark";
+/**
+ * A mode (a column in the table, a mode in Figma), for example `value`,
+ * `light`, `dark`, `min`, `max`, `default` or `reduced-motion`. Which modes a
+ * token has comes from its column set; see `COLUMN_SETS` in `rules.ts`.
+ */
+export type Mode = string;
 
 /** Token lifecycle. Push and sync states are tracked in history, not here. */
 export type Status = "draft" | "active" | "deprecated";
@@ -48,12 +53,19 @@ export interface Token {
   /** Component slug. Only set for component-specific tokens. */
   component?: string;
   /**
-   * Values by mode. `light` is always present and is the default value.
-   * `dark` is only used by semantic and component tokens.
+   * Values by mode, keyed by the modes of the token's column set. The first
+   * mode is the default value and is always present. Read values with
+   * `valueInMode`, which falls back to the default.
    */
-  values: { light: TokenValue; dark?: TokenValue };
+  values: Record<Mode, TokenValue>;
   status: Status;
   description?: string;
+  /**
+   * The variable's name in Figma, with slashes for groups, for example
+   * `spacing/max/3xs`. Kept from an import so a sync updates the same
+   * variable. When empty, the plugin works out a name.
+   */
+  figma?: string;
 }
 
 /** A whole token set, as loaded from the token data repo (or the dummy set). */

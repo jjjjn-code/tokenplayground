@@ -13,14 +13,49 @@ import {
   type TokenSet,
   type TokenValue,
 } from "./types";
+import { COLUMN_SETS, columnSetFor, type ColumnSetId } from "./rules";
 
 export type TokenIndex = Map<string, Token>;
 
 export const indexTokens = (set: TokenSet): TokenIndex => new Map(set.tokens.map((t) => [t.name, t]));
 
-/** The value a token holds in a mode. Tokens without a dark value use light in both modes. */
-export const valueInMode = (t: Token, mode: Mode): TokenValue =>
-  mode === "dark" && t.values.dark !== undefined ? t.values.dark : t.values.light;
+/** The column set a token uses. */
+export const columnSetOf = (t: Pick<Token, "layer" | "kind">): ColumnSetId => columnSetFor(t.layer, t.kind);
+
+/** The modes (columns) a token has, default first. */
+export const modesOf = (t: Pick<Token, "layer" | "kind">): { key: Mode; label: string }[] => [...COLUMN_SETS[columnSetOf(t)].modes];
+
+/** The default mode of a token: `value`, `light`, `min` or `default`. */
+export const defaultMode = (t: Pick<Token, "layer" | "kind">): Mode => COLUMN_SETS[columnSetOf(t)].modes[0].key;
+
+/**
+ * The value a token holds in a mode. A token without a value for that mode
+ * (a primitive read in dark mode, or a light-only border) uses its default
+ * value. Values saved before column sets existed are keyed `light`; they are
+ * read as the default.
+ */
+export function valueInMode(t: Pick<Token, "layer" | "kind" | "values">, mode: Mode): TokenValue {
+  if (t.values[mode] !== undefined) return t.values[mode];
+  const d = t.values[defaultMode(t)];
+  if (d !== undefined) return d;
+  return t.values.light ?? Object.values(t.values)[0] ?? "";
+}
+
+/** The value a token holds in its default mode. */
+export const defaultValue = (t: Pick<Token, "layer" | "kind" | "values">): TokenValue => valueInMode(t, defaultMode(t));
+
+/**
+ * Values keyed by the token's own modes. Fixes values saved with older keys
+ * (for example `light` on a primitive, which is now `value`).
+ */
+export function normaliseValues<T extends Pick<Token, "layer" | "kind" | "values">>(t: T): T {
+  const modes = modesOf(t).map((m) => m.key);
+  if (Object.keys(t.values).every((k) => modes.includes(k))) return t;
+  const values: Record<Mode, TokenValue> = {};
+  for (const m of modes) if (t.values[m] !== undefined) values[m] = t.values[m];
+  if (values[modes[0]] === undefined) values[modes[0]] = valueInMode(t, modes[0]);
+  return { ...t, values };
+}
 
 /** Every token name a value points to directly (including inside composites). */
 export function referencesIn(v: TokenValue | undefined): string[] {
@@ -32,7 +67,7 @@ export function referencesIn(v: TokenValue | undefined): string[] {
 
 /** Every token name a token points to directly, across all modes. */
 export function referencesOf(t: Token): string[] {
-  return [...new Set([...referencesIn(t.values.light), ...referencesIn(t.values.dark)])];
+  return [...new Set(Object.values(t.values).flatMap((v) => referencesIn(v)))];
 }
 
 export type ResolveError =
@@ -75,6 +110,7 @@ function resolveSimple(index: TokenIndex, v: SimpleValue, mode: Mode, chain: str
   if (!target) return { value: null, chain, error: { kind: "missing", ref: v.ref } };
   // A referenced token is read in the same mode, so a component token that
   // points to a semantic token picks up that token's dark value in dark mode.
+  // A token without that mode (a primitive) gives its default value.
   return resolveValue(index, valueInMode(target, mode), mode, [...chain, v.ref]);
 }
 
@@ -109,4 +145,15 @@ export function formatValue(v: TokenValue | undefined): string {
       .join(", ");
   }
   return String(v);
+}
+
+/** The label for a mode in the interface, for example `reduced-motion` gives "Reduced motion". */
+export function modeLabel(mode: Mode): string {
+  if (mode === "fluid") return "Min to max";
+  if (mode === "base") return "Default";
+  for (const set of Object.values(COLUMN_SETS)) {
+    const m = set.modes.find((x) => x.key === mode);
+    if (m) return m.label;
+  }
+  return mode;
 }

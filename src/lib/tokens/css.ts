@@ -2,24 +2,50 @@
  * Turns tokens into the CSS developers use. Phase 2 uses it for the local
  * export; phase 3 uses the same functions to write files in a pull request.
  *
- * Parent file: primitives and semantic tokens. Light values in `@theme`,
- * dark values in `.dark`.
+ * Parent file: primitives and semantic tokens. Default values (value, light,
+ * default motion) in `@theme`, dark values in `.dark`, reduced motion values
+ * in a `prefers-reduced-motion` media query. Fluid tokens (min and max) are
+ * 1 `clamp()` value in `@theme`.
  * Component files: the component's own tokens, scoped to its class, with
  * dark values under `.dark .component`.
  * Everything sits inside the managed `tokens:start` and `tokens:end` block.
  */
+import { fluidClamp, toPx } from "./fluid";
 import { cssVariableName } from "./naming";
-import { indexTokens, type TokenIndex } from "./references";
+import { columnSetOf, formatValue, indexTokens, modesOf, resolveToken, valueInMode, type TokenIndex } from "./references";
 import { BLOCK_END, BLOCK_START, componentCssPath, PARENT_CSS_PATH } from "./repo";
-import { isComposite, isReference, type CompositeValue, type SimpleValue, type Token, type TokenSet, type TokenValue } from "./types";
+import { isComposite, isReference, type CompositeValue, type Mode, type SimpleValue, type Token, type TokenSet, type TokenValue } from "./types";
+
+/** Where a value goes in the CSS: the default rule, the dark rule or the reduced motion media query. */
+export type CssContext = "base" | "dark" | "reduced-motion";
+
+/** The mode name used for a fluid token's single `clamp()` value. */
+export const FLUID_MODE = "fluid";
+
+const contextOf = (mode: Mode): CssContext => (mode === "dark" ? "dark" : mode === "reduced-motion" ? "reduced-motion" : "base");
+
+export const REDUCED_MOTION_QUERY = "@media (prefers-reduced-motion: reduce)";
 
 const INDENT = "  ";
 
-function simpleToCss(v: SimpleValue, index: TokenIndex): string {
+/**
+ * Sizes are plain numbers in Figma (pixels). In CSS they need a unit, so a
+ * plain number for a size type is written in px. Font weights and line
+ * heights stay plain numbers.
+ */
+function needsPx(t: Pick<Token, "kind" | "name">): boolean {
+  if (t.kind === "spacing" || t.kind === "sizing" || t.kind === "radius") return true;
+  if (t.kind === "typography") return t.name.startsWith("font-size") || t.name.startsWith("paragraph-spacing");
+  if (t.kind === "border") return t.name.startsWith("border-width");
+  return false;
+}
+
+function simpleToCss(v: SimpleValue, index: TokenIndex, t?: Pick<Token, "kind" | "name">): string {
   if (isReference(v)) {
     const target = index.get(v.ref);
     return target ? `var(${cssVariableName(target)})` : `/* missing token: ${v.ref} */`;
   }
+  if (typeof v === "number" && t && needsPx(t) && v !== 0) return `${v}px`;
   return String(v);
 }
 
@@ -27,7 +53,7 @@ function simpleToCss(v: SimpleValue, index: TokenIndex): string {
 export function declarations(t: Token, v: TokenValue, index: TokenIndex): string[] {
   const name = cssVariableName(t);
   const note = t.status === "deprecated" ? " /* deprecated */" : "";
-  if (!isComposite(v)) return [`${name}: ${simpleToCss(v as SimpleValue, index)};${note}`];
+  if (!isComposite(v)) return [`${name}: ${simpleToCss(v as SimpleValue, index, t)};${note}`];
 
   const c = v as CompositeValue;
   const part = (k: string) => (c[k] === undefined ? undefined : simpleToCss(c[k], index));
@@ -51,8 +77,45 @@ export function declarations(t: Token, v: TokenValue, index: TokenIndex): string
   }
 }
 
+/** The `clamp()` line for a fluid token, with the 2 tokens it comes from in a comment. */
+function fluidDeclarations(t: Token, index: TokenIndex): string[] {
+  const name = cssVariableName(t);
+  const note = t.status === "deprecated" ? " /* deprecated */" : "";
+  const [min, max] = ["min", "max"].map((m) => toPx(resolveToken(index, t.name, m).value));
+  const from = ["min", "max"].map((m) => `${m}: ${formatValue(valueInMode(t, m)).replace(/[{}]/g, "")}`).join(", ");
+  if (min === null || max === null) return [`${name}: /* missing size (${from}) */;${note}`];
+  return [`${name}: ${fluidClamp(min, max)};${note || ` /* ${from} */`}`];
+}
+
+export interface TokenOutput {
+  context: CssContext;
+  /** The token's mode, or `fluid` for a fluid token's clamp(). */
+  mode: Mode;
+  lines: string[];
+}
+
+/** Everything 1 token writes to the CSS, by context. */
+export function tokenDeclarations(t: Token, index: TokenIndex): TokenOutput[] {
+  if (columnSetOf(t) === "fluid") return [{ context: "base", mode: FLUID_MODE, lines: fluidDeclarations(t, index) }];
+  const first = modesOf(t)[0].key;
+  return modesOf(t)
+    .filter((m, i) => i === 0 || t.values[m.key] !== undefined)
+    // Reduced motion only overrides what changes, for example durations but not easing.
+    .filter((m) => m.key !== "reduced-motion" || JSON.stringify(t.values[m.key]) !== JSON.stringify(t.values[first]))
+    .map((m) => ({ context: contextOf(m.key), mode: m.key, lines: declarations(t, valueInMode(t, m.key), index) }));
+}
+
 const rule = (selector: string, lines: string[]) =>
   `${selector} {\n${lines.map((l) => INDENT + l).join("\n")}\n}`;
+
+const media = (query: string, selector: string, lines: string[]) =>
+  `${query} {\n${rule(selector, lines).split("\n").map((l) => INDENT + l).join("\n")}\n}`;
+
+function linesByContext(tokens: Token[], index: TokenIndex): Record<CssContext, string[]> {
+  const out: Record<CssContext, string[]> = { base: [], dark: [], "reduced-motion": [] };
+  for (const t of tokens) for (const o of tokenDeclarations(t, index)) out[o.context].push(...o.lines);
+  return out;
+}
 
 const wrap = (body: string) => `${BLOCK_START}\n${body}\n${BLOCK_END}`;
 
@@ -60,12 +123,10 @@ const wrap = (body: string) => `${BLOCK_START}\n${body}\n${BLOCK_END}`;
 export function parentCss(set: TokenSet): string {
   const index = indexTokens(set);
   const tokens = set.tokens.filter((t) => t.layer !== "component");
-  const light = tokens.flatMap((t) => declarations(t, t.values.light, index));
-  const dark = tokens
-    .filter((t) => t.values.dark !== undefined)
-    .flatMap((t) => declarations(t, t.values.dark!, index));
-  const parts = [rule("@theme", light)];
-  if (dark.length) parts.push(rule(".dark", dark));
+  const lines = linesByContext(tokens, index);
+  const parts = [rule("@theme", lines.base)];
+  if (lines.dark.length) parts.push(rule(".dark", lines.dark));
+  if (lines["reduced-motion"].length) parts.push(media(REDUCED_MOTION_QUERY, ":root", lines["reduced-motion"]));
   return wrap(parts.join("\n\n"));
 }
 
@@ -73,12 +134,9 @@ export function parentCss(set: TokenSet): string {
 export function componentCss(set: TokenSet, component: string): string {
   const index = indexTokens(set);
   const tokens = set.tokens.filter((t) => t.layer === "component" && t.component === component);
-  const light = tokens.flatMap((t) => declarations(t, t.values.light, index));
-  const dark = tokens
-    .filter((t) => t.values.dark !== undefined)
-    .flatMap((t) => declarations(t, t.values.dark!, index));
-  const parts = [rule(`.${component}`, light)];
-  if (dark.length) parts.push(rule(`.dark .${component}`, dark));
+  const lines = linesByContext(tokens, index);
+  const parts = [rule(`.${component}`, lines.base)];
+  if (lines.dark.length) parts.push(rule(`.dark .${component}`, lines.dark));
   return wrap(parts.join("\n"));
 }
 

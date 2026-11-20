@@ -45,6 +45,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import {
   checkBeforeSave,
+  columnSetOf,
+  COLUMN_SETS,
   cssFileFor,
   cssVariableName,
   formatValue,
@@ -54,7 +56,9 @@ import {
   isReference,
   LAYER_RANK,
   lastChange,
+  modesOf,
   resolveToken,
+  valueInMode,
   validateTokenSet,
   type Kind,
   type Layer,
@@ -64,6 +68,7 @@ import {
   type Token,
   type TokenIndex,
 } from "@/src/lib/tokens";
+import { variableName } from "@/src/lib/figma/plan";
 import { useStore } from "../_lib/store";
 import { inSet, KIND_ORDER, KIND_TITLE, LAYER_TITLE, parseSet, setTitle } from "../_lib/sets";
 import { TokenDetails, type DetailsTab } from "./TokenDetails";
@@ -73,13 +78,38 @@ import { NewTokenRow } from "./NewTokenRow";
 import { RenameTitle } from "./RenameTitle";
 import { AliasPill, relativeDate, resolvedText, StatusBadge, Swatch } from "./ui";
 
-const COLS = 6; // name, light, dark, status, last change, in code
+const COLS = 6; // name, value 1, value 2, status, last change, in code
+
+/** Kinds whose tokens are sizes and may refer to each other. */
+const SIZE_KINDS: Kind[] = ["spacing", "sizing", "typography"];
+
+/** An example raw value for a primitive, by type. */
+const EXAMPLE_VALUE: Record<Kind, string> = {
+  color: "#FF5000",
+  spacing: "16",
+  sizing: "24",
+  typography: "16",
+  radius: "4",
+  border: "1",
+  shadow: "0 1px 2px #00000033",
+  motion: "150ms",
+};
 
 interface Group {
   key: string;
   title: string;
   href: string;
   tokens: Token[];
+}
+
+/** The Figma folder a token sits in, for example "spacing / max / negative". Empty at the top level. */
+const folderOf = (t: Token) => variableName(t).split("/").slice(0, -1).join(" / ");
+
+/** Tokens in the same Figma folder sit together, in the order the folders first appear. */
+function byFolder(tokens: Token[]): Token[] {
+  const order = new Map<string, number>();
+  for (const t of tokens) if (!order.has(folderOf(t))) order.set(folderOf(t), order.size);
+  return tokens.map((t, i) => ({ t, i })).sort((a, b) => order.get(folderOf(a.t))! - order.get(folderOf(b.t))! || a.i - b.i).map((x) => x.t);
 }
 
 function groupTokens(tokens: Token[]): Group[] {
@@ -92,12 +122,12 @@ function groupTokens(tokens: Token[]): Group[] {
     if (!groups.has(key)) groups.set(key, { key, title, href: `/?set=${key}`, tokens: [] });
     groups.get(key)!.tokens.push(t);
   }
-  return [...groups.values()];
+  return [...groups.values()].map((g) => ({ ...g, tokens: byFolder(g.tokens) }));
 }
 
 /** What a cell shows for 1 mode: swatch, alias pill and resolved value. */
 function ValueDisplay({ token, mode, index }: { token: Token; mode: Mode; index: TokenIndex }) {
-  const v = mode === "dark" ? token.values.dark ?? token.values.light : token.values.light;
+  const v = valueInMode(token, mode);
   const r = resolveToken(index, token.name, mode);
   if (isComposite(v)) {
     const resolved = (r.value ?? {}) as Record<string, unknown>;
@@ -169,10 +199,7 @@ export function Overview() {
       const hay = [
         t.name,
         cssVariableName(t),
-        formatValue(t.values.light),
-        formatValue(t.values.dark),
-        resolvedText(resolveToken(index, t.name, "light").value),
-        resolvedText(resolveToken(index, t.name, "dark").value),
+        ...modesOf(t).flatMap((m) => [formatValue(t.values[m.key]), resolvedText(resolveToken(index, t.name, m.key).value)]),
       ]
         .join(" ")
         .toLowerCase();
@@ -182,6 +209,9 @@ export function Overview() {
   }, [set, index, q, status, params]);
 
   const groups = useMemo(() => groupTokens(rows), [rows]);
+  // The column headings: the column set of the tokens shown, or "Values" when the groups use different sets.
+  const shownSets = [...new Set(groups.map((g) => columnSetOf(g.tokens[0])))];
+  const headSet = shownSets.length === 1 ? COLUMN_SETS[shownSets[0]] : null;
   const flat = groups.flatMap((g) => g.tokens);
   const issuesFor = useCallback((name: string) => issues.filter((i) => i.token === name && i.severity !== "info"), [issues]);
   const errorCount = issues.filter((i) => i.severity === "error").length;
@@ -203,7 +233,7 @@ export function Overview() {
 
   /** Inline edit of 1 mode, checked by the rules engine before saving. */
   const commitCell = (token: Token, mode: Mode, value: SimpleValue) => {
-    const current = mode === "dark" ? token.values.dark : token.values.light;
+    const current = token.values[mode];
     if (JSON.stringify(current) === JSON.stringify(value)) {
       setEditCell(null);
       return;
@@ -218,13 +248,18 @@ export function Overview() {
     saveTokens([updated], [token.name]);
     setEditCell(null);
     const warning = res.issues.find((i) => i.severity === "warning");
-    const what = `${mode === "light" && token.layer !== "primitive" ? "Light" : mode === "dark" ? "Dark" : "Value"}: ${formatValue(value).replace(/[{}]/g, "")}.`;
+    const what = `${modesOf(token).find((m) => m.key === mode)?.label ?? mode}: ${formatValue(value).replace(/[{}]/g, "")}.`;
     if (warning) toast.warning(`${token.name} changed.`, { description: `${what} ${warning.message}` });
     else toast.success(`${token.name} changed.`, { description: what });
   };
 
   const candidatesFor = (t: Token) =>
-    set.tokens.filter((c) => LAYER_RANK[c.layer] < LAYER_RANK[t.layer] && c.kind === t.kind && c.status !== "deprecated");
+    set.tokens.filter(
+      (c) =>
+        LAYER_RANK[c.layer] < LAYER_RANK[t.layer] &&
+        (c.kind === t.kind || (SIZE_KINDS.includes(c.kind) && SIZE_KINDS.includes(t.kind))) &&
+        c.status !== "deprecated",
+    );
 
   type Action = { label: string; icon: React.ReactNode; onSelect: () => void; separator?: boolean; destructive?: boolean };
   const actions = (t: Token): Action[] => [
@@ -274,30 +309,26 @@ export function Overview() {
   let rowIndex = -1;
 
   const valueCell = (t: Token, mode: Mode, r: number, c: number) => {
-    if (mode === "dark" && t.layer === "primitive") {
-      return (
-        <td key={mode}>
-          <div className="cell-btn text-muted-foreground/60" title="Primitives have 1 value for every mode">—</div>
-        </td>
-      );
-    }
-    const composite = isComposite(mode === "dark" ? t.values.dark ?? t.values.light : t.values.light);
+    const modes = modesOf(t);
+    const modeLabel = modes.find((m) => m.key === mode)?.label ?? mode;
+    // A token with 1 value fills both value columns, like the Value column in Figma.
+    const span = modes.length === 1 ? 2 : 1;
+    const composite = isComposite(valueInMode(t, mode));
     const isOpen = editCell?.name === t.name && editCell.mode === mode;
-    const label = `${t.name}, ${t.layer === "primitive" ? "value" : mode}. Press Enter to change.`;
+    const label = `${t.name}, ${modeLabel.toLowerCase()}. Press Enter to change.`;
     if (composite) {
       return (
-        <td key={mode}>
+        <td key={mode} colSpan={span}>
           <button type="button" className="cell-btn" data-editable="true" data-row={r} data-col={c} aria-label={label} onClick={() => setEditing(t)}>
             <ValueDisplay token={t} mode={mode} index={index} />
           </button>
         </td>
       );
     }
-    const current = mode === "dark" ? t.values.dark : t.values.light;
+    const current = t.values[mode];
     const currentText = current === undefined || current === "" ? "" : formatValue(current).replace(/[{}]/g, "");
-    const modeLabel = t.layer === "primitive" ? "Value" : mode === "light" ? "Light" : "Dark";
     return (
-      <td key={mode}>
+      <td key={mode} colSpan={span}>
         <Popover open={isOpen} onOpenChange={(o) => setEditCell(o ? { name: t.name, mode, seed: currentText } : null)}>
           <PopoverTrigger asChild>
             <button
@@ -328,7 +359,7 @@ export function Overview() {
             <TokenCommandList
               key={`${t.name}-${mode}-${editCell?.seed ?? ""}`}
               initialSearch={editCell?.seed ?? ""}
-              placeholder={`${modeLabel}: ${t.layer === "primitive" ? "type a value, for example #FF5000" : t.layer === "component" ? "type a token name" : "type a token name or a value"}`}
+              placeholder={`${modeLabel}: ${t.layer === "primitive" ? `type a value, for example ${EXAMPLE_VALUE[t.kind]}` : t.layer === "component" ? "type a token name" : "type a token name or a value"}`}
               candidates={candidatesFor(t)}
               index={index}
               mode={mode}
@@ -440,8 +471,15 @@ export function Overview() {
                   Name
                 </div>
               </th>
-              <th>Light</th>
-              <th>Dark</th>
+              {headSet ? (
+                headSet.modes.length === 1 ? (
+                  <th colSpan={2}>{headSet.modes[0].label}</th>
+                ) : (
+                  headSet.modes.map((m) => <th key={m.key}>{m.label}</th>)
+                )
+              ) : (
+                <th colSpan={2}>Values</th>
+              )}
               <th>Status</th>
               <th>Last change</th>
               <th>In code</th>
@@ -453,22 +491,48 @@ export function Overview() {
               <Fragment key={g.key}>
                 {groups.length > 1 || !filter.layer ? (
                   <tr className="group-row">
-                    <td colSpan={7} className="sticky-col">
+                    <td className="sticky-col">
                       <Link href={g.href} className="flex items-center gap-2 px-3 text-xs font-medium text-muted-foreground hover:text-foreground">
                         {g.title}
                         <span className="font-mono tabular-nums opacity-70">{g.tokens.length}</span>
                       </Link>
                     </td>
+                    {/* When groups use different columns, each group names its own. */}
+                    {headSet ? (
+                      <td colSpan={2} />
+                    ) : (
+                      (() => {
+                        const ms = modesOf(g.tokens[0]);
+                        return ms.length === 1 ? (
+                          <td colSpan={2}><span className="px-3 text-xs text-muted-foreground">{ms[0].label}</span></td>
+                        ) : (
+                          ms.map((m) => <td key={m.key}><span className="px-3 text-xs text-muted-foreground">{m.label}</span></td>)
+                        );
+                      })()
+                    )}
+                    <td colSpan={4} />
                   </tr>
                 ) : null}
-                {g.tokens.map((t) => {
+                {g.tokens.map((t, i) => {
+                  const folder = folderOf(t);
+                  // A subheading where the Figma folder changes, as in the Figma variables panel.
+                  const subheading = folder && folder !== (i > 0 ? folderOf(g.tokens[i - 1]) : "") ? (
+                    <tr className="group-row" aria-hidden="true">
+                      <td className="sticky-col">
+                        <span className="block truncate pl-[38px] text-xs text-muted-foreground">{folder}</span>
+                      </td>
+                      <td colSpan={6} />
+                    </tr>
+                  ) : null;
                   rowIndex += 1;
                   const r = rowIndex;
                   const errs = issuesFor(t.name);
                   const last = lastChange(history, t.name);
                   const hidden = t.layer === "component" && !isPublishedInFigma(t);
                   return (
-                    <ContextMenu key={t.name}>
+                    <Fragment key={t.name}>
+                    {subheading}
+                    <ContextMenu>
                       <ContextMenuTrigger asChild>
                         <tr data-selected={selection.has(t.name) || open === t.name}>
                           <td className="sticky-col">
@@ -502,8 +566,7 @@ export function Overview() {
                               </button>
                             </div>
                           </td>
-                          {valueCell(t, "light", r, 1)}
-                          {valueCell(t, "dark", r, 2)}
+                          {modesOf(t).map((m, i) => valueCell(t, m.key, r, 1 + i))}
                           <td>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
@@ -577,6 +640,7 @@ export function Overview() {
                         ))}
                       </ContextMenuContent>
                     </ContextMenu>
+                    </Fragment>
                   );
                 })}
                 {(() => {

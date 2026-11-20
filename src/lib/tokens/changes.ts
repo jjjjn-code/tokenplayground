@@ -3,7 +3,7 @@
  * set, the pull request changelog, and merging edits after a conflict.
  */
 import { cssFileFor } from "./repo";
-import { formatValue } from "./references";
+import { formatValue, modesOf, valueInMode } from "./references";
 import type { Token, TokenSet, TokenValue } from "./types";
 
 export type ChangeType = "added" | "changed" | "removed";
@@ -54,13 +54,12 @@ function cellValue(t: Token | undefined, other?: Token): string {
   const v = (x: TokenValue | undefined) => formatValue(x).replace(/[{}]/g, "");
   const mark = (now: TokenValue | undefined, then: TokenValue | undefined) =>
     other && JSON.stringify(now) !== JSON.stringify(then) ? `**${v(now)}**` : v(now);
-  let value: string;
-  if (t.layer === "primitive" || t.values.dark === undefined) {
-    value = mark(t.values.light, other?.values.light);
-  } else {
-    const otherDark = other ? other.values.dark ?? other.values.light : undefined;
-    value = `Light: ${mark(t.values.light, other?.values.light)}<br>Dark: ${mark(t.values.dark, otherDark)}`;
-  }
+  const modes = modesOf(t).filter((m, i) => i === 0 || t.values[m.key] !== undefined);
+  const at = (x: Token | undefined, mode: string) => (x ? valueInMode(x, mode) : undefined);
+  const value =
+    modes.length === 1
+      ? mark(at(t, modes[0].key), at(other, modes[0].key))
+      : modes.map((m) => `${m.label}: ${mark(at(t, m.key), at(other, m.key))}`).join("<br>");
   return t.status === "deprecated" ? `${value} (deprecated)` : value;
 }
 

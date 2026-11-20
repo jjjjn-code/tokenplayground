@@ -3,7 +3,7 @@
  * plugin API this sync needs. The plugin passes the real `figma.variables`;
  * the tests pass a fake.
  */
-import { COLLECTION_MODES, type CollectionKey, type ExistingVariable, type FigmaType, type FigmaValue, type SyncPlan, type VariableSpec, modeValues } from "./plan";
+import { COLLECTIONS, collectionModes, modeKeyOf, type CollectionKey, type ExistingVariable, type FigmaType, type FigmaValue, type SyncPlan, type VariableSpec } from "./plan";
 
 export interface ModeLike {
   modeId: string;
@@ -48,11 +48,19 @@ export interface VariablesApi {
 
 export type CollectionNames = Record<CollectionKey, string>;
 
-export const DEFAULT_COLLECTION_NAMES: CollectionNames = {
-  primitives: "Primitives",
-  semantic: "Semantic",
-  components: "Components",
-};
+/** Collection names as in the UAL UI Kit file. */
+export const DEFAULT_COLLECTION_NAMES = Object.fromEntries(
+  Object.entries(COLLECTIONS).map(([k, c]) => [k, c.name]),
+) as CollectionNames;
+
+/**
+ * The Figma mode for a mode key. A collection with 1 column uses its only
+ * mode, whatever it is called (Type primitives calls it "primitives/typography").
+ */
+function findMode(c: CollectionLike, key: CollectionKey, mode: string): ModeLike | undefined {
+  if (collectionModes(key).length === 1) return c.modes[0];
+  return c.modes.find((m) => modeKeyOf(m.name) === mode);
+}
 
 const KEY = "tokenLibrary";
 
@@ -83,18 +91,20 @@ export async function readExisting(api: VariablesApi, names: CollectionNames = D
   return variables.map((v) => {
     const c = colById.get(v.variableCollectionId);
     const key = c ? collectionKeyOf(c, names) : null;
-    const mode = (n: string) => c?.modes.find((m) => m.name === n)?.modeId;
-    const first = c?.modes[0]?.modeId;
-    const lightId = key === "primitives" ? mode("Value") ?? first : mode("Light") ?? first;
-    const darkId = key && key !== "primitives" ? mode("Dark") : undefined;
+    const values: ExistingVariable["values"] = {};
+    if (c && key) {
+      for (const m of collectionModes(key)) {
+        const id = findMode(c, key, m.key)?.modeId;
+        values[m.key] = id ? toFigmaValue(v.valuesByMode[id], byId) : undefined;
+      }
+    }
     return {
       id: v.id,
       token: v.getPluginData("token") || undefined,
       collection: key,
       name: v.name,
       type: v.resolvedType,
-      light: lightId ? toFigmaValue(v.valuesByMode[lightId], byId) : undefined,
-      dark: darkId ? toFigmaValue(v.valuesByMode[darkId], byId) : undefined,
+      values,
       hiddenFromPublishing: v.hiddenFromPublishing,
       description: v.description ?? "",
       codeSyntax: v.codeSyntax?.WEB,
@@ -109,10 +119,12 @@ async function ensureCollections(api: VariablesApi, names: CollectionNames, need
     let c = all.find((x) => collectionKeyOf(x, names) === key);
     if (!c) c = api.createVariableCollection(names[key]);
     c.setPluginData(KEY, key);
-    const wanted = COLLECTION_MODES[key];
-    // A new collection starts with 1 mode called "Mode 1": rename it.
-    if (!c.modes.some((m) => m.name === wanted[0])) c.renameMode(c.modes[0].modeId, wanted[0]);
-    for (const w of wanted.slice(1)) if (!c.modes.some((m) => m.name === w)) c.addMode(w);
+    const wanted = collectionModes(key);
+    // A new collection starts with 1 mode called "Mode 1": rename it. Existing modes keep their names.
+    if (c.modes.length === 1 && modeKeyOf(c.modes[0].name) === "mode-1") {
+      c.renameMode(c.modes[0].modeId, wanted[0].label);
+    }
+    for (const w of wanted) if (!findMode(c, key, w.key)) c.addMode(w.label);
     out.set(key, c);
   }
   return out;
@@ -144,11 +156,9 @@ export async function applyPlan(api: VariablesApi, plan: SyncPlan, names: Collec
   // Create new variables, and rename or recreate changed ones.
   const varFor = new Map<string, VariableLike>();
   for (const c of plan.change) {
-    let v = byId.get(c.existing.id)!;
-    if (v.resolvedType !== c.spec.type) {
-      v.remove(); // Figma cannot change a variable's type.
-      v = api.createVariable(c.spec.name, collections.get(c.spec.collection)!, c.spec.type);
-    } else if (v.name !== c.spec.name) v.name = c.spec.name;
+    // The plan never changes a variable's type (see planSync), so the variable is kept and layers stay bound.
+    const v = byId.get(c.existing.id)!;
+    if (v.name !== c.spec.name) v.name = c.spec.name;
     v.setPluginData("token", c.spec.token);
     varFor.set(c.spec.token, v);
   }
@@ -169,8 +179,8 @@ export async function applyPlan(api: VariablesApi, plan: SyncPlan, names: Collec
   for (const s of work) {
     const v = varFor.get(s.token)!;
     const c = collections.get(s.collection)!;
-    for (const [modeName, value] of Object.entries(modeValues(s))) {
-      const modeId = c.modes.find((m) => m.name === modeName)!.modeId;
+    for (const [mode, value] of Object.entries(s.values)) {
+      const modeId = findMode(c, s.collection, mode)!.modeId;
       v.setValueForMode(modeId, toRaw(value, tokenVars, api));
     }
     v.hiddenFromPublishing = s.hiddenFromPublishing;

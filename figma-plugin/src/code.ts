@@ -26,14 +26,15 @@ figma.ui.onmessage = async (msg: any) => {
       await figma.clientStorage.setAsync(SETTINGS, msg.settings);
     }
     if (msg.type === "plan") {
-      lastNames = { ...DEFAULT_COLLECTION_NAMES, ...(msg.names ?? {}) };
+      // Collections are fixed to match the UAL UI Kit file (see COLLECTIONS in plan.ts).
+      lastNames = DEFAULT_COLLECTION_NAMES;
       const set = parseDtcg(msg.tokens);
       const { specs, skipped } = buildSpecs(set, { includeDrafts: !!msg.includeDrafts });
       lastPlan = planSync(specs, await readExisting(api(), lastNames), skipped);
       figma.ui.postMessage({
         type: "plan",
         plan: {
-          add: lastPlan.add.map((s) => ({ token: s.token, name: s.name, collection: s.collection })),
+          add: lastPlan.add.map((s) => ({ token: s.token, name: s.name, collection: lastNames[s.collection] })),
           change: lastPlan.change.map((c) => ({ token: c.spec.token, name: c.spec.name, differences: c.differences })),
           remove: lastPlan.remove.map((e) => ({ token: e.token ?? e.name, name: e.name })),
           unchanged: lastPlan.unchanged,

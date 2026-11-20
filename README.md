@@ -88,14 +88,24 @@ Tokens are stored as W3C design tokens (DTCG) JSON, grouped as `primitive.<type>
 
 These are working assumptions until the open questions in the PRD are answered:
 
-- Non-colour token names start with their type word (`spacing-`, `size-`, `font-size-`, `radius-`, `border-`, `shadow-` and so on).
+- Non-colour token names start with a word from a list per layer, following the groups in the Figma file. Primitives: `spacing-`, `grid-`, `font-family-`, `font-size-`, `font-weight-`, `duration-`, `ease-` and so on. Semantic: `space-`, `grid-`, `step-`, `paragraph-spacing-`. The lists are `NON_COLOUR_PREFIXES` in `src/lib/tokens/rules.ts`.
+- Each token set has a column set (`COLUMN_SETS` in `rules.ts`). Primitives have 1 Value, except Motion, which has Default and Reduced motion. Semantic colour, border and shadow have Light and Dark. Semantic spacing, sizing and typography are fluid, with Min and Max. Semantic radius has 1 Value.
+- Fluid tokens are written to CSS as 1 `clamp()` value, worked out as the Utopia calculator does. The screen widths are 400 and 1600 pixels with a 16 pixel root font size (`FLUID_VIEWPORT` in `rules.ts`). Change them to the UAL grid widths.
+- A fluid `clamp()` is the 1 place where the CSS holds worked-out numbers instead of `var()`. A comment on the same line names the min and max tokens. The token data keeps the references.
+- Sizes are plain numbers, as in Figma, and are written in px in CSS (`16` becomes `16px`). Font weights stay plain numbers.
+- Reduced motion values go in `@media (prefers-reduced-motion: reduce) { :root { ... } }`, and only where they differ from the default.
+- A primitive may refer to another primitive (for example the Figma space base, which follows `spacing-max-l`). Other layers only refer downwards.
+- Fluid typography may refer to spacing sizes (for example paragraph spacing).
 - Component tokens have no `--color-` prefix in code.
 - Semantic tokens may only use the categories `surface`, `content` and `line`. `icon` is for component tokens only.
-- Figma paths are only defined for component tokens.
+- Each token can keep its Figma variable name (`figma` in the data, for example `spacing/max/3xs`). The table groups tokens by these Figma folders. Without a stored name, the plugin works one out (see below).
 - New tokens start as active. Change the status in the Status column of the sheet. Draft and active change straight away; deprecating needs a reason.
 - Review code changes compares only active tokens. Drafts and deprecated tokens are left out.
-- Figma variable names: primitives and non-colour semantic tokens are grouped by type (`Colour/orange-700`), semantic colours by category (`Surface/surface-default`), component tokens by their Figma path.
-- Typography, border and shadow tokens are not synced to Figma, because Figma variables hold 1 value only. They could become Figma styles later.
+- Figma collections match the UAL UI Kit file: Colour primitives, Type primitives, Space primitives, Motion, Colour tokens (with component tokens under Interactive) and Fluid tokens. Radius, border and shadow, which the file does not have yet, go in Other primitives and Other tokens. The Figma UI Kit collection is left alone.
+- Figma variable names without a stored name: colour primitives at the top level (`orange-700`), semantic colours under Base (`Base/Surface/surface-default`), component tokens by their Figma path, other tokens under their type.
+- Modes in Figma are matched without case, so `dark`, `Dark` and `reduced-motion`, `Reduced motion` are the same mode. A collection with 1 mode uses that mode whatever it is called.
+- The plugin never changes a variable's type, because that would delete it and unbind every layer that uses it. It lists the variable instead.
+- Tokens with several parts (border and shadow) are not synced to Figma, because Figma variables hold 1 value only. They could become Figma styles later.
 - The plugin network address is `https://tokenplayground-drab.vercel.app`, set in `figma-plugin/manifest.json`. Change it there and in `figma-plugin/src/ui.ts` if the address changes.
 - Parent CSS path is `styles/colors.css`; component files are `components/[name]/[name].css`.
-- Typography tokens are written Tailwind style: the font size is the main value, with `--line-height`, `--font-weight` and `--font-family` alongside.
+- Typography tokens with several parts (older data) are still written Tailwind style: the font size is the main value, with `--line-height`, `--font-weight` and `--font-family` alongside. New semantic typography tokens are fluid sizes.

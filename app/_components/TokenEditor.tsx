@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,11 +9,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import {
   checkBeforeSave,
+  columnSetOf,
   cssVariableName,
   indexTokens,
   isComposite,
   LAYER_RANK,
-  NON_COLOUR_PREFIXES,
+  modesOf,
+  namePrefixes,
+  normaliseValues,
   normaliseTokenInput,
   SEMANTIC_CATEGORIES,
   SEMANTIC_VARIANTS,
@@ -50,11 +53,25 @@ const PART_LABEL: Record<string, string> = {
   spread: "Spread",
 };
 
-const isCompositeShape = (layer: Layer, kind: Kind) => layer === "semantic" && !!PARTS[kind];
+// Semantic type tokens are fluid (1 size for min and 1 for max), so only borders and shadows start with several parts.
+const isCompositeShape = (layer: Layer, kind: Kind) => layer === "semantic" && (kind === "border" || kind === "shadow");
 
 function emptyValue(layer: Layer, kind: Kind): TokenValue {
   if (isCompositeShape(layer, kind)) return Object.fromEntries(PARTS[kind]!.map((p) => [p, ""]));
   return "";
+}
+
+/** Kinds whose tokens are sizes and may refer to each other. */
+const SIZE_KINDS: Kind[] = ["spacing", "sizing", "typography"];
+
+/**
+ * Empty values for a new token: every column of its column set. Borders and
+ * shadows start with the light value only; dark is added when it differs.
+ */
+function emptyValues(layer: Layer, kind: Kind): Record<Mode, TokenValue> {
+  const modes = modesOf({ layer, kind });
+  const optionalDark = columnSetOf({ layer, kind }) === "theme" && kind !== "color";
+  return Object.fromEntries((optionalDark ? modes.slice(0, 1) : modes).map((m) => [m.key, emptyValue(layer, kind)]));
 }
 
 /**
@@ -82,10 +99,10 @@ export function TokenEditor({
   const [layer, setLayer] = useState<Layer>(startLayer);
   const [kind, setKind] = useState<Kind>(startKind);
   const [name, setName] = useState(token?.name ?? "");
-  const [light, setLight] = useState<TokenValue>(token?.values.light ?? emptyValue(startLayer, startKind));
-  const [dark, setDark] = useState<TokenValue | undefined>(
-    token ? token.values.dark : startLayer === "primitive" || startKind !== "color" ? undefined : "",
+  const [values, setValues] = useState<Record<Mode, TokenValue>>(
+    token ? normaliseValues(token).values : emptyValues(startLayer, startKind),
   );
+  const setMode = (m: Mode) => (v: TokenValue) => setValues((x) => ({ ...x, [m]: v }));
   const [status, setStatus] = useState<Token["status"]>(token?.status ?? "active");
   const [description, setDescription] = useState(token?.description ?? "");
   const [reason, setReason] = useState("");
@@ -103,14 +120,14 @@ export function TokenEditor({
   const [category, setCategory] = useState<string>("surface");
   const [variant, setVariant] = useState("");
 
-  const colourNeedsDark = kind === "color" && layer !== "primitive";
-  const darkAllowed = layer !== "primitive";
+  const modes = modesOf({ layer, kind });
+  // Borders and shadows may use the light value in dark mode; everything else fills every column.
+  const darkOptional = columnSetOf({ layer, kind }) === "theme" && kind !== "color";
 
   const changeShape = (l: Layer, k: Kind) => {
     setLayer(l);
     setKind(k);
-    setLight(emptyValue(l, k));
-    setDark(l === "primitive" ? undefined : k === "color" ? emptyValue(l, k) : undefined);
+    setValues(emptyValues(l, k));
   };
 
   const guidedSemantic = !editing && layer === "semantic" && kind === "color";
@@ -120,7 +137,7 @@ export function TokenEditor({
     name: finalName,
     layer,
     kind,
-    values: { light, ...(dark !== undefined ? { dark } : {}) },
+    values,
     status,
     ...(token?.component ? { component: token.component } : {}),
     ...(description.trim() ? { description: description.trim() } : {}),
@@ -132,14 +149,15 @@ export function TokenEditor({
   const refCandidates = (anyKind: boolean) =>
     set.tokens.filter(
       (t) =>
-        LAYER_RANK[t.layer] < LAYER_RANK[layer] &&
-        (anyKind || t.kind === kind) &&
+        // Primitives may point to other primitives, for example a base size.
+        (layer === "primitive" ? t.layer === "primitive" : LAYER_RANK[t.layer] < LAYER_RANK[layer]) &&
+        (anyKind || t.kind === kind || (SIZE_KINDS.includes(t.kind) && SIZE_KINDS.includes(kind))) &&
         t.name !== finalName &&
         (t.status !== "deprecated" || t.name === token?.name),
     );
 
   const renderValue = (mode: Mode, value: TokenValue, onChange: (v: TokenValue) => void) => {
-    const label = mode === "light" ? (darkAllowed ? "Light" : "Value") : "Dark";
+    const label = modes.find((m) => m.key === mode)?.label ?? mode;
     if (isComposite(value)) {
       const c = value as CompositeValue;
       return (
@@ -176,7 +194,7 @@ export function TokenEditor({
           index={index}
           mode={mode}
           allowRaw={layer !== "component"}
-          allowRef={layer !== "primitive"}
+          allowRef
         />
       </div>
     );
@@ -249,37 +267,46 @@ export function TokenEditor({
           <div className="grid gap-1.5">
             <Label htmlFor="ed-name">Name</Label>
             <Input id="ed-name" value={name} onChange={(e) => { setName(normaliseTokenInput(e.target.value)); typedName(); }} onBlur={leftName} className="font-mono" autoComplete="off"
-              placeholder={kind === "color" ? "orange-700" : `${NON_COLOUR_PREFIXES[kind as Exclude<Kind, "color">][0]}-name`} />
+              placeholder={kind === "color" ? "orange-700" : `${namePrefixes(layer, kind)[0]}-name`} />
             <p className="text-xs text-muted-foreground">
               {kind === "color"
                 ? "Pattern: [colour]-[step], for example orange-700. Leave out the --color- prefix."
-                : `Provisional rule: start with ${NON_COLOUR_PREFIXES[kind as Exclude<Kind, "color">].map((p) => `${p}-`).join(" or ")}.`}
+                : `Provisional rule: start with ${namePrefixes(layer, kind).map((p) => `${p}-`).join(" or ")}.`}
             </p>
           </div>
         )
       ) : null}
 
       <div className="grid gap-4">
-        {renderValue("light", light, setLight)}
-        {darkAllowed ? (
-          dark !== undefined ? (
-            <>
-              {renderValue("dark", dark, setDark)}
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => setDark(structuredClone(light))}>
-                  <Copy className="size-3.5" /> Copy light into dark
-                </Button>
-                {!colourNeedsDark ? (
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setDark(undefined)}>Use the light value in dark mode</Button>
-                ) : null}
-              </div>
-            </>
-          ) : (
-            <Button type="button" variant="outline" size="sm" className="justify-self-start" onClick={() => setDark(structuredClone(light))}>
-              Add a different dark value
-            </Button>
-          )
-        ) : null}
+        {modes.map((m, i) => {
+          const v = values[m.key];
+          if (v === undefined) {
+            // Only an optional dark value can be empty here.
+            return (
+              <Button key={m.key} type="button" variant="outline" size="sm" className="justify-self-start" onClick={() => setMode(m.key)(structuredClone(values[modes[0].key]))}>
+                Add a different {m.label.toLowerCase()} value
+              </Button>
+            );
+          }
+          const first = modes[0];
+          return (
+            <Fragment key={m.key}>
+              {renderValue(m.key, v, setMode(m.key))}
+              {i > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => setMode(m.key)(structuredClone(values[first.key]))}>
+                    <Copy className="size-3.5" /> Copy {first.label.toLowerCase()} into {m.label.toLowerCase()}
+                  </Button>
+                  {darkOptional ? (
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setValues((x) => Object.fromEntries(Object.entries(x).filter(([k]) => k !== m.key)))}>
+                      Use the {first.label.toLowerCase()} value in {m.label.toLowerCase()} mode
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+            </Fragment>
+          );
+        })}
       </div>
 
       <Separator />

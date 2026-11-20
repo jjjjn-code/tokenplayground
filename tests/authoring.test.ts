@@ -44,8 +44,14 @@ describe("renameToken", () => {
     expect(resolveToken(indexTokens(set), btn.name, "light").value).toBe("#171717");
   });
   it("repoints references inside composite values", () => {
-    const { set } = renameToken(dummy(), "font-size-16", "font-size-body");
-    expect(set.tokens.find((t) => t.name === "text-body")!.values.light).toMatchObject({ fontSize: { ref: "font-size-body" } });
+    const { set } = renameToken(dummy(), "border-width-1", "border-width-thin");
+    expect(set.tokens.find((t) => t.name === "border-default")!.values.light).toMatchObject({ width: { ref: "border-width-thin" } });
+  });
+
+  it("repoints references in every column, for example min and max", () => {
+    const { set, repointed } = renameToken(dummy(), "spacing-max-l", "spacing-max-large");
+    expect(repointed).toEqual(expect.arrayContaining(["spacing-base", "space-l", "space-s-l"]));
+    expect(set.tokens.find((t) => t.name === "space-s-l")!.values).toEqual({ min: { ref: "spacing-min-s" }, max: { ref: "spacing-max-large" } });
   });
 });
 

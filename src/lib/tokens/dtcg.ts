@@ -7,11 +7,13 @@
  *   semantic.<kind>.<name>
  *   component.<component>.<name>
  *
- * `$value` holds the light (default) value. Values the DTCG format has no
- * place for (dark mode, layer kind, status) sit under
+ * `$value` holds the default value (the first mode of the token's column
+ * set: value, light, min or default). Values the DTCG format has no place
+ * for (the other modes, layer kind, status) sit under
  * `$extensions["uk.ac.ual.tokens"]`. References are written as DTCG
  * aliases such as `{primitive.color.orange-700}`; they are never flattened.
  */
+import { defaultMode, defaultValue, modesOf } from "./references";
 import {
   isComposite,
   isReference,
@@ -37,7 +39,8 @@ interface DtcgToken {
     [EXTENSION_KEY]?: {
       kind?: Kind;
       status?: Status;
-      modes?: { dark?: DtcgValue };
+      modes?: Record<string, DtcgValue>;
+      figma?: string;
     };
   };
 }
@@ -45,13 +48,13 @@ interface DtcgToken {
 type DtcgGroup = { [key: string]: DtcgGroup | DtcgToken | string };
 
 const LAYERS: Layer[] = ["primitive", "semantic", "component"];
-const KINDS: Kind[] = ["color", "spacing", "sizing", "typography", "radius", "border", "shadow"];
+const KINDS: Kind[] = ["color", "spacing", "sizing", "typography", "radius", "border", "shadow", "motion"];
 
 const isToken = (v: unknown): v is DtcgToken => typeof v === "object" && v !== null && "$value" in v;
 
 /** The DTCG `$type` for a token. */
-export function dtcgType(t: Pick<Token, "kind" | "name" | "values">): string {
-  const composite = isComposite(t.values.light);
+export function dtcgType(t: Pick<Token, "kind" | "name" | "values" | "layer">): string {
+  const composite = isComposite(defaultValue(t));
   switch (t.kind) {
     case "color":
       return "color";
@@ -59,6 +62,8 @@ export function dtcgType(t: Pick<Token, "kind" | "name" | "values">): string {
       return "shadow";
     case "border":
       return composite ? "border" : "dimension";
+    case "motion":
+      return t.name.startsWith("ease") ? "cubicBezier" : "duration";
     case "typography":
       if (composite) return "typography";
       if (t.name.startsWith("font-family")) return "fontFamily";
@@ -106,12 +111,16 @@ export function parseDtcg(json: unknown): TokenSet {
           name,
           layer,
           kind,
-          values: { light: parseValue(raw.$value) },
+          values: { [defaultMode({ layer, kind })]: parseValue(raw.$value) },
           status: ext.status ?? "active",
         };
         if (layer === "component") token.component = groupKey;
-        if (ext.modes?.dark !== undefined) token.values.dark = parseValue(ext.modes.dark);
+        for (const m of modesOf(token).slice(1)) {
+          const v = ext.modes?.[m.key];
+          if (v !== undefined) token.values[m.key] = parseValue(v);
+        }
         if (raw.$description) token.description = raw.$description;
+        if (ext.figma) token.figma = ext.figma;
         tokens.push(token);
       }
     }
@@ -144,10 +153,12 @@ export function serialiseDtcg(set: TokenSet, description?: string): Record<strin
     for (const t of layerTokens) {
       const g = groupOf(t);
       layerGroup[g] ??= {};
-      const entry: DtcgToken = { $type: dtcgType(t), $value: value(t.values.light) };
+      const entry: DtcgToken = { $type: dtcgType(t), $value: value(defaultValue(t)) };
       if (t.description) entry.$description = t.description;
       const ext: NonNullable<DtcgToken["$extensions"]>[typeof EXTENSION_KEY] = { kind: t.kind, status: t.status };
-      if (t.values.dark !== undefined) ext.modes = { dark: value(t.values.dark) };
+      const others = modesOf(t).slice(1).filter((m) => t.values[m.key] !== undefined);
+      if (others.length) ext.modes = Object.fromEntries(others.map((m) => [m.key, value(t.values[m.key])]));
+      if (t.figma) ext.figma = t.figma;
       entry.$extensions = { [EXTENSION_KEY]: ext };
       layerGroup[g][t.name] = entry;
     }

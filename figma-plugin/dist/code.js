@@ -1,8 +1,6 @@
 "use strict";
 (() => {
   var __defProp = Object.defineProperty;
-  var __defProps = Object.defineProperties;
-  var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
   var __getOwnPropSymbols = Object.getOwnPropertySymbols;
   var __hasOwnProp = Object.prototype.hasOwnProperty;
   var __propIsEnum = Object.prototype.propertyIsEnumerable;
@@ -18,10 +16,48 @@
       }
     return a;
   };
-  var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 
   // src/lib/tokens/rules.ts
   var DEFAULT_FIGMA_GROUP = "Interactive";
+  var COLUMN_SETS = {
+    value: { title: "Value", modes: [{ key: "value", label: "Value" }] },
+    motion: {
+      title: "Default and reduced motion",
+      modes: [
+        { key: "default", label: "Default" },
+        { key: "reduced-motion", label: "Reduced motion" }
+      ]
+    },
+    theme: {
+      title: "Light and dark",
+      modes: [
+        { key: "light", label: "Light" },
+        { key: "dark", label: "Dark" }
+      ]
+    },
+    fluid: {
+      title: "Min and max",
+      modes: [
+        { key: "min", label: "Min" },
+        { key: "max", label: "Max" }
+      ]
+    }
+  };
+  function columnSetFor(layer, kind) {
+    if (layer === "primitive") return kind === "motion" ? "motion" : "value";
+    switch (kind) {
+      case "color":
+      case "border":
+      case "shadow":
+        return "theme";
+      case "spacing":
+      case "sizing":
+      case "typography":
+        return "fluid";
+      default:
+        return "value";
+    }
+  }
 
   // src/lib/tokens/naming.ts
   function parseComponentTokenName(name) {
@@ -53,12 +89,52 @@
   var isReference = (v) => typeof v === "object" && v !== null && "ref" in v && typeof v.ref === "string";
   var isComposite = (v) => typeof v === "object" && v !== null && !isReference(v);
 
+  // src/lib/tokens/references.ts
+  var columnSetOf = (t) => columnSetFor(t.layer, t.kind);
+  var modesOf = (t) => [...COLUMN_SETS[columnSetOf(t)].modes];
+  var defaultMode = (t) => COLUMN_SETS[columnSetOf(t)].modes[0].key;
+  function valueInMode(t, mode) {
+    var _a, _b;
+    if (t.values[mode] !== void 0) return t.values[mode];
+    const d = t.values[defaultMode(t)];
+    if (d !== void 0) return d;
+    return (_b = (_a = t.values.light) != null ? _a : Object.values(t.values)[0]) != null ? _b : "";
+  }
+
   // src/lib/figma/plan.ts
-  var COLLECTION_MODES = {
-    primitives: ["Value"],
-    semantic: ["Light", "Dark"],
-    components: ["Light", "Dark"]
+  var COLLECTIONS = {
+    "colour-primitives": { name: "Colour primitives", columns: "value" },
+    "type-primitives": { name: "Type primitives", columns: "value" },
+    "space-primitives": { name: "Space primitives", columns: "value" },
+    "other-primitives": { name: "Other primitives", columns: "value" },
+    motion: { name: "Motion", columns: "motion" },
+    "colour-tokens": { name: "Colour tokens", columns: "theme" },
+    "fluid-tokens": { name: "Fluid tokens", columns: "fluid" },
+    "other-tokens": { name: "Other tokens", columns: "value" }
   };
+  var collectionModes = (key) => COLUMN_SETS[COLLECTIONS[key].columns].modes;
+  var modeKeyOf = (name) => name.trim().toLowerCase().replace(/\s+/g, "-");
+  function collectionFor(t) {
+    if (t.layer === "primitive") {
+      switch (t.kind) {
+        case "color":
+          return "colour-primitives";
+        case "typography":
+          return "type-primitives";
+        case "spacing":
+        case "sizing":
+          return "space-primitives";
+        case "motion":
+          return "motion";
+        default:
+          return "other-primitives";
+      }
+    }
+    const set = columnSetOf(t);
+    if (set === "theme") return "colour-tokens";
+    if (set === "fluid") return "fluid-tokens";
+    return "other-tokens";
+  }
   var KIND_TITLE = {
     color: "Colour",
     spacing: "Spacing",
@@ -66,7 +142,8 @@
     typography: "Typography",
     radius: "Radius",
     border: "Border",
-    shadow: "Shadow"
+    shadow: "Shadow",
+    motion: "Motion"
   };
   var title2 = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
   function hexToRgba(hex) {
@@ -79,15 +156,15 @@
   }
   function variableName(t, group = DEFAULT_FIGMA_GROUP) {
     var _a;
+    if (t.figma) return t.figma;
     if (t.layer === "component") return (_a = figmaPath(t, group)) != null ? _a : `${group}/${t.name}`;
-    if (t.layer === "semantic" && t.kind === "color") return `${title2(t.name.split("-")[0])}/${t.name}`;
+    if (t.kind === "color") return t.layer === "primitive" ? t.name : `Base/${title2(t.name.split("-")[0])}/${t.name}`;
     return `${KIND_TITLE[t.kind]}/${t.name}`;
   }
   function typeFor(t) {
     if (t.kind === "color") return "COLOR";
-    const v = t.values.light;
-    if (isComposite(v)) return null;
-    if (t.name.startsWith("font-family")) return "STRING";
+    if (Object.values(t.values).some((v) => isComposite(v))) return null;
+    if (t.name.startsWith("font-family") || t.name.startsWith("ease")) return "STRING";
     return "FLOAT";
   }
   function valueFor(v, type) {
@@ -101,7 +178,7 @@
     return Number.isFinite(n) ? { kind: "float", value: n } : null;
   }
   function buildSpecs(set, opts = {}) {
-    var _a, _b;
+    var _a;
     const specs = [];
     const skipped = [];
     const byName = new Map(set.tokens.map((t) => [t.name, t]));
@@ -119,30 +196,34 @@
         skipped.push({ token: t.name, reason: `Figma variables cannot hold a ${t.kind} token with several parts. Use a Figma style for it.` });
         continue;
       }
-      const light = valueFor(t.values.light, type);
-      const darkRaw = t.layer === "primitive" ? void 0 : (_a = t.values.dark) != null ? _a : t.values.light;
-      const dark = darkRaw === void 0 ? void 0 : valueFor(darkRaw, type);
-      if (!light || darkRaw !== void 0 && !dark) {
+      const collection = collectionFor(t);
+      const values = {};
+      let bad = false;
+      for (const m of modesOf(t)) {
+        const v = valueFor(valueInMode(t, m.key), type);
+        if (!v) bad = true;
+        else values[m.key] = v;
+      }
+      if (bad) {
         skipped.push({ token: t.name, reason: "The value cannot become a Figma variable value." });
         continue;
       }
-      const missingAlias = [light, dark].find((v) => (v == null ? void 0 : v.kind) === "alias" && !syncable(v.token));
+      const missingAlias = Object.values(values).find((v) => v.kind === "alias" && !syncable(v.token));
       if (missingAlias && missingAlias.kind === "alias") {
         skipped.push({ token: t.name, reason: `It refers to ${missingAlias.token}, which is not synced.` });
         continue;
       }
       const p = t.layer === "component" ? parseComponentTokenName(t.name) : null;
-      specs.push(__spreadProps(__spreadValues({
+      specs.push({
         token: t.name,
-        collection: t.layer === "primitive" ? "primitives" : t.layer === "semantic" ? "semantic" : "components",
+        collection,
         name: variableName(t, opts.group),
         type,
-        light
-      }, dark ? { dark } : {}), {
+        values,
         hiddenFromPublishing: !isPublishedInFigma(t) || t.status === "deprecated",
-        description: [t.status === "deprecated" ? "Deprecated." : "", (_b = t.description) != null ? _b : "", p && p.state !== "default" ? `State: ${p.state}.` : ""].filter(Boolean).join(" "),
+        description: [t.status === "deprecated" ? "Deprecated." : "", (_a = t.description) != null ? _a : "", p && p.state !== "default" ? `State: ${p.state}.` : ""].filter(Boolean).join(" "),
         codeSyntax: `var(${cssVariableName(t)})`
-      }));
+      });
     }
     let changed = true;
     while (changed) {
@@ -150,7 +231,7 @@
       const names = new Set(specs.map((s) => s.token));
       for (let i = specs.length - 1; i >= 0; i -= 1) {
         const s = specs[i];
-        const bad = [s.light, s.dark].find((v) => (v == null ? void 0 : v.kind) === "alias" && !names.has(v.token));
+        const bad = Object.values(s.values).find((v) => v.kind === "alias" && !names.has(v.token));
         if (bad && bad.kind === "alias") {
           skipped.push({ token: s.token, reason: `It refers to ${bad.token}, which is not synced.` });
           specs.splice(i, 1);
@@ -178,8 +259,9 @@
     }
     return String(v.value);
   }
-  function planSync(specs, existing, skipped = []) {
+  function planSync(specs, existing, alreadySkipped = []) {
     var _a, _b, _c;
+    const skipped = [...alreadySkipped];
     const byToken = new Map(existing.filter((e) => e.token).map((e) => [e.token, e]));
     const byName = new Map(existing.filter((e) => e.collection).map((e) => [`${e.collection}|${e.name}`, e]));
     const used = /* @__PURE__ */ new Set();
@@ -193,12 +275,15 @@
         continue;
       }
       used.add(e.id);
+      if (e.type !== s.type) {
+        skipped.push({ token: s.token, reason: `In Figma, ${e.name} is a ${e.type} variable; the tool would make a ${s.type} variable. Change it by hand in Figma.` });
+        continue;
+      }
       const d = [];
       if (e.name !== s.name) d.push(`Name: ${e.name} \u2192 ${s.name}`);
-      if (e.type !== s.type) d.push(`Type: ${e.type} \u2192 ${s.type}`);
-      const lightLabel = s.collection === "primitives" ? "Value" : "Light";
-      if (!sameValue(e.light, s.light)) d.push(`${lightLabel}: ${describeValue(e.light)} \u2192 ${describeValue(s.light)}`);
-      if (s.dark && !sameValue(e.dark, s.dark)) d.push(`Dark: ${describeValue(e.dark)} \u2192 ${describeValue(s.dark)}`);
+      for (const m of collectionModes(s.collection)) {
+        if (!sameValue(e.values[m.key], s.values[m.key])) d.push(`${m.label}: ${describeValue(e.values[m.key])} \u2192 ${describeValue(s.values[m.key])}`);
+      }
       if (e.hiddenFromPublishing !== s.hiddenFromPublishing) d.push(s.hiddenFromPublishing ? "Hidden from publishing" : "Published");
       if (((_b = e.description) != null ? _b : "") !== s.description) d.push("Description");
       if (((_c = e.codeSyntax) != null ? _c : "") !== s.codeSyntax) d.push("Code syntax");
@@ -209,17 +294,15 @@
     const remove = existing.filter((e) => e.token && !used.has(e.id) && !specs.some((s) => s.token === e.token));
     return { add, change, remove, unchanged, skipped };
   }
-  function modeValues(s) {
-    var _a;
-    return s.collection === "primitives" ? { Value: s.light } : { Light: s.light, Dark: (_a = s.dark) != null ? _a : s.light };
-  }
 
   // src/lib/figma/apply.ts
-  var DEFAULT_COLLECTION_NAMES = {
-    primitives: "Primitives",
-    semantic: "Semantic",
-    components: "Components"
-  };
+  var DEFAULT_COLLECTION_NAMES = Object.fromEntries(
+    Object.entries(COLLECTIONS).map(([k, c]) => [k, c.name])
+  );
+  function findMode(c, key, mode) {
+    if (collectionModes(key).length === 1) return c.modes[0];
+    return c.modes.find((m) => modeKeyOf(m.name) === mode);
+  }
   var KEY = "tokenLibrary";
   function collectionKeyOf(c, names) {
     const stored = c.getPluginData(KEY);
@@ -244,27 +327,26 @@
     const byId = new Map(variables.map((v) => [v.id, v]));
     const colById = new Map(collections.map((c) => [c.id, c]));
     return variables.map((v) => {
-      var _a, _b, _c, _d, _e;
+      var _a, _b, _c;
       const c = colById.get(v.variableCollectionId);
       const key = c ? collectionKeyOf(c, names) : null;
-      const mode = (n) => {
-        var _a2;
-        return (_a2 = c == null ? void 0 : c.modes.find((m) => m.name === n)) == null ? void 0 : _a2.modeId;
-      };
-      const first = (_a = c == null ? void 0 : c.modes[0]) == null ? void 0 : _a.modeId;
-      const lightId = key === "primitives" ? (_b = mode("Value")) != null ? _b : first : (_c = mode("Light")) != null ? _c : first;
-      const darkId = key && key !== "primitives" ? mode("Dark") : void 0;
+      const values = {};
+      if (c && key) {
+        for (const m of collectionModes(key)) {
+          const id = (_a = findMode(c, key, m.key)) == null ? void 0 : _a.modeId;
+          values[m.key] = id ? toFigmaValue(v.valuesByMode[id], byId) : void 0;
+        }
+      }
       return {
         id: v.id,
         token: v.getPluginData("token") || void 0,
         collection: key,
         name: v.name,
         type: v.resolvedType,
-        light: lightId ? toFigmaValue(v.valuesByMode[lightId], byId) : void 0,
-        dark: darkId ? toFigmaValue(v.valuesByMode[darkId], byId) : void 0,
+        values,
         hiddenFromPublishing: v.hiddenFromPublishing,
-        description: (_d = v.description) != null ? _d : "",
-        codeSyntax: (_e = v.codeSyntax) == null ? void 0 : _e.WEB
+        description: (_b = v.description) != null ? _b : "",
+        codeSyntax: (_c = v.codeSyntax) == null ? void 0 : _c.WEB
       };
     });
   }
@@ -275,9 +357,11 @@
       let c = all.find((x) => collectionKeyOf(x, names) === key);
       if (!c) c = api2.createVariableCollection(names[key]);
       c.setPluginData(KEY, key);
-      const wanted = COLLECTION_MODES[key];
-      if (!c.modes.some((m) => m.name === wanted[0])) c.renameMode(c.modes[0].modeId, wanted[0]);
-      for (const w of wanted.slice(1)) if (!c.modes.some((m) => m.name === w)) c.addMode(w);
+      const wanted = collectionModes(key);
+      if (c.modes.length === 1 && modeKeyOf(c.modes[0].name) === "mode-1") {
+        c.renameMode(c.modes[0].modeId, wanted[0].label);
+      }
+      for (const w of wanted) if (!findMode(c, key, w.key)) c.addMode(w.label);
       out.set(key, c);
     }
     return out;
@@ -299,11 +383,8 @@
     const byId = new Map(all.map((v) => [v.id, v]));
     const varFor = /* @__PURE__ */ new Map();
     for (const c of plan.change) {
-      let v = byId.get(c.existing.id);
-      if (v.resolvedType !== c.spec.type) {
-        v.remove();
-        v = api2.createVariable(c.spec.name, collections.get(c.spec.collection), c.spec.type);
-      } else if (v.name !== c.spec.name) v.name = c.spec.name;
+      const v = byId.get(c.existing.id);
+      if (v.name !== c.spec.name) v.name = c.spec.name;
       v.setPluginData("token", c.spec.token);
       varFor.set(c.spec.token, v);
     }
@@ -321,8 +402,8 @@
     for (const s of work) {
       const v = varFor.get(s.token);
       const c = collections.get(s.collection);
-      for (const [modeName, value] of Object.entries(modeValues(s))) {
-        const modeId = c.modes.find((m) => m.name === modeName).modeId;
+      for (const [mode, value] of Object.entries(s.values)) {
+        const modeId = findMode(c, s.collection, mode).modeId;
         v.setValueForMode(modeId, toRaw(value, tokenVars, api2));
       }
       v.hiddenFromPublishing = s.hiddenFromPublishing;
@@ -339,7 +420,7 @@
   // src/lib/tokens/dtcg.ts
   var EXTENSION_KEY = "uk.ac.ual.tokens";
   var LAYERS = ["primitive", "semantic", "component"];
-  var KINDS = ["color", "spacing", "sizing", "typography", "radius", "border", "shadow"];
+  var KINDS = ["color", "spacing", "sizing", "typography", "radius", "border", "shadow", "motion"];
   var isToken = (v) => typeof v === "object" && v !== null && "$value" in v;
   function parseSimple(v) {
     if (typeof v === "string") {
@@ -374,12 +455,16 @@
             name,
             layer,
             kind,
-            values: { light: parseValue(raw.$value) },
+            values: { [defaultMode({ layer, kind })]: parseValue(raw.$value) },
             status: (_d = ext.status) != null ? _d : "active"
           };
           if (layer === "component") token.component = groupKey;
-          if (((_e = ext.modes) == null ? void 0 : _e.dark) !== void 0) token.values.dark = parseValue(ext.modes.dark);
+          for (const m of modesOf(token).slice(1)) {
+            const v = (_e = ext.modes) == null ? void 0 : _e[m.key];
+            if (v !== void 0) token.values[m.key] = parseValue(v);
+          }
           if (raw.$description) token.description = raw.$description;
+          if (ext.figma) token.figma = ext.figma;
           tokens.push(token);
         }
       }
@@ -394,7 +479,7 @@
   var lastNames = DEFAULT_COLLECTION_NAMES;
   figma.showUI(__html__, { width: 480, height: 640, themeColors: true, title: "Token Library" });
   figma.ui.onmessage = async (msg) => {
-    var _a, _b;
+    var _a;
     try {
       if (msg.type === "init") {
         const settings = (_a = await figma.clientStorage.getAsync(SETTINGS)) != null ? _a : {};
@@ -404,14 +489,14 @@
         await figma.clientStorage.setAsync(SETTINGS, msg.settings);
       }
       if (msg.type === "plan") {
-        lastNames = __spreadValues(__spreadValues({}, DEFAULT_COLLECTION_NAMES), (_b = msg.names) != null ? _b : {});
+        lastNames = DEFAULT_COLLECTION_NAMES;
         const set = parseDtcg(msg.tokens);
         const { specs, skipped } = buildSpecs(set, { includeDrafts: !!msg.includeDrafts });
         lastPlan = planSync(specs, await readExisting(api(), lastNames), skipped);
         figma.ui.postMessage({
           type: "plan",
           plan: {
-            add: lastPlan.add.map((s) => ({ token: s.token, name: s.name, collection: s.collection })),
+            add: lastPlan.add.map((s) => ({ token: s.token, name: s.name, collection: lastNames[s.collection] })),
             change: lastPlan.change.map((c) => ({ token: c.spec.token, name: c.spec.name, differences: c.differences })),
             remove: lastPlan.remove.map((e) => {
               var _a2;

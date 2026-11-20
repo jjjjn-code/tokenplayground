@@ -2,16 +2,17 @@
  * Pull and discrepancy review (F6): read token CSS from the code repo,
  * compare it with the tool, and turn each accept or decline into changes.
  */
-import { declarations } from "./css";
+import { FLUID_MODE, REDUCED_MOTION_QUERY, tokenDeclarations, type CssContext } from "./css";
 import { cssVariableName, parseComponentTokenName } from "./naming";
-import { indexTokens } from "./references";
+import { columnSetOf, defaultMode, indexTokens, modeLabel, modesOf } from "./references";
 import { componentCssPath, PARENT_CSS_PATH, cssFileFor } from "./repo";
 import { isComposite, isReference, type HistoryEntry, type Mode, type SimpleValue, type Token, type TokenSet, type TokenValue } from "./types";
 
 /** One custom property found in a CSS file. */
 export interface CssDecl {
   file: string;
-  mode: Mode;
+  /** Where it was found: the default rule (`@theme`, `:root` or the component class), `.dark`, or the reduced motion media query. */
+  context: CssContext;
   /** Component class for component files, otherwise undefined. */
   scope?: string;
   name: string;
@@ -24,28 +25,43 @@ const same = (a: string, b: string) => clean(a).toLowerCase() === clean(b).toLow
 
 /**
  * Read every custom property in a token CSS file. `@theme` and `:root` are
- * light, `.dark` is dark; `.button` and `.dark .button` are a component's
- * light and dark.
+ * the default, `.dark` is dark; `.button` and `.dark .button` are a
+ * component's default and dark. `:root` inside a reduced motion media query
+ * is reduced motion.
  */
 export function parseTokenCss(file: string, text: string): CssDecl[] {
   const out: CssDecl[] = [];
-  const body = text.replace(/\/\*[\s\S]*?\*\//g, (m) => (m.includes("deprecated") ? "" : " "));
+  let body = text.replace(/\/\*[\s\S]*?\*\//g, (m) => (m.includes("deprecated") ? "" : " "));
+  // Reduced motion: pull the media query out first, so its inner rule is not read as the default.
+  const query = REDUCED_MOTION_QUERY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ /g, "\\s*");
+  body = body.replace(new RegExp(`${query}\\s*\\{\\s*(?::root|html)\\s*\\{([^{}]*)\\}\\s*\\}`, "g"), (_m, inner: string) => {
+    for (const d of inner.matchAll(/(--[A-Za-z0-9-]+)\s*:\s*([^;]+);/g)) {
+      out.push({ file, context: "reduced-motion", name: d[1], value: clean(d[2]) });
+    }
+    return " ";
+  });
   const rule = /([^{}]+)\{([^{}]*)\}/g;
   for (const m of body.matchAll(rule)) {
     const selector = m[1].trim().replace(/\s+/g, " ");
-    let mode: Mode = "light";
+    let context: CssContext = "base";
     let scope: string | undefined;
-    if (selector === ".dark" || selector === ":root.dark" || selector === "html.dark") mode = "dark";
+    if (selector === ".dark" || selector === ":root.dark" || selector === "html.dark") context = "dark";
     else if (/^\.dark \.[a-z0-9-]+$/.test(selector)) {
-      mode = "dark";
+      context = "dark";
       scope = selector.split(" ")[1].slice(1);
     } else if (/^\.[a-z0-9-]+$/.test(selector)) scope = selector.slice(1);
     else if (selector !== "@theme" && selector !== ":root" && selector !== "@theme inline") continue;
     for (const d of m[2].matchAll(/(--[A-Za-z0-9-]+)\s*:\s*([^;]+);/g)) {
-      out.push({ file, mode, scope, name: d[1], value: clean(d[2]) });
+      out.push({ file, context, scope, name: d[1], value: clean(d[2]) });
     }
   }
   return out;
+}
+
+/** The token mode a CSS context stands for: dark, reduced motion, or the token's default (`fluid` for a fluid token). */
+function modeFor(t: Token, context: CssContext): Mode {
+  if (context !== "base") return context;
+  return columnSetOf(t) === "fluid" ? FLUID_MODE : defaultMode(t);
 }
 
 /** What the tool expects in a file: the same shape as {@link parseTokenCss}. */
@@ -55,11 +71,10 @@ export function expectedCss(set: TokenSet, file: string): CssDecl[] {
   const component = file === PARENT_CSS_PATH ? undefined : file.split("/")[1];
   for (const t of set.tokens) {
     if (cssFileFor(t) !== file) continue;
-    const modes: Mode[] = t.values.dark !== undefined ? ["light", "dark"] : ["light"];
-    for (const mode of modes) {
-      for (const line of declarations(t, mode === "dark" ? t.values.dark! : t.values.light, index)) {
+    for (const o of tokenDeclarations(t, index)) {
+      for (const line of o.lines) {
         const m = /^(--[A-Za-z0-9-]+):\s*(.*?);/.exec(line);
-        if (m) out.push({ file, mode, scope: component, name: m[1], value: clean(m[2]) });
+        if (m) out.push({ file, context: o.context, scope: component, name: m[1], value: clean(m[2]) });
       }
     }
   }
@@ -74,6 +89,7 @@ export type DiscrepancyKind =
   | "renamed"; // in the code under a different code name
 
 export interface ModeDifference {
+  /** The token's mode (`light`, `value`, `reduced-motion`, `fluid` and so on). For code-only tokens, the CSS context. */
   mode: Mode;
   /** What the tool would write, or null when the tool has nothing. */
   tool: string | null;
@@ -129,18 +145,17 @@ export function findDiscrepancies(set: TokenSet, files: Record<string, string | 
   for (const [file, text] of Object.entries(files)) {
     const expected = expectedCss(set, file);
     const actual = text === null ? [] : parseTokenCss(file, text);
-    const key = (d: CssDecl) => `${d.mode}|${d.name}`;
+    const key = (d: CssDecl) => `${d.context}|${d.name}`;
     const exp = new Map(expected.map((d) => [key(d), d]));
     const act = new Map(actual.map((d) => [key(d), d]));
 
     // Which token each expected code name belongs to.
     const owner = new Map<string, Token>();
+    const index = indexTokens(set);
     for (const t of set.tokens) {
       if (cssFileFor(t) !== file) continue;
-      const index = indexTokens(set);
-      for (const v of [t.values.light, t.values.dark]) {
-        if (v === undefined) continue;
-        for (const line of declarations(t, v, index)) {
+      for (const o of tokenDeclarations(t, index)) {
+        for (const line of o.lines) {
           const m = /^(--[A-Za-z0-9-]+):/.exec(line);
           if (m) owner.set(m[1], t);
         }
@@ -154,7 +169,7 @@ export function findDiscrepancies(set: TokenSet, files: Record<string, string | 
       if (a && same(a.value, e.value)) continue;
       const t = owner.get(e.name)!;
       const list = perToken.get(t.name) ?? [];
-      list.push({ mode: e.mode, tool: e.value, code: a ? a.value : null });
+      list.push({ mode: modeFor(t, e.context), tool: e.value, code: a ? a.value : null });
       perToken.set(t.name, list);
     }
 
@@ -166,7 +181,7 @@ export function findDiscrepancies(set: TokenSet, files: Record<string, string | 
         // A known token in a mode the tool does not write (for example a dark value for a primitive).
         const t = owner.get(a.name)!;
         const list = perToken.get(t.name) ?? [];
-        list.push({ mode: a.mode, tool: null, code: a.value });
+        list.push({ mode: modeFor(t, a.context), tool: null, code: a.value });
         perToken.set(t.name, list);
         continue;
       }
@@ -193,13 +208,21 @@ export function findDiscrepancies(set: TokenSet, files: Record<string, string | 
           token: name,
           codeName: renamedFrom,
           expectedCodeName: expectedName,
-          differences: diffs.map((d) => ({ ...d, code: code.find((c) => c.mode === d.mode)?.value ?? null })),
+          differences: diffs.map((d) => ({ ...d, code: code.find((c) => modeFor(t, c.context) === d.mode)?.value ?? null })),
           acceptBlockedReason: `The code name must be ${expectedName}. Decline to put the correct name back in the code.`,
         });
         continue;
       }
       const flattened = diffs.some((d) => d.tool?.startsWith("var(") && d.code !== null && !d.code.startsWith("var("));
-      const composite = isComposite(t.values.light);
+      const composite = Object.values(t.values).some((v) => isComposite(v));
+      const fluid = columnSetOf(t) === "fluid";
+      const blocked = allMissing
+        ? undefined
+        : fluid
+          ? "The code value is worked out from the min and max tokens. Change the min or max token in the tool, then check again."
+          : composite
+            ? "This token has more than 1 part. Change the token by hand, then check again."
+            : undefined;
       out.push({
         id: name,
         kind: allMissing ? "missing" : flattened ? "flattened" : "changed",
@@ -207,9 +230,7 @@ export function findDiscrepancies(set: TokenSet, files: Record<string, string | 
         token: name,
         codeName: expectedName,
         differences: diffs,
-        ...(composite && !allMissing
-          ? { acceptBlockedReason: "This token has more than 1 part. Change the token by hand, then check again." }
-          : {}),
+        ...(blocked ? { acceptBlockedReason: blocked } : {}),
       });
     }
 
@@ -221,7 +242,7 @@ export function findDiscrepancies(set: TokenSet, files: Record<string, string | 
         file,
         codeName,
         suggestedName: suggested,
-        differences: decls.map((d) => ({ mode: d.mode, tool: null, code: d.value })),
+        differences: decls.map((d) => ({ mode: d.context, tool: null, code: d.value })),
       });
     }
   }
@@ -296,7 +317,7 @@ export function applyDecisions(set: TokenSet, discrepancies: Discrepancy[], deci
     };
 
     if (d.kind === "missing") {
-      const users = tokens.filter((t) => [t.values.light, t.values.dark].some((v) => v !== undefined && JSON.stringify(v).includes(`"ref":"${d.token}"`)));
+      const users = tokens.filter((t) => Object.values(t.values).some((v) => v !== undefined && JSON.stringify(v).includes(`"ref":"${d.token}"`)));
       if (users.length) {
         problems.push({ id: d.id, message: `${users.length} ${users.length === 1 ? "token refers" : "tokens refer"} to ${d.token}. Change ${users.length === 1 ? "it" : "them"} first, then accept.` });
         continue;
@@ -311,15 +332,16 @@ export function applyDecisions(set: TokenSet, discrepancies: Discrepancy[], deci
     if (d.kind === "extra") {
       const name = (dec.name ?? d.suggestedName ?? "").trim();
       const component = d.file === PARENT_CSS_PATH ? undefined : d.file.split("/")[1];
-      const light = codeValue("light") ?? codeValue("dark")!;
+      // Tokens only in code are read as colour tokens; other types are added by hand.
+      const base = codeValue("base") ?? codeValue("dark")!;
       const dark = codeValue("dark");
-      const layer = component ? "component" : isReference(light) ? "semantic" : "primitive";
+      const layer = component ? "component" : isReference(base) ? "semantic" : "primitive";
       const t: Token = {
         name,
         layer,
         kind: "color",
         ...(component ? { component } : {}),
-        values: { light, ...(layer !== "primitive" ? { dark: dark ?? light } : {}) },
+        values: layer === "primitive" ? { value: base } : { light: base, dark: dark ?? base },
         status: "active",
       };
       if (component && !parseComponentTokenName(name)) {
@@ -338,10 +360,12 @@ export function applyDecisions(set: TokenSet, discrepancies: Discrepancy[], deci
     // changed or flattened: take the code's values.
     const before = tokens.find((t) => t.name === d.token)!;
     const values = { ...before.values };
+    const own = modesOf(before).map((m) => m.key);
     for (const diff of d.differences) {
       const v = codeValue(diff.mode);
       if (v === undefined) continue;
-      if (diff.mode === "dark" && before.layer === "primitive") continue;
+      // A value in a mode the token does not have (for example dark on a primitive) is not taken.
+      if (!own.includes(diff.mode)) continue;
       values[diff.mode] = v;
     }
     const after: Token = { ...before, values };
@@ -372,8 +396,8 @@ export const discrepancyLabel = (k: DiscrepancyKind) => KIND_LABEL[k];
 export function restoreChangelog(declined: AppliedPull["declined"], author: string, renamedOnAccept: AppliedPull["renamedOnAccept"] = []): string {
   const cell = (s: string | null) => (s === null ? "none" : s.replace(/\|/g, "\\|"));
   const rows = declined.map(({ discrepancy: d, reason }) => {
-    const code = d.differences.map((x) => `${x.mode === "light" ? "Light" : "Dark"}: ${cell(x.code)}`).join("<br>");
-    const tool = d.differences.map((x) => `${x.mode === "light" ? "Light" : "Dark"}: ${cell(x.tool)}`).join("<br>");
+    const code = d.differences.map((x) => `${modeLabel(x.mode)}: ${cell(x.code)}`).join("<br>");
+    const tool = d.differences.map((x) => `${modeLabel(x.mode)}: ${cell(x.tool)}`).join("<br>");
     return `| ${KIND_LABEL[d.kind]} | ${d.token ?? d.codeName} | ${code} | ${tool} | ${reason.replace(/\|/g, "\\|")} | ${d.file} |`;
   });
   for (const { discrepancy: d, name, reason } of renamedOnAccept) {

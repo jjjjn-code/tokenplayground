@@ -142,12 +142,14 @@ export default function FigmaPage() {
           <section className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
             <div className="mb-1 font-medium text-foreground">What the plugin does</div>
             <ul className="list-disc space-y-1 pl-5">
-              <li>Makes 3 variable collections: Primitives, Semantic (Light and Dark) and Components (Light and Dark).</li>
+              <li>Writes to the collections in the UI Kit file: Colour primitives, Type primitives, Space primitives and Motion (Default and Reduced motion), Colour tokens (Light and Dark, with component tokens under Interactive) and Fluid tokens (Min and Max). It makes a collection only if the file does not have it.</li>
+              <li>Updates variables you already have when the collection and name match, so layers stay bound to them. It never deletes a variable to change its type; it lists it for you instead.</li>
               <li>Keeps references as variable aliases.</li>
               <li>Hides component states other than default, and deprecated tokens, from publishing.</li>
               <li>Removes only variables that an earlier sync made. Variables you made by hand stay.</li>
               <li>Does not sync draft tokens, unless you select Include draft tokens.</li>
-              <li>Does not sync typography, border and shadow tokens. Figma variables cannot hold them.</li>
+              <li>Does not sync tokens with several parts, such as a text style, border or shadow. Figma variables cannot hold them.</li>
+              <li>Leaves the Figma UI Kit collection alone.</li>
             </ul>
           </section>
         </div>

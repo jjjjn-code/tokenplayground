@@ -38,9 +38,10 @@ export const KIND_TITLE: Record<Kind, string> = {
   radius: "Radius",
   border: "Border",
   shadow: "Shadow",
+  motion: "Motion",
 };
 
-export const KIND_ORDER: Kind[] = ["color", "spacing", "sizing", "typography", "radius", "border", "shadow"];
+export const KIND_ORDER: Kind[] = ["color", "spacing", "sizing", "typography", "radius", "border", "shadow", "motion"];
 
 export function setTitle(f: SetFilter): string[] {
   if (!f.layer) return ["All tokens"];

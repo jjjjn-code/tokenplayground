@@ -25,6 +25,7 @@ import {
   type DiscrepancyKind,
   type HistoryEntry,
   lastChange,
+  modeLabel,
   type Mode,
 } from "@/src/lib/tokens";
 import { useStore } from "../_lib/store";
@@ -333,7 +334,7 @@ export default function PullPage() {
                         <tbody>
                           {d.differences.map((x) => (
                             <tr key={x.mode} className="border-b last:border-b-0">
-                              <td className="px-3 py-1.5 text-xs text-muted-foreground">{x.mode === "light" ? "Light" : "Dark"}</td>
+                              <td className="px-3 py-1.5 text-xs text-muted-foreground">{modeLabel(x.mode)}</td>
                               <td className="px-3 py-1.5"><CssValue value={x.tool} mode={x.mode} /></td>
                               <td className="px-3 py-1.5"><CssValue value={x.code} mode={x.mode} /></td>
                             </tr>
@@ -456,7 +457,7 @@ export default function PullPage() {
                 <span className="grid gap-0.5">
                   {d.differences.map((x) => (
                     <span key={x.mode} className="flex flex-wrap items-center gap-1.5">
-                      <span className="w-10 text-xs text-muted-foreground">{x.mode === "light" ? "Light" : "Dark"}</span>
+                      <span className="min-w-10 text-xs text-muted-foreground">{modeLabel(x.mode)}</span>
                       <CssValue value={accept ? x.tool : x.code} mode={x.mode} />
                       <ArrowRight className="size-3 text-muted-foreground" aria-label="changes to" />
                       <CssValue value={accept ? x.code : x.tool} mode={x.mode} />

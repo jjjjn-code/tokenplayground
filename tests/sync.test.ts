@@ -18,14 +18,14 @@ beforeEach(() => {
 describe("load and save", () => {
   it("loads the seeded data", async () => {
     const d = await loadData(host, cfg);
-    expect(d.set.tokens).toHaveLength(68);
+    expect(d.set.tokens).toHaveLength(107);
     expect(d.history).toHaveLength(3);
     expect(d.lastPush?.title).toBe("Initial set-up");
   });
 
   it("saves as 1 commit and blocks a save based on an old version", async () => {
     const d = await loadData(host, cfg);
-    d.set.tokens.find((t) => t.name === "red-700")!.values.light = "#B00000";
+    d.set.tokens.find((t) => t.name === "red-700")!.values.value = "#B00000";
     const head = await saveData(host, cfg, { expectedHead: d.head, set: d.set, history: d.history, message: "Darker red" });
     expect((await loadData(host, cfg)).head).toBe(head);
     await expect(saveData(host, cfg, { expectedHead: d.head, set: d.set, history: d.history, message: "Again" })).rejects.toBeInstanceOf(ConflictError);
@@ -41,7 +41,7 @@ describe("load and save", () => {
 describe("push", () => {
   const edit = async () => {
     const d = await loadData(host, cfg);
-    d.set.tokens.find((t) => t.name === "red-700")!.values.light = "#B00000";
+    d.set.tokens.find((t) => t.name === "red-700")!.values.value = "#B00000";
     d.set.tokens.push(colour("button-surface-primary-selected", "component", { ref: "orange-700-aa" }, { component: "button", values: { light: { ref: "orange-700-aa" }, dark: { ref: "orange-400" } } }));
     await saveData(host, cfg, { expectedHead: d.head, set: d.set, history: d.history, message: "Edits" });
   };
@@ -92,15 +92,15 @@ describe("push", () => {
 describe("exact versions", () => {
   it("reads the version it is given, not only the latest", async () => {
     const first = await loadData(host, cfg);
-    first.set.tokens.find((t) => t.name === "red-700")!.values.light = "#B00000";
+    first.set.tokens.find((t) => t.name === "red-700")!.values.value = "#B00000";
     await saveData(host, cfg, { expectedHead: first.head, set: first.set, history: first.history, message: "x" });
     const old = await loadData(host, cfg, first.head);
-    expect(old.set.tokens.find((t) => t.name === "red-700")!.values.light).toBe("#A80000");
+    expect(old.set.tokens.find((t) => t.name === "red-700")!.values.value).toBe("#A80000");
   });
 
   it("returns the new version, history and last push after a push", async () => {
     const d = await loadData(host, cfg);
-    d.set.tokens.find((t) => t.name === "red-700")!.values.light = "#B00000";
+    d.set.tokens.find((t) => t.name === "red-700")!.values.value = "#B00000";
     const head = await saveData(host, cfg, { expectedHead: d.head, set: d.set, history: d.history, message: "x" });
     const res = await pushToCode(host, cfg, { title: "Red", summary: "", author: "jane", dataHead: head });
     expect(res.dataHead).toBe(await host.head(cfg.dataRepo, "main"));
