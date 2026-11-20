@@ -31,7 +31,6 @@ describe("dummy token set", () => {
     expect(set.tokens.some((t) => isReference(t.values.value))).toBe(true); // a primitive pointing to a primitive
     expect(set.tokens.some((t) => t.values.dark !== undefined)).toBe(true);
     expect(set.tokens.some((t) => t.values.min !== undefined && t.values.max !== undefined)).toBe(true);
-    expect(set.tokens.some((t) => t.values["reduced-motion"] !== undefined)).toBe(true);
     expect(set.tokens.some((t) => typeof t.values.light === "object" && !isReference(t.values.light))).toBe(true);
   });
 

@@ -3,7 +3,7 @@ import log from "@/data/dummy/history.json";
 import { simulateDeveloperDrift } from "@/src/lib/git/drift";
 import { seedFiles } from "@/src/lib/git/sync";
 import { applyDecisions, findDiscrepancies, parseTokenCss, pullFiles, restoreChangelog, type HistoryEntry } from "@/src/lib/tokens";
-import { dummy } from "./helpers";
+import { dummy, withMotion } from "./helpers";
 
 const codeFiles = (drift: boolean) => {
   const { code } = seedFiles(dummy(), log as HistoryEntry[]);
@@ -38,13 +38,15 @@ describe("findDiscrepancies", () => {
   });
 
   it("reads reduced motion and fluid values back, and blocks accepting a changed clamp()", () => {
-    const files = pick(codeFiles(false));
+    const { code } = seedFiles(withMotion(), log as HistoryEntry[]);
+    const files = Object.fromEntries(pullFiles(withMotion()).map((p) => [p, code[p] ?? null]));
+    expect(findDiscrepancies(withMotion(), files)).toEqual([]);
     const parent = files["styles/colors.css"]!
-      .replace("--duration-fast: 0ms;", "--duration-fast: 10ms;")
+      .replace("--duration-quick: var(--duration-none);", "--duration-quick: 10ms;")
       .replace(/--space-s: clamp\([^;]*\);/, "--space-s: 1rem;");
-    const found = findDiscrepancies(dummy(), { ...files, "styles/colors.css": parent });
+    const found = findDiscrepancies(withMotion(), { ...files, "styles/colors.css": parent });
     const byId = Object.fromEntries(found.map((d) => [d.id, d]));
-    expect(byId["duration-fast"]).toMatchObject({ kind: "changed", differences: [{ mode: "reduced-motion", tool: "0ms", code: "10ms" }] });
+    expect(byId["duration-quick"]).toMatchObject({ kind: "flattened", differences: [{ mode: "reduced-motion", tool: "var(--duration-none)", code: "10ms" }] });
     expect(byId["space-s"]).toMatchObject({ kind: "changed", differences: [{ mode: "fluid", code: "1rem" }] });
     expect(byId["space-s"].acceptBlockedReason).toContain("min and max");
     expect(found).toHaveLength(2);

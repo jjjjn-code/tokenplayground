@@ -170,7 +170,16 @@
   .sheet-table tbody tr[data-selected="true"] > td {
     background: var(--row-selected);
   }
+  /* Group and subgroup rows: a grey band, so they read as dividers. */
   .sheet-table tr.group-row > td {
+    height: 34px;
+    background: var(--muted);
+    border-right: none;
+  }
+  .sheet-table tbody tr.group-row:hover > td {
+    background: var(--muted);
+  }
+  .sheet-table tr.add-row > td {
     height: 34px;
     background: var(--background);
     border-right: none;

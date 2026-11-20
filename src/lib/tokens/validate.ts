@@ -47,9 +47,7 @@ export function checkToken(t: Token, index: TokenIndex): Issue[] {
   if (!LAYERS_BY_KIND[t.kind].includes(t.layer)) {
     err(
       "layer.kind",
-      t.kind === "motion"
-        ? "Motion tokens are primitives. Make this a primitive token."
-        : "Only colour tokens can be component tokens. Make this a primitive or a semantic token.",
+      "Only colour tokens can be component tokens. Make this a primitive or a semantic token.",
     );
   }
   if (t.layer !== "component" && t.component) {

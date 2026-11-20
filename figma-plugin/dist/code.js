@@ -44,7 +44,7 @@
     }
   };
   function columnSetFor(layer, kind) {
-    if (layer === "primitive") return kind === "motion" ? "motion" : "value";
+    if (layer === "primitive") return "value";
     switch (kind) {
       case "color":
       case "border":
@@ -54,6 +54,8 @@
       case "sizing":
       case "typography":
         return "fluid";
+      case "motion":
+        return "motion";
       default:
         return "value";
     }
@@ -107,7 +109,9 @@
     "type-primitives": { name: "Type primitives", columns: "value" },
     "space-primitives": { name: "Space primitives", columns: "value" },
     "other-primitives": { name: "Other primitives", columns: "value" },
-    motion: { name: "Motion", columns: "motion" },
+    // The Motion collection in Figma has 2 modes; primitives write to its first mode only.
+    motion: { name: "Motion", columns: "value" },
+    "motion-tokens": { name: "Motion tokens", columns: "motion" },
     "colour-tokens": { name: "Colour tokens", columns: "theme" },
     "fluid-tokens": { name: "Fluid tokens", columns: "fluid" },
     "other-tokens": { name: "Other tokens", columns: "value" }
@@ -131,6 +135,7 @@
       }
     }
     const set = columnSetOf(t);
+    if (set === "motion") return "motion-tokens";
     if (set === "theme") return "colour-tokens";
     if (set === "fluid") return "fluid-tokens";
     return "other-tokens";

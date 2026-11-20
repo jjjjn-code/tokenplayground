@@ -42,6 +42,7 @@ export function NewTokenRow({
   component,
   set,
   index,
+  valueCols = 2,
   onCreate,
   onCancel,
 }: {
@@ -50,6 +51,8 @@ export function NewTokenRow({
   component?: string;
   set: TokenSet;
   index: TokenIndex;
+  /** How many value columns the sheet has, so a 1-value token fills them. */
+  valueCols?: number;
   onCreate: (t: Token) => void;
   onCancel: () => void;
 }) {
@@ -183,7 +186,7 @@ export function NewTokenRow({
         </div>
       </td>
       {modes.map((m, i) => (
-        <td key={m.key} className="px-1.5 pt-1.5 align-top" colSpan={modes.length === 1 ? 2 : 1} {...(i === 0 ? { "data-new": "first" } : {})}>
+        <td key={m.key} className="px-1.5 pt-1.5 align-top" colSpan={modes.length === 1 ? valueCols : 1} {...(i === 0 ? { "data-new": "first" } : {})}>
           <ValuePicker
             label={modes.length === 1 ? "Value" : `${m.label} value`}
             value={valueOf(m.key, i)}

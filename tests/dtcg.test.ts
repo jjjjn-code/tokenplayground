@@ -17,7 +17,7 @@ describe("DTCG files", () => {
       values: { min: { ref: "font-size-min-step-0" }, max: { ref: "font-size-max-step-0" } },
       figma: "Font size/Step 0",
     });
-    expect(set.tokens.find((t) => t.name === "duration-fast")!.values).toEqual({ default: "150ms", "reduced-motion": "0ms" });
+    expect(set.tokens.find((t) => t.name === "duration-fast")!.values).toEqual({ value: "150ms" });
     expect(set.tokens.find((t) => t.name === "spacing-min-s")!.values).toEqual({ value: 16 });
   });
 
@@ -32,7 +32,7 @@ describe("DTCG files", () => {
     const out = serialiseDtcg(dummy()) as any;
     expect(out.semantic.spacing["space-s"].$value).toBe("{primitive.spacing.spacing-min-s}");
     expect(out.semantic.spacing["space-s"].$extensions[EXTENSION_KEY].modes).toEqual({ max: "{primitive.spacing.spacing-max-s}" });
-    expect(out.primitive.motion["duration-fast"].$extensions[EXTENSION_KEY].modes).toEqual({ "reduced-motion": "0ms" });
+    expect(out.primitive.motion["duration-fast"].$extensions[EXTENSION_KEY].modes).toBeUndefined();
   });
 
   it("reads files saved before column sets: light becomes the default", () => {

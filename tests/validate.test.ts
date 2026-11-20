@@ -85,11 +85,11 @@ describe("modes", () => {
     expect(checkBeforeSave(set, [t]).ok).toBe(true);
   });
 
-  it("keeps motion in the primitive layer, with default and reduced motion values", () => {
+  it("gives motion primitives 1 value, and semantic motion default and reduced motion", () => {
     const set = dummy();
-    const semantic: Token = { name: "duration-quick", layer: "semantic", kind: "motion", values: { value: { ref: "duration-fast" } }, status: "active" };
-    expect(checkBeforeSave(set, [semantic]).issues.map((i) => i.code)).toContain("layer.kind");
-    const noReduced: Token = { name: "duration-quick", layer: "primitive", kind: "motion", values: { default: "100ms" }, status: "active" };
+    const twoValues: Token = { name: "duration-quick", layer: "primitive", kind: "motion", values: { value: "100ms", "reduced-motion": "0ms" }, status: "active" };
+    expect(checkBeforeSave(set, [twoValues]).issues.map((i) => i.code)).toContain("mode.primitive");
+    const noReduced: Token = { name: "duration-quick", layer: "semantic", kind: "motion", values: { default: { ref: "duration-fast" } }, status: "active" };
     expect(checkBeforeSave(set, [noReduced]).issues.map((i) => i.code)).toContain("mode.missing");
   });
 

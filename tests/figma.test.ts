@@ -92,14 +92,14 @@ describe("buildSpecs", () => {
     expect(get("font-family-body")).toMatchObject({ collection: "type-primitives", name: "fontFamilies/body", type: "STRING" });
   });
 
-  it("puts motion in its own collection with default and reduced motion", () => {
+  it("puts motion primitives in Motion with 1 value", () => {
     expect(get("duration-fast")).toMatchObject({
       collection: "motion",
       name: "duration/duration-fast",
       type: "FLOAT",
-      values: { default: { kind: "float", value: 150 }, "reduced-motion": { kind: "float", value: 0 } },
+      values: { value: { kind: "float", value: 150 } },
     });
-    expect(get("ease-standard")).toMatchObject({ type: "STRING", values: { default: { kind: "string", value: "cubic-bezier(0.22, 1, 0.36, 1)" } } });
+    expect(get("ease-standard")).toMatchObject({ type: "STRING", values: { value: { kind: "string", value: "cubic-bezier(0.22, 1, 0.36, 1)" } } });
   });
 
   it("puts fluid tokens in Fluid tokens with min and max aliases", () => {
@@ -147,7 +147,7 @@ describe("sync to a Figma file", () => {
       "Space primitives": ["Value"],
       "Type primitives": ["Value"],
       "Other primitives": ["Value"],
-      Motion: ["Default", "Reduced motion"],
+      Motion: ["Value"],
       "Colour tokens": ["Light", "Dark"],
       "Fluid tokens": ["Min", "Max"],
       "Other tokens": ["Value"],

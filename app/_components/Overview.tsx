@@ -80,6 +80,9 @@ import { AliasPill, relativeDate, resolvedText, StatusBadge, Swatch } from "./ui
 
 const COLS = 6; // name, value 1, value 2, status, last change, in code
 
+/** Width of each value column, in pixels. */
+const VALUE_WIDTH = 240;
+
 /** Kinds whose tokens are sizes and may refer to each other. */
 const SIZE_KINDS: Kind[] = ["spacing", "sizing", "typography"];
 
@@ -212,6 +215,11 @@ export function Overview() {
   // The column headings: the column set of the tokens shown, or "Values" when the groups use different sets.
   const shownSets = [...new Set(groups.map((g) => columnSetOf(g.tokens[0])))];
   const headSet = shownSets.length === 1 ? COLUMN_SETS[shownSets[0]] : null;
+  // 1 value column when every set shown has 1 value (primitives), otherwise 2.
+  const valueCols = Math.max(1, ...shownSets.map((k) => COLUMN_SETS[k].modes.length));
+  // The In code column is wide enough to show the longest code name in full; the sheet scrolls sideways when needed.
+  const codeWidth = Math.max(160, Math.ceil(Math.max(0, ...rows.map((t) => cssVariableName(t).length)) * 7.4) + 32);
+  const fixedWidth = 300 + VALUE_WIDTH * valueCols + 104 + 120 + 64;
   const flat = groups.flatMap((g) => g.tokens);
   const issuesFor = useCallback((name: string) => issues.filter((i) => i.token === name && i.severity !== "info"), [issues]);
   const errorCount = issues.filter((i) => i.severity === "error").length;
@@ -311,8 +319,8 @@ export function Overview() {
   const valueCell = (t: Token, mode: Mode, r: number, c: number) => {
     const modes = modesOf(t);
     const modeLabel = modes.find((m) => m.key === mode)?.label ?? mode;
-    // A token with 1 value fills both value columns, like the Value column in Figma.
-    const span = modes.length === 1 ? 2 : 1;
+    // A token with 1 value fills both value columns when other groups shown have 2.
+    const span = modes.length === 1 ? valueCols : 1;
     const composite = isComposite(valueInMode(t, mode));
     const isOpen = editCell?.name === t.name && editCell.mode === mode;
     const label = `${t.name}, ${modeLabel.toLowerCase()}. Press Enter to change.`;
@@ -449,11 +457,10 @@ export function Overview() {
 
       {/* Sheet */}
       <div className="min-h-0 flex-1 overflow-auto" onKeyDown={onGridKeyDown}>
-        <table className="sheet-table min-w-[1060px]">
+        <table className="sheet-table" style={{ minWidth: fixedWidth + codeWidth }}>
           <colgroup>
             <col style={{ width: 300 }} />
-            <col style={{ width: 230 }} />
-            <col style={{ width: 230 }} />
+            {Array.from({ length: valueCols }, (_, i) => <col key={i} style={{ width: VALUE_WIDTH }} />)}
             <col style={{ width: 104 }} />
             <col style={{ width: 120 }} />
             <col />
@@ -473,12 +480,12 @@ export function Overview() {
               </th>
               {headSet ? (
                 headSet.modes.length === 1 ? (
-                  <th colSpan={2}>{headSet.modes[0].label}</th>
+                  <th colSpan={valueCols}>{headSet.modes[0].label}</th>
                 ) : (
                   headSet.modes.map((m) => <th key={m.key}>{m.label}</th>)
                 )
               ) : (
-                <th colSpan={2}>Values</th>
+                <th colSpan={valueCols}>Values</th>
               )}
               <th>Status</th>
               <th>Last change</th>
@@ -499,12 +506,12 @@ export function Overview() {
                     </td>
                     {/* When groups use different columns, each group names its own. */}
                     {headSet ? (
-                      <td colSpan={2} />
+                      <td colSpan={valueCols} />
                     ) : (
                       (() => {
                         const ms = modesOf(g.tokens[0]);
                         return ms.length === 1 ? (
-                          <td colSpan={2}><span className="px-3 text-xs text-muted-foreground">{ms[0].label}</span></td>
+                          <td colSpan={valueCols}><span className="px-3 text-xs text-muted-foreground">{ms[0].label}</span></td>
                         ) : (
                           ms.map((m) => <td key={m.key}><span className="px-3 text-xs text-muted-foreground">{m.label}</span></td>)
                         );
@@ -519,9 +526,9 @@ export function Overview() {
                   const subheading = folder && folder !== (i > 0 ? folderOf(g.tokens[i - 1]) : "") ? (
                     <tr className="group-row" aria-hidden="true">
                       <td className="sticky-col">
-                        <span className="block truncate pl-[38px] text-xs text-muted-foreground">{folder}</span>
+                        <span className="block truncate pl-[38px] text-xs font-medium text-muted-foreground">{folder}</span>
                       </td>
-                      <td colSpan={6} />
+                      <td colSpan={valueCols + 4} />
                     </tr>
                   ) : null;
                   rowIndex += 1;
@@ -604,7 +611,7 @@ export function Overview() {
                           </td>
                           <td>
                             <div className="cell-btn" title={cssFileFor(t)}>
-                              <span className="truncate font-mono text-[12px] text-muted-foreground">{cssVariableName(t)}</span>
+                              <span className="font-mono text-[12px] whitespace-nowrap text-muted-foreground">{cssVariableName(t)}</span>
                             </div>
                           </td>
                           <td>
@@ -656,6 +663,7 @@ export function Overview() {
                         component={gComponent}
                         set={set}
                         index={index}
+                        valueCols={valueCols}
                         onCancel={() => setAdding(null)}
                         onCreate={(t) => {
                           saveTokens([t], []);
@@ -665,10 +673,11 @@ export function Overview() {
                       />
                     );
                   }
-                  const composite = gLayer === "semantic" && ["typography", "border", "shadow"].includes(gKind);
+                  // Semantic type is fluid now; only borders and shadows have several parts.
+                  const composite = gLayer === "semantic" && ["border", "shadow"].includes(gKind);
                   return (
-                    <tr className="group-row" key={`add-${g.key}`}>
-                      <td colSpan={7} className="sticky-col">
+                    <tr className="add-row" key={`add-${g.key}`}>
+                      <td colSpan={valueCols + 5} className="sticky-col">
                         <button
                           type="button"
                           className="flex h-full w-full items-center gap-2 px-3 text-left text-[13px] text-muted-foreground hover:bg-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"

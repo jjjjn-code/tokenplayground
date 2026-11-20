@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BLOCK_END, BLOCK_START, componentCss, cssFiles, parentCss, replaceManagedBlock } from "@/src/lib/tokens";
-import { colour, dummy } from "./helpers";
+import { colour, dummy, withMotion } from "./helpers";
 
 describe("CSS output", () => {
   const set = dummy();
@@ -43,12 +43,16 @@ describe("CSS output", () => {
     expect(css).toContain("--space-negative-s: clamp(-1.1875rem, -0.9375rem - 0.25vw, -1rem);");
   });
 
-  it("writes reduced motion values in a media query, only where they change", () => {
+  it("writes motion primitives once, with no reduced motion block", () => {
     const css = parentCss(set);
     expect(css).toContain("--duration-fast: 150ms;");
-    expect(css).toContain("@media (prefers-reduced-motion: reduce) {\n  :root {\n    --duration-fast: 0ms;");
-    const media = css.slice(css.indexOf("@media"));
-    expect(media).not.toContain("--ease-standard");
+    expect(css).not.toContain("@media");
+  });
+
+  it("writes semantic reduced motion values in a media query", () => {
+    const css = parentCss(withMotion());
+    expect(css).toContain("--duration-quick: var(--duration-fast);");
+    expect(css).toContain("@media (prefers-reduced-motion: reduce) {\n  :root {\n    --duration-quick: var(--duration-none);\n  }\n}");
   });
 
   it("scopes component tokens to the component class, matching the repo contract", () => {

@@ -61,7 +61,7 @@ export const LAYERS_BY_KIND: Record<Kind, Layer[]> = {
   radius: ["primitive", "semantic"],
   border: ["primitive", "semantic"],
   shadow: ["primitive", "semantic"],
-  motion: ["primitive"],
+  motion: ["primitive", "semantic"],
 };
 
 /**
@@ -98,13 +98,13 @@ export const COLUMN_SETS = {
 export type ColumnSetId = keyof typeof COLUMN_SETS;
 
 /**
- * The column set for a layer and type. Primitives have 1 value, except
- * motion. Theming starts at the semantic layer: colour by light and dark,
- * spacing and type by min and max (fluid). PROVISIONAL for sizing, radius,
+ * The column set for a layer and type. Primitives always have 1 value.
+ * Theming starts at the semantic layer: colour by light and dark, spacing
+ * and type by min and max (fluid), motion by default and reduced motion. PROVISIONAL for sizing, radius,
  * border and shadow, which are not in the Figma file yet.
  */
 export function columnSetFor(layer: Layer, kind: Kind): ColumnSetId {
-  if (layer === "primitive") return kind === "motion" ? "motion" : "value";
+  if (layer === "primitive") return "value";
   switch (kind) {
     case "color":
     case "border":
@@ -114,6 +114,8 @@ export function columnSetFor(layer: Layer, kind: Kind): ColumnSetId {
     case "sizing":
     case "typography":
       return "fluid";
+    case "motion":
+      return "motion";
     default:
       return "value";
   }
