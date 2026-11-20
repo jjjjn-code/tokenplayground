@@ -98,7 +98,7 @@ Semantic names follow `[category]-[variant]`, with categories `surface`, `conten
 
 ## v1 feature requirements
 
-v1 has 10 features. "Must" features are needed for the round trip to work; "Should" features can follow inside v1.
+v1 has 11 features. "Must" features are needed for the round trip to work; "Should" features can follow inside v1.
 
 | ID | Feature | Requirement | Priority |
 | --- | --- | --- | --- |
@@ -112,6 +112,7 @@ v1 has 10 features. "Must" features are needed for the round trip to work; "Shou
 | F8 | Decline follow-up | Declining a pulled change opens a pull request that restores the tool's value in the CSS, with the designer's reason in its description. | Should |
 | F9 | Figma sync | A companion Figma plugin pulls approved tokens into Figma variables. See the Figma sync section. | Must |
 | F10 | Token usage | For each token, show how many components use it and which ones, found by scanning the component CSS in the repo. Flag tokens used by 0 components so they can be deprecated or removed. Counting usage in Figma through the plugin can follow later. | Should |
+| F11 | Connect and sync | Bring tokens in from Figma and code, and settle every difference, when the tool is connected to a new source: the first real day, the switch from the sandbox to the real code repo, and the move to UAL's GitHub organisation. See the Connect and sync section. | Must before real tokens |
 
 **Carried over from the token namer.** F2 reuses the flow of the earlier token namer (`reference/token-namer.html`), which already works:
 
@@ -190,6 +191,55 @@ Figma sync runs through a companion plugin, because on our Pro plan the Figma Va
 
 To confirm: which Figma files and collections the plugin writes to, and how Figma groups map to token names.
 
+## Connect and sync (F11)
+
+**Why.** The tool is connected to a new source at least 3 times: on the first real day (the tool is empty), when the sandbox code repo is swapped for the real one, and when the repos move to UAL's GitHub organisation. Each time, everything must be compared, not only what changed since the last push. Day-to-day review (F6) stays as it is; it is a small version of the same job.
+
+It is not a multi-organisation product: there are no sign-ups or billing. It is 1 guided flow that can be run again whenever a source changes.
+
+**When it runs**
+
+| Moment | Tool | Figma | Code |
+| --- | --- | --- | --- |
+| First real day | Empty | Full set | Full set |
+| Sandbox to real code repo | Full set | Unchanged | New, compare everything |
+| Move to UAL's GitHub | Moves with its history | Unchanged | New address, compare everything |
+
+**Flow**
+
+1. **Choose sources.** Figma, code, or both. The code repo and branch come from the tool's settings. Figma tokens come from the plugin, through a new Send to Token Library button that sends every variable in the chosen collections.
+2. **Scan.** The tool reads every source into 1 list. For each token it works out the layer, type and column set:
+   - From Figma: the collection gives the layer and column set (for example Fluid tokens gives semantic, Min and Max), the variable name gives the Figma path, aliases give references.
+   - From code: the CSS block gives the mode (`@theme`, `.dark`, the reduced motion media query, a component class), the name prefix gives the type, `var()` gives a reference.
+3. **Sort into piles.** Each pile has an "accept all" action and can be opened to decide 1 by 1:
+   - Matches everywhere.
+   - New: in Figma or code, not in the tool.
+   - Different between sources: pick the right one.
+   - Breaks the naming rules: the tool suggests a corrected name.
+   - Only in 1 place: add it, or mark it to be removed.
+4. **Link what code cannot tell us.** A fluid `clamp()` in code holds numbers, not references. When Figma has the same token, its Min and Max aliases are used. When it does not, the tool suggests the min and max primitives whose sizes match, for a person to confirm.
+5. **Save.** All decisions are saved in 1 commit with a summary. If code must change (renames, missing tokens, declined values), 1 pull request with a changelog goes to developers. If Figma must change, the next plugin sync does it. The result becomes the new baseline, so F6 from then on shows only real changes.
+
+**What it reuses.** Reading and comparing CSS (F6), reading Figma variables (F9 plugin), saving to GitHub and opening pull requests (F5, F8), the naming rules engine and the column sets.
+
+**What is new**
+
+| Part | Notes |
+| --- | --- |
+| Figma import | A button in the plugin and an endpoint in the tool that receives the variables, protected by the existing sync key |
+| Type and column guessing | Rules that turn a Figma collection or a CSS name into a layer, type and column set |
+| 3-way comparison | Tool, Figma and code at the same time, instead of tool and code only. The largest piece |
+| Sync screen | The piles, accept all, rename suggestions and the clamp() linking step |
+| Connection settings | A page that shows, and lets an owner change, the connected repos and branch. Today these are set where the tool is deployed |
+
+**Build steps.** Each step is useful and tested on its own before the next:
+
+1. Figma import: fill an empty tool from the plugin. Test with the UAL UI Kit file.
+2. Code import: fill an empty tool from the code repo, using the F6 engine with accept all and type guessing.
+3. Full sync: the 3-way screen, the piles and the save step.
+
+**Done when** an empty tool can be filled from the UAL UI Kit file and the code repo in 1 sitting, every difference has a recorded decision, and an F6 review straight afterwards finds nothing.
+
 ## Phasing and build order
 
 We build in 5 phases, each tested against the dummy token set before the next starts. Real UAL tokens are imported only after phase 4 passes.
@@ -199,6 +249,7 @@ We build in 5 phases, each tested against the dummy token set before the next st
 3. **Push to repo (F5).** Generate CSS into the parent and component files, open a pull request with the changelog. Test on the sandbox repo first.
 4. **Pull and history (F6 to F8).** Read CSS back from the release branch, review discrepancies, log decisions, restore versions.
 5. **Figma plugin (F9).** Sync approved tokens into Figma variables, starting with a test Figma file.
+6. **Connect and sync (F11).** Figma import, then code import, then the full sync screen. Needed before the real UAL tokens go in.
 
 **Set-up.** We build in GitHub from day 1, on Jane's personal account for the proof of concept, using 3 private repos:
 
@@ -235,6 +286,8 @@ Comparing the sample `colors.css` (`reference/colors-sample.css`) with the Colou
 - [ ] Fluid tokens in code: confirm developers want 1 `clamp()` value per token (Utopia style), and the code names (`--space-s`, `--space-s-l`, `--step-0`).
 - [ ] Negative font steps: Utopia writes `--step--1`, which breaks the 1 hyphen rule. Choose a name, for example `step-minus-1`.
 - [ ] Grid @min and Grid @max: which variables they hold.
+- [ ] Connect and sync: which Figma file and collections are the source on the first real day, and who may change the connected repos.
+- [ ] Connect and sync: when Figma and code disagree on the first real day, which wins by default (proposal: Figma, as the more up-to-date reference).
 - [ ] Non-colour tokens: where spacing, typography, radius, border and shadow live in code today.
 - [ ] Component tokens in code: confirm with developers that dark values go under `.dark .button`, and whether component tokens take the `--color-` prefix.
 - [ ] Colour page: fix the light-mode reference labels (drift item 06).
