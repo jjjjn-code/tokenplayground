@@ -98,7 +98,7 @@ Semantic names follow `[category]-[variant]`, with categories `surface`, `conten
 
 ## v1 feature requirements
 
-v1 has 11 features. "Must" features are needed for the round trip to work; "Should" features can follow inside v1.
+v1 has 12 features. "Must" features are needed for the round trip to work; "Should" features can follow inside v1.
 
 | ID | Feature | Requirement | Priority |
 | --- | --- | --- | --- |
@@ -113,6 +113,7 @@ v1 has 11 features. "Must" features are needed for the round trip to work; "Shou
 | F9 | Figma sync | A companion Figma plugin pulls approved tokens into Figma variables. See the Figma sync section. | Must |
 | F10 | Token usage | For each token, show how many components use it and which ones, found by scanning the component CSS in the repo. Flag tokens used by 0 components so they can be deprecated or removed. Counting usage in Figma through the plugin can follow later. | Should |
 | F11 | Connect and sync | Bring tokens in from Figma and code, and settle every difference, when the tool is connected to a new source: the first real day, the switch from the sandbox to the real code repo, and the move to UAL's GitHub organisation. See the Connect and sync section. | Must before real tokens |
+| F12 | Component scan | In the Figma plugin, scan a finished component set. If any part uses a primitive or a raw value, draft a complete set of component tokens for the whole component, create them in Figma and send them to the tool in 1 confirmed step. See the Component scan section. | Should |
 
 **Carried over from the token namer.** F2 reuses the flow of the earlier token namer (`reference/token-namer.html`), which already works:
 
@@ -240,6 +241,82 @@ It is not a multi-organisation product: there are no sign-ups or billing. It is 
 
 **Done when** an empty tool can be filled from the UAL UI Kit file and the code repo in 1 sitting, every difference has a recorded decision, and an F6 review straight afterwards finds nothing.
 
+## Component scan (F12)
+
+**Why.** A component uses Base semantic tokens or a complete set of its own tokens, never a mix. While building a component, a designer often finds that 1 part cannot use a semantic token in both themes. For example, the control's hover surface is `neutral-200` and its pressed surface is `neutral-600`, and no semantic token covers those. That 1 part switches the whole component to component tokens, and parts that were fine are renamed too: `base-line-default` becomes `control-line-default`, with the same colour. Today this means leaving Figma and creating the tokens in the tool by hand. The scan does it in the canvas, where the component is built.
+
+Agreed on 23 Nov 2026 (handoff note from Jane Ngan).
+
+**Where it lives.** The same Figma plugin as sync (F9): 1 plugin, 2 tabs, "Sync from tool" and "Scan component".
+
+**What the plugin reads**
+
+| Input | Rule |
+| --- | --- |
+| Selection | A component set with a `State` variant property (for example `State=Hover`). No variables need to exist first. |
+| Layers | Layers named `surface`, `line`, `content` or `icon` are read in every variant. The layer name gives the category. Any other coloured layer is listed as unknown, for the designer to rename. |
+| State | From the `State` variant property. Disabled is a state, like hover and pressed. |
+| Light and dark | From the modes of the `Colour tokens` collection (`light` and `dark`). Each binding is resolved in both modes. |
+
+**When it acts.** If every part is bound to a semantic token, the plugin says the component is fine and stops. If any part is bound to a primitive or a raw value, it drafts a complete set of component tokens for the whole component.
+
+**Drafting rules**
+
+1. Every drafted token is named `[component]-[category]-[role]-[state]`, for example `control-surface-hover`. The role is left out when the component has only 1 variant.
+2. Every component token points to a primitive, never to a semantic. A part that used a semantic gets the primitive behind that semantic in each mode. For example, `control-line-default` points to whatever `base-line-default` points to, in each mode.
+3. If a state has the same value as the default in both modes, no new token is made and the layer is bound to the `-default` token.
+4. Primitives have no modes, so a layer bound to `neutral-200` shows `neutral-200` in dark too. The plugin cannot know the intended dark value, so the designer must choose it before anything is created. Otherwise, the same primitive in both modes is only a warning, because some tokens rightly share 1 (the Promo CTA bar hover uses `orange-700` in both).
+5. `transparent` is a primitive (`#000000` at 0% opacity), so transparent parts never need a raw value.
+6. Icons inside a control use the `content` category. The control's arrow is `control-content-default`, not `icon`.
+7. Variables go in the `Colour tokens` collection, group `Interactive / [Component] / [Category]`, for example `Interactive / Control / Surface`. The Figma variable name drops the component prefix, because the group carries it (`surface-hover`). The tool and the code keep the full name (`control-surface-hover`).
+8. Only `-default` tokens are published. All other states are hidden from publishing.
+
+**Flow**
+
+1. **Select.** Select the component set. The plugin shows its name, the number of variants and the number of coloured layers.
+2. **Scan.** It reads every named layer in every variant, in both modes. It shows each layer's current binding (semantic, primitive or raw value) with a colour swatch and the value in dark and light. Primitive layers are flagged "shows the same in both themes".
+3. **Changes.** A before and after list for every layer: the current binding, then the component token it will be bound to, both with a colour swatch and the token value. Layers that reuse a `-default` token are shown too.
+4. **Review.** The drafted tokens, grouped by category (`Interactive / Control / Surface`, `Line`, `Content`). Each shows its Figma name, full name, published or hidden, source, and a dark and light primitive picker. Flagged tokens need a dark value before you can go on. The checks from F2 run here: naming rules, duplicates, missing modes, the same primitive in both modes, and the role warning.
+5. **Confirm.** A separate screen that sums up what will happen, for example: "This creates 8 variables in Colour tokens / Interactive / Control, hides 5 from publishing, changes 12 layers across 4 variants, and adds 8 tokens to Token Library." Buttons: Back, and Create and sync. Nothing is created before this step.
+6. **Done.** The plugin ticks off each part as it happens. It shows the new tokens as they appear in the tool (status: unpushed) and the CSS that push (F5) will write. A reminder says to publish the library from the Assets panel.
+
+**Creating and sending.** Creating the variables, binding the layers and sending the tokens to the tool happen in 1 confirmed step. The tool receives the tokens through a new endpoint, protected by the existing sync key, and saves them to the token data repo as 1 commit.
+
+**What the plugin does not do.** The Figma plugin API cannot publish a library. After the scan, the designer publishes from the Assets panel as usual.
+
+**If sending fails.** The Figma changes stay. The plugin shows the failure with a Retry button and offers the tokens as a JSON download in the tool's format (W3C design tokens), so Figma and the tool never drift without anyone knowing.
+
+**Worked example: the control.** 4 states, 3 parts, 8 drafted tokens. Sample values only: read the real ones from the Figma file.
+
+| State | surface (fill) | line (stroke) | content (arrow) |
+| --- | --- | --- | --- |
+| Default | `transparent` (primitive) | `line-default` (semantic) | `content-default` (semantic) |
+| Hover | `neutral-200` (primitive) | `line-default` (semantic) | `content-default` (semantic) |
+| Pressed | `neutral-600` (primitive) | `line-default` (semantic) | `content-on-inverse` (semantic) |
+| Disabled | `transparent` (primitive) | `line-disabled` (semantic) | `neutral-400` (primitive) |
+
+| Figma group | Figma name | Full name | Published | Note |
+| --- | --- | --- | --- | --- |
+| Surface | `surface-default` | `control-surface-default` | Yes | `transparent` in both |
+| Surface | `surface-hover` | `control-surface-hover` | No | Light `neutral-200`; dark needs a decision |
+| Surface | `surface-pressed` | `control-surface-pressed` | No | Light `neutral-600`; dark needs a decision |
+| Line | `line-default` | `control-line-default` | Yes | From `line-default` |
+| Line | `line-disabled` | `control-line-disabled` | No | From `line-disabled` |
+| Content | `content-default` | `control-content-default` | Yes | From `content-default` |
+| Content | `content-pressed` | `control-content-pressed` | No | From `content-on-inverse` |
+| Content | `content-disabled` | `control-content-disabled` | No | Light `neutral-400`; dark needs a decision |
+
+Reused, not created: the hover line, pressed line, hover content and disabled surface all use the matching `-default` token.
+
+**Build steps**
+
+1. Scan logic in `src/lib/figma/`, tested against the worked example with a fake Figma.
+2. The Scan component tab in the plugin, with all 6 screens.
+3. The endpoint in the tool that receives the drafted tokens, with retry and the JSON fallback.
+4. Test on the Control frame in the UAL UI Sandbox file: read only first, write only after Jane agrees.
+
+**Done when** scanning the control in the sandbox file creates the 8 variables in the right group, rebinds every layer, leaves the dark theme correct for hover and pressed, and the 8 tokens appear in the tool as unpushed.
+
 ## Phasing and build order
 
 We build in 5 phases, each tested against the dummy token set before the next starts. Real UAL tokens are imported only after phase 4 passes.
@@ -250,6 +327,8 @@ We build in 5 phases, each tested against the dummy token set before the next st
 4. **Pull and history (F6 to F8).** Read CSS back from the release branch, review discrepancies, log decisions, restore versions.
 5. **Figma plugin (F9).** Sync approved tokens into Figma variables, starting with a test Figma file.
 6. **Connect and sync (F11).** Figma import, then code import, then the full sync screen. Needed before the real UAL tokens go in.
+
+**Component scan (F12)** is built ahead of phase 6, decided on 23 Nov 2026, because it is needed while components are being built in Figma. It is tested against the dummy set and a fake Figma first, then on the UAL UI Sandbox file. It does not change phases 1 to 6.
 
 **Set-up.** We build in GitHub from day 1, on Jane's personal account for the proof of concept, using 3 private repos:
 
@@ -288,6 +367,8 @@ Comparing the sample `colors.css` (`reference/colors-sample.css`) with the Colou
 - [ ] Grid @min and Grid @max: which variables they hold.
 - [ ] Connect and sync: which Figma file and collections are the source on the first real day, and who may change the connected repos.
 - [ ] Connect and sync: when Figma and code disagree on the first real day, which wins by default (proposal: Figma, as the more up-to-date reference).
+- [ ] Component scan: how to treat a coloured layer with no recognised name, a raw value not bound to any variable, and a component with more than 1 variant (where the role is needed, and which variant property gives it).
+- [x] Component scan: the variant property that gives the state is `State`. Decided 23 Nov 2026.
 - [ ] Non-colour tokens: where spacing, typography, radius, border and shadow live in code today.
 - [ ] Component tokens in code: confirm with developers that dark values go under `.dark .button`, and whether component tokens take the `--color-` prefix.
 - [ ] Colour page: fix the light-mode reference labels (drift item 06).
