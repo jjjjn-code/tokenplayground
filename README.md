@@ -13,7 +13,7 @@ The product requirements are in [`docs/PRD.md`](docs/PRD.md).
 | 3 | Push to repo (F5) | Done, tested live on the sandbox |
 | 4 | Pull and history (F6 to F8) | Done, deployed |
 | 5 | Figma plugin (F9) | Built and tested with a fake Figma. Next: test in a real Figma file |
-| F12 | Component scan | Step 1 of 4 done: scan logic, tested with a fake Figma. Next: the Scan component tab in the plugin |
+| F12 | Component scan | Steps 1 to 3 of 4 done: scan logic, the Scan component tab (6 screens) and the endpoint in the tool, tested with a fake Figma and in demo mode. Next: test on the Control frame in the UAL UI Sandbox file |
 
 ## Running it
 
@@ -74,7 +74,8 @@ The tool runs in 1 of 3 modes:
 | `src/lib/git/` | Saving to the token data repo and pushing to the code repo, with a fake GitHub for tests and demo mode |
 | `src/lib/server/` and `app/api/` | Sign-in with the GitHub App and the endpoints the screens call |
 | `src/lib/figma/` | Figma sync: tokens to variable specs, the compare plan, and writing variables. Component scan: `scan.ts` drafts the tokens, `scan-figma.ts` reads a component set and writes the result |
-| `figma-plugin/` | The Figma plugin. Build with `npm run plugin:build`; this also makes `public/token-library-figma-plugin.zip` |
+| `figma-plugin/` | The Figma plugin, with 2 tabs: Sync from tool (`ui.ts`) and Scan component (`scan-ui.ts`). Build with `npm run plugin:build`; this also makes `public/token-library-figma-plugin.zip` |
+| `src/lib/git/scan.ts` and `app/api/figma/scan/` | Token Library receives the tokens a component scan made, as 1 commit. Sending the same scan again changes nothing |
 | `components/ui/` | shadcn/ui components, added with the shadcn command line tool |
 | `data/dummy/` | Dummy token set and history. Moves to the token data repo in phase 3 |
 | `fixtures/` | Test material: release branch CSS sample, the 6 drift cases, simulated component usage |
@@ -117,3 +118,7 @@ These are working assumptions until the open questions in the PRD are answered:
 - Component scan: when 2 layers with the same name in 1 state have different colours, the scan stops, because they would share 1 token.
 - Component scan: a state that looks the same as the default reuses the `-default` token. A part bound to a primitive counts as that primitive in both themes when compared.
 - The dummy set has a `transparent` primitive (`#00000000`), as in the handoff.
+- Component scan: Token Library refuses scanned tokens that it already has with different values, and tells the designer which ones. It does not overwrite them.
+- Component scan: when Token Library does not receive the tokens, the plugin keeps them on that computer and offers Send again each time it opens, until they arrive. It also offers them as a JSON download. Token Library has no import button for that JSON yet.
+- Component scan: "the same primitive in light and dark" is checked only where the designer chose the value. Tokens copied from a semantic token keep the semantic token's values without a note.
+- Component scan: transparent parts are not flagged "shows the same in both themes".

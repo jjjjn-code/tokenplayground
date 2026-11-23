@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import log from "@/data/dummy/history.json";
 import { ConflictError, MemoryHost } from "@/src/lib/git/host";
 import { loadData, planPush, pushToCode, saveData, seedFiles, type SyncConfig } from "@/src/lib/git/sync";
-import { BLOCK_START, type HistoryEntry } from "@/src/lib/tokens";
+import { mergeScannedTokens, receiveScan } from "@/src/lib/git/scan";
+import { BLOCK_START, serialiseDtcg, type HistoryEntry, type Token } from "@/src/lib/tokens";
 import { colour, dummy } from "./helpers";
 
 const cfg: SyncConfig = { dataRepo: "jane/ual-tokens-data", dataBranch: "main", codeRepo: "jane/ual-tokens-sandbox", codeBranch: "main" };
@@ -176,5 +177,46 @@ describe("pull", async () => {
     const res = await applyPull(host, cfg, { codeHead: plan.codeHead, author: "jane", decisions: [{ id: "line-default", decision: "accept", reason: "x" }] });
     expect(res.problems).toHaveLength(1);
     expect(await host.head(cfg.dataRepo, "main")).toBe(before);
+  });
+});
+
+describe("component scan: Token Library receives the tokens", () => {
+  const control = (extra: Partial<Token> = {}): Token[] => [
+    { name: "control-surface-default", layer: "component", kind: "color", component: "control", values: { light: { ref: "transparent" }, dark: { ref: "transparent" } }, status: "active", ...extra },
+    { name: "control-surface-hover", layer: "component", kind: "color", component: "control", values: { light: { ref: "neutral-200" }, dark: { ref: "neutral-600" } }, status: "active" },
+  ];
+  const body = (tokens: Token[]) => ({ fileName: "UAL UI Sandbox", component: "control", title: "Control", tokens: serialiseDtcg({ tokens }) });
+
+  it("saves the tokens as 1 commit, with a created entry in each token's history", async () => {
+    const r = await receiveScan(host, cfg, "jane", body(control()), "2026-11-23T10:00:00Z");
+    expect(r.added).toEqual(["control-surface-default", "control-surface-hover"]);
+    const d = await loadData(host, cfg);
+    expect(d.set.tokens.find((t) => t.name === "control-surface-hover")).toMatchObject({ layer: "component", component: "control", values: { light: { ref: "neutral-200" }, dark: { ref: "neutral-600" } } });
+    expect(d.history.filter((e) => e.token.startsWith("control-")).map((e) => [e.action, e.by, e.reason])).toEqual([
+      ["created", "jane", 'Made by the component scan in Figma file "UAL UI Sandbox".'],
+      ["created", "jane", 'Made by the component scan in Figma file "UAL UI Sandbox".'],
+    ]);
+  });
+
+  it("changes nothing when the same scan is sent again", async () => {
+    await receiveScan(host, cfg, "jane", body(control()));
+    const head = await host.head(cfg.dataRepo, "main");
+    const again = await receiveScan(host, cfg, "jane", body(control()));
+    expect(again).toMatchObject({ added: [], same: ["control-surface-default", "control-surface-hover"] });
+    expect(await host.head(cfg.dataRepo, "main")).toBe(head);
+  });
+
+  it("refuses tokens that Token Library already has with different values", async () => {
+    await receiveScan(host, cfg, "jane", body(control()));
+    await expect(receiveScan(host, cfg, "jane", body(control({ values: { light: { ref: "white" }, dark: { ref: "white" } } })))).rejects.toThrow(
+      /already has control-surface-default with different values/,
+    );
+  });
+
+  it("refuses a token that points to a primitive Token Library does not have", async () => {
+    const tokens = control();
+    tokens[1].values = { light: { ref: "grey-250" }, dark: { ref: "neutral-600" } };
+    await expect(receiveScan(host, cfg, "jane", body(tokens))).rejects.toThrow(/control-surface-hover: The token "grey-250" does not exist/);
+    expect(mergeScannedTokens(dummy(), control(), { component: "button", fileName: "f", by: "j", at: "2026-11-23T10:00:00Z" }).errors.map((e) => e.code)).toEqual(["scan.foreign", "scan.foreign"]);
   });
 });

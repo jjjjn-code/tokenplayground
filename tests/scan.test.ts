@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { applyPlan, readExisting } from "@/src/lib/figma/apply";
 import { buildSpecs, hexToRgba, planSync } from "@/src/lib/figma/plan";
 import { checkDrafts, draftsToTokens, scanComponent, summarise, withChoices, type Choices } from "@/src/lib/figma/scan";
+import { donePreview, scanView } from "@/src/lib/figma/scan-view";
+import { parseDtcg } from "@/src/lib/tokens";
 import { applyScan, readComponentSet, type ComponentSetLike, type NodeLike, type PaintLike } from "@/src/lib/figma/scan-figma";
 import { FakeFigma } from "./fake-figma";
 import { codes, dummy } from "./helpers";
@@ -310,5 +312,31 @@ describe("component scan: other cases", () => {
     const r = scanComponent(await readComponentSet(fig, set));
     expect(codes(r.issues)).toContain("scan.conflict");
     expect(r.status).toBe("blocked");
+  });
+});
+
+describe("component scan: what the plugin shows", () => {
+  it("gives every layer its binding and colour in light and dark", async () => {
+    const fig = await file();
+    const input = await readComponentSet(fig, control(fig));
+    const v = scanView(scanComponent(input), input.variables);
+    const hover = v.layers.find((l) => l.state === "hover" && l.category === "surface")!;
+    expect(hover).toMatchObject({ kind: "primitive", label: "neutral-200", paint: "Fill", sameInBoth: true, light: { hex: "#D1D1D1", label: "neutral-200" }, dark: { hex: "#D1D1D1" } });
+    const line = v.layers.find((l) => l.state === "default" && l.category === "line")!;
+    expect(line).toMatchObject({ kind: "semantic", label: "line-default", paint: "Stroke", light: { label: "neutral-700" }, dark: { label: "neutral-100" } });
+    expect(v.tokens.map((t) => t.group)).toEqual(["Surface", "Surface", "Surface", "Line", "Line", "Content", "Content", "Content"]);
+    expect(v.primitives.find((p) => p.label === "transparent")).toEqual({ label: "transparent", hex: "#00000000" });
+  });
+
+  it("previews the tokens, the JSON for Token Library and the CSS that Send to code writes", async () => {
+    const fig = await file();
+    const input = await readComponentSet(fig, control(fig));
+    const done = donePreview(scanComponent(input), input.variables, DARK);
+    expect(done.tokens).toHaveLength(8);
+    expect(parseDtcg(done.json).tokens.map((t) => t.name)).toEqual(done.tokens.map((t) => t.name));
+    expect(done.css).toContain(".control {");
+    expect(done.css).toContain("--control-surface-hover: var(--color-neutral-200);");
+    expect(done.css).toContain(".dark .control {");
+    expect(done.css).toContain("--control-surface-hover: var(--color-neutral-600);");
   });
 });

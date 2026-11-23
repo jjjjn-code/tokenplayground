@@ -1,4 +1,4 @@
-export {};
+import { createScanUi, type Pending } from "./scan-ui";
 /**
  * Token Library Figma plugin: the window. It talks to Token Library over
  * the network and to the Figma side (code.ts) through messages.
@@ -137,14 +137,45 @@ async function report(result: { added: string[]; changed: string[]; removed: str
   }
 }
 
+const scanUi = createScanUi({
+  root: $("panel-scan"),
+  post,
+  settings: () => ({ url: settings.url, key: settings.key }),
+  openSettings: () => {
+    ($("settings") as HTMLDetailsElement).open = true;
+  },
+  onNewKey: (key) => {
+    settings = { ...settings, key };
+    fillForm();
+    post({ type: "save-settings", settings });
+  },
+});
+
+const TABS = ["sync", "scan"] as const;
+function showTab(tab: (typeof TABS)[number]) {
+  for (const t of TABS) {
+    $(`tab-${t}`).setAttribute("aria-selected", String(t === tab));
+    $(`panel-${t}`).hidden = t !== tab;
+  }
+  if (tab === "scan") {
+    scanUi.render();
+    post({ type: "scan-selection" });
+  }
+}
+for (const t of TABS) $(`tab-${t}`).onclick = () => showTab(t);
+
 window.onmessage = async (event: MessageEvent) => {
   const msg = event.data.pluginMessage;
   if (!msg) return;
+  if (scanUi.onMessage(msg)) return;
   if (msg.type === "settings") {
     settings = { ...DEFAULTS, url: msg.settings?.url ?? DEFAULTS.url, key: msg.settings?.key ?? "", includeDrafts: !!msg.settings?.includeDrafts };
     fileName = msg.fileName;
     $("file").textContent = fileName;
     fillForm();
+    scanUi.setPending((msg.pending as Pending | null) ?? null);
+    // A scan that did not reach Token Library is shown first.
+    if (msg.pending) showTab("scan");
   }
   if (msg.type === "plan") {
     plan = msg.plan;

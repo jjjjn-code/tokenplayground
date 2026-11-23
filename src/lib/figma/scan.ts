@@ -317,7 +317,9 @@ export function scanComponent(input: ScanInput, group = DEFAULT_FIGMA_GROUP): Sc
 
   const all: ScannedLayer[] = input.paints.map((paint) => {
     const source = sourceOf(paint.binding, component, input.variables, byId);
-    return { paint, category: categoryOfLayer(paint.layerName), source, sameInBoth: source.kind === "primitive" || source.kind === "raw" };
+    // Transparent looks the same in every theme, so it is not flagged.
+    const fixed = (source.kind === "primitive" || source.kind === "raw") && !isTransparent(source.value.color);
+    return { paint, category: categoryOfLayer(paint.layerName), source, sameInBoth: fixed };
   });
   const layers = all.filter((l) => l.category);
   const unknown = all.filter((l) => !l.category);
@@ -481,7 +483,9 @@ export function checkDrafts(result: ScanResult, vars: ScanVariable[], choices: C
   const drafts = withChoices(result.tokens, choices);
   const own = context.tokens.filter((t) => t.layer === "component" && t.component === result.component).map((t) => t.name);
   const { issues } = checkBeforeSave(context, draftsToTokens(drafts), own);
-  const out = [...issues];
+  // "The same in light and dark" is only worth a check where the designer chose the value (scan.same-primitive below).
+  // A token copied from a semantic token, or transparent, is the same in both themes on purpose.
+  const out = issues.filter((i) => i.code !== "mode.same");
   for (const d of drafts) {
     const p = d.light && vars.find((v) => v.token === d.light);
     const q = d.dark && vars.find((v) => v.token === d.dark);
