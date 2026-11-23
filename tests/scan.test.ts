@@ -1,0 +1,314 @@
+import { describe, expect, it } from "vitest";
+import { applyPlan, readExisting } from "@/src/lib/figma/apply";
+import { buildSpecs, hexToRgba, planSync } from "@/src/lib/figma/plan";
+import { checkDrafts, draftsToTokens, scanComponent, summarise, withChoices, type Choices } from "@/src/lib/figma/scan";
+import { applyScan, readComponentSet, type ComponentSetLike, type NodeLike, type PaintLike } from "@/src/lib/figma/scan-figma";
+import { FakeFigma } from "./fake-figma";
+import { codes, dummy } from "./helpers";
+
+/** A Figma file with the dummy set synced into it, as the UAL UI Kit has its variables. */
+async function file() {
+  const fig = new FakeFigma();
+  const { specs, skipped } = buildSpecs(dummy());
+  await applyPlan(fig, planSync(specs, await readExisting(fig), skipped));
+  return fig;
+}
+
+/** A paint bound to the variable with this Figma name, or a raw hex colour. */
+function paint(fig: FakeFigma, value: string): PaintLike {
+  if (value.startsWith("#")) {
+    const { r, g, b, a } = hexToRgba(value)!;
+    return { type: "SOLID", color: { r, g, b }, opacity: a };
+  }
+  const v = fig.byName(value);
+  if (!v) throw new Error(`No variable ${value}`);
+  return { type: "SOLID", color: { r: 0, g: 0, b: 0 }, boundVariables: { color: { type: "VARIABLE_ALIAS", id: v.id } } };
+}
+
+let n = 0;
+const node = (name: string, extra: Partial<NodeLike> = {}): NodeLike => ({ id: `N:${++n}`, name, type: "FRAME", ...extra });
+
+type Parts = Record<string, { fill?: string; stroke?: string }>;
+
+/** A component set; each variant has 1 layer per part, named after the part. */
+function componentSet(fig: FakeFigma, name: string, variants: Record<string, Parts>, props?: Record<string, string[]>): ComponentSetLike {
+  const children = Object.entries(variants).map(([vname, parts]) => {
+    const variantProperties = Object.fromEntries(vname.split(", ").map((kv) => kv.split("=")));
+    return node(vname, {
+      type: "COMPONENT",
+      variantProperties,
+      children: Object.entries(parts).map(([layer, p]) =>
+        node(layer, { fills: p.fill ? [paint(fig, p.fill)] : [], strokes: p.stroke ? [paint(fig, p.stroke)] : [] }),
+      ),
+    });
+  });
+  const defs: ComponentSetLike["componentPropertyDefinitions"] = {};
+  for (const [k, opts] of Object.entries(props ?? { State: Object.keys(variants).map((v) => v.split("=")[1]) })) defs[k] = { type: "VARIANT", variantOptions: opts };
+  return { id: `N:${++n}`, name, type: "COMPONENT_SET", children, componentPropertyDefinitions: defs };
+}
+
+const P = (s: string) => s; // primitives sit at the top of Colour primitives
+const S = (s: string) => `Base/${s.split("-")[0].replace(/^./, (c) => c.toUpperCase())}/${s}`;
+
+/** The control from the handoff, with the sample bindings. */
+function control(fig: FakeFigma) {
+  return componentSet(fig, "Control", {
+    "State=Default": { surface: { fill: P("transparent") }, line: { stroke: S("line-default") }, content: { fill: S("content-default") } },
+    "State=Hover": { surface: { fill: P("neutral-200") }, line: { stroke: S("line-default") }, content: { fill: S("content-default") } },
+    "State=Pressed": { surface: { fill: P("neutral-600") }, line: { stroke: S("line-default") }, content: { fill: S("content-on-inverse") } },
+    "State=Disabled": { surface: { fill: P("transparent") }, line: { stroke: S("line-disabled") }, content: { fill: P("neutral-400") } },
+  });
+}
+
+const DARK: Choices = {
+  "control-surface-hover": { dark: "neutral-600" },
+  "control-surface-pressed": { dark: "neutral-200" },
+  "control-content-disabled": { dark: "neutral-400" },
+};
+
+describe("component scan: reading", () => {
+  it("reads every named layer in every variant, with the state from the State property", async () => {
+    const fig = await file();
+    const input = await readComponentSet(fig, control(fig));
+    expect(input.variants.map((v) => v.state)).toEqual(["default", "hover", "pressed", "disabled"]);
+    expect(input.paints).toHaveLength(12);
+    expect(input.issues).toEqual([]);
+    const r = scanComponent(input);
+    expect(r.component).toBe("control");
+    const hover = r.layers.filter((l) => l.paint.state === "hover");
+    expect(hover.map((l) => [l.category, l.source.kind, l.sameInBoth])).toEqual([
+      ["surface", "primitive", true],
+      ["line", "semantic", false],
+      ["content", "semantic", false],
+    ]);
+  });
+
+  it("resolves a semantic binding to its primitive in light and dark", async () => {
+    const fig = await file();
+    const r = scanComponent(await readComponentSet(fig, control(fig)));
+    const line = r.layers.find((l) => l.category === "line")!.source;
+    expect(line).toMatchObject({ kind: "semantic", token: "line-default", light: { primitive: "neutral-700" }, dark: { primitive: "neutral-100" } });
+  });
+
+  it("stops when the State property is missing", async () => {
+    const fig = await file();
+    const set = componentSet(fig, "Control", { "Size=Small": { surface: { fill: P("neutral-200") } } }, { Size: ["Small"] });
+    const r = scanComponent(await readComponentSet(fig, set));
+    expect(r.status).toBe("blocked");
+    expect(codes(r.issues)).toContain("scan.state");
+  });
+});
+
+describe("component scan: drafting (the control)", async () => {
+  const fig = await file();
+  const set = control(fig);
+  const input = await readComponentSet(fig, set);
+  const r = scanComponent(input);
+  const get = (name: string) => r.tokens.find((t) => t.name === name)!;
+
+  it("drafts a full set of 8 component tokens, because some parts use primitives", () => {
+    expect(r.status).toBe("draft");
+    expect(r.tokens.map((t) => t.name)).toEqual([
+      "control-surface-default",
+      "control-surface-hover",
+      "control-surface-pressed",
+      "control-line-default",
+      "control-line-disabled",
+      "control-content-default",
+      "control-content-pressed",
+      "control-content-disabled",
+    ]);
+  });
+
+  it("names them for Figma without the component prefix, in Interactive / Control / [Category]", () => {
+    expect(get("control-surface-hover")).toMatchObject({ figmaName: "surface-hover", figmaPath: "Interactive/Control/Surface/surface-hover" });
+    expect(get("control-line-default").figmaPath).toBe("Interactive/Control/Line/line-default");
+  });
+
+  it("publishes only the -default tokens", () => {
+    expect(r.tokens.filter((t) => t.published).map((t) => t.name)).toEqual(["control-surface-default", "control-line-default", "control-content-default"]);
+  });
+
+  it("points every token to a primitive, taking the primitive behind each semantic in each mode", () => {
+    expect(get("control-line-default")).toMatchObject({ light: "neutral-700", dark: "neutral-100", needsDark: false, source: "From line-default" });
+    expect(get("control-line-disabled")).toMatchObject({ light: "neutral-400", dark: "neutral-400" });
+    expect(get("control-content-pressed")).toMatchObject({ light: "white", dark: "black", source: "From content-on-inverse" });
+  });
+
+  it("asks for a dark value when a part uses a primitive, but not for transparent", () => {
+    expect(r.tokens.filter((t) => t.needsDark).map((t) => t.name)).toEqual(["control-surface-hover", "control-surface-pressed", "control-content-disabled"]);
+    expect(get("control-surface-hover")).toMatchObject({ light: "neutral-200", dark: null });
+    expect(get("control-surface-default")).toMatchObject({ light: "transparent", dark: "transparent", needsDark: false });
+  });
+
+  it("reuses the -default token when a state looks the same as the default", () => {
+    const reused = r.changes.filter((c) => c.reused).map((c) => `${c.layer.paint.state} ${c.layer.category} → ${c.token}`);
+    expect(reused).toEqual([
+      "disabled surface → control-surface-default",
+      "hover line → control-line-default",
+      "pressed line → control-line-default",
+      "hover content → control-content-default",
+    ]);
+    expect(r.changes).toHaveLength(12);
+  });
+
+  it("blocks Create until every dark value is chosen, then passes the token namer checks", () => {
+    const before = checkDrafts(r, input.variables);
+    expect(before.ok).toBe(false);
+    expect(before.issues.filter((i) => i.code === "mode.missing").map((i) => i.token)).toEqual([
+      "control-surface-hover",
+      "control-surface-pressed",
+      "control-content-disabled",
+    ]);
+    const after = checkDrafts(r, input.variables, DARK);
+    expect(after.issues.filter((i) => i.severity === "error")).toEqual([]);
+    expect(codes(after.issues)).toContain("component.no-role");
+    expect(after.issues.find((i) => i.code === "scan.same-primitive")?.token).toBe("control-content-disabled");
+  });
+
+  it("sums up what Create and sync will do", () => {
+    expect(summarise(r, input.variables).sentence).toBe(
+      "This creates 8 variables in Colour tokens / Interactive / Control, hides 5 from publishing, changes 12 layers across 4 variants, and adds 8 tokens to Token Library.",
+    );
+  });
+
+  it("gives tool tokens that point to primitives", () => {
+    const t = draftsToTokens(withChoices(r.tokens, DARK)).find((x) => x.name === "control-surface-hover");
+    expect(t).toEqual({ name: "control-surface-hover", layer: "component", kind: "color", component: "control", values: { light: { ref: "neutral-200" }, dark: { ref: "neutral-600" } }, status: "active" });
+  });
+});
+
+describe("component scan: writing to Figma", () => {
+  it("creates the variables, binds every layer, and fixes the dark theme", async () => {
+    const fig = await file();
+    const set = control(fig);
+    const input = await readComponentSet(fig, set);
+    const r = scanComponent(input);
+    const drafts = withChoices(r.tokens, DARK);
+    const result = await applyScan(fig, set, r, drafts, input.variables);
+    expect(result).toMatchObject({ created: drafts.map((d) => d.name), updated: [], layers: 12 });
+
+    const hover = fig.byName("Interactive/Control/Surface/surface-hover")!;
+    expect(hover).toMatchObject({ hiddenFromPublishing: true, codeSyntax: { WEB: "var(--control-surface-hover)" } });
+    expect(hover.getPluginData("token")).toBe("control-surface-hover");
+    expect(fig.byName("Interactive/Control/Surface/surface-default")!.hiddenFromPublishing).toBe(false);
+
+    // Hover surface: neutral-200 in light, neutral-600 in dark (before the scan it was neutral-200 in both).
+    const hoverVariant = set.children.find((c) => c.name === "State=Hover")!;
+    const surface = hoverVariant.children!.find((c) => c.name === "surface")!;
+    const bound = (surface.fills as PaintLike[])[0].boundVariables!.color!.id;
+    expect(bound).toBe(hover.id);
+    expect(fig.resolve(bound, "Light")).toMatchObject(hexToRgba("#D1D1D1")!);
+    expect(fig.resolve(bound, "Dark")).toMatchObject(hexToRgba("#3B3B3B")!);
+
+    // Hover line reuses the default token.
+    const line = hoverVariant.children!.find((c) => c.name === "line")!;
+    expect((line.strokes as PaintLike[])[0].boundVariables!.color!.id).toBe(fig.byName("Interactive/Control/Line/line-default")!.id);
+  });
+
+  it("finds its own tokens on a second scan, and updates instead of duplicating", async () => {
+    const fig = await file();
+    const set = control(fig);
+    const input = await readComponentSet(fig, set);
+    const r = scanComponent(input);
+    await applyScan(fig, set, r, withChoices(r.tokens, DARK), input.variables);
+    const again = scanComponent(await readComponentSet(fig, set));
+    expect(again.status).toBe("own-tokens");
+    expect(again.layers.every((l) => l.source.kind === "component")).toBe(true);
+  });
+
+  it("refuses to write while a dark value is missing", async () => {
+    const fig = await file();
+    const set = control(fig);
+    const input = await readComponentSet(fig, set);
+    const r = scanComponent(input);
+    await expect(applyScan(fig, set, r, r.tokens, input.variables)).rejects.toThrow(/Choose light and dark values/);
+  });
+});
+
+describe("component scan: other cases", () => {
+  it("says the component is fine when every part uses a semantic token", async () => {
+    const fig = await file();
+    const set = componentSet(fig, "Card", {
+      "State=Default": { surface: { fill: S("surface-default") }, content: { fill: S("content-default") } },
+      "State=Hover": { surface: { fill: S("surface-elevated") }, content: { fill: S("content-default") } },
+    });
+    const r = scanComponent(await readComponentSet(fig, set));
+    expect(r.status).toBe("fine");
+    expect(r.tokens).toEqual([]);
+  });
+
+  it("lists a coloured layer with another name as unknown and leaves it alone", async () => {
+    const fig = await file();
+    const set = componentSet(fig, "Control", {
+      "State=Default": { surface: { fill: P("neutral-200") }, arrow: { fill: S("content-default") } },
+    });
+    const r = scanComponent(await readComponentSet(fig, set));
+    expect(r.unknown.map((l) => l.paint.layerName)).toEqual(["arrow"]);
+    expect(codes(r.issues)).toContain("scan.unknown");
+    expect(r.changes.map((c) => c.layer.paint.layerName)).toEqual(["surface"]);
+  });
+
+  it("matches a raw value to the primitive with the same colour, and asks for both values when none matches", async () => {
+    const fig = await file();
+    const set = componentSet(fig, "Control", {
+      "State=Default": { surface: { fill: "#D1D1D1" } },
+      "State=Hover": { surface: { fill: "#123456" } },
+    });
+    const r = scanComponent(await readComponentSet(fig, set));
+    expect(r.tokens.map((t) => [t.name, t.light, t.needsLight, t.needsDark])).toEqual([
+      ["control-surface-default", "neutral-200", false, true],
+      ["control-surface-hover", null, true, true],
+    ]);
+    expect(r.tokens[1].source).toBe("Raw value #123456, no primitive has this colour");
+  });
+
+  it("treats a raw transparent fill as the transparent primitive", async () => {
+    const fig = await file();
+    const set = componentSet(fig, "Control", {
+      "State=Default": { surface: { fill: "#00000000" }, line: { stroke: P("neutral-200") } },
+    });
+    const r = scanComponent(await readComponentSet(fig, set));
+    expect(r.tokens[0]).toMatchObject({ name: "control-surface-default", light: "transparent", dark: "transparent", needsDark: false });
+  });
+
+  it("adds the role when the component has a second variant property", async () => {
+    const fig = await file();
+    const set = componentSet(
+      fig,
+      "Icon button",
+      {
+        "Variant=Primary, State=Default": { surface: { fill: P("orange-700") } },
+        "Variant=Primary, State=Hover": { surface: { fill: P("orange-700-aa") } },
+        "Variant=Secondary, State=Default": { surface: { fill: S("surface-elevated") } },
+      },
+      { Variant: ["Primary", "Secondary"], State: ["Default", "Hover"] },
+    );
+    const r = scanComponent(await readComponentSet(fig, set));
+    expect(r.tokens.map((t) => t.name)).toEqual(["iconbutton-surface-primary-default", "iconbutton-surface-primary-hover", "iconbutton-surface-secondary-default"]);
+    expect(r.tokens[0].figmaPath).toBe("Interactive/Iconbutton/Surface/surface-primary-default");
+  });
+
+  it("blocks when the default variant lacks a part that another state has", async () => {
+    const fig = await file();
+    const set = componentSet(fig, "Control", {
+      "State=Default": { surface: { fill: P("neutral-200") } },
+      "State=Pressed": { surface: { fill: P("neutral-600") }, line: { stroke: S("line-default") } },
+    });
+    const r = scanComponent(await readComponentSet(fig, set));
+    expect(r.status).toBe("blocked");
+    expect(r.issues.find((i) => i.code === "scan.default")?.message).toBe(
+      "The default variant has no line layer, so control-line-default has no value. Add a line layer to the default variant.",
+    );
+  });
+
+  it("blocks when 2 layers with the same name in 1 state have different colours", async () => {
+    const fig = await file();
+    const set = componentSet(fig, "Control", { "State=Default": { surface: { fill: P("neutral-200") } } });
+    const v = set.children[0] as NodeLike & { children: NodeLike[] };
+    v.children.push(node("surface", { fills: [paint(fig, P("neutral-600"))] }));
+    const r = scanComponent(await readComponentSet(fig, set));
+    expect(codes(r.issues)).toContain("scan.conflict");
+    expect(r.status).toBe("blocked");
+  });
+});

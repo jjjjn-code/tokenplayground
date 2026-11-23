@@ -1,79 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { applyPlan, readExisting, type CollectionLike, type RawValue, type VariableLike, type VariablesApi } from "@/src/lib/figma/apply";
+import { applyPlan, readExisting } from "@/src/lib/figma/apply";
 import { buildSpecs, hexToRgba, planSync } from "@/src/lib/figma/plan";
+import { FakeFigma } from "./fake-figma";
 import { dummy } from "./helpers";
-
-/** A fake of the parts of figma.variables the sync uses. */
-class FakeFigma implements VariablesApi {
-  collections: CollectionLike[] = [];
-  variables: VariableLike[] = [];
-  private n = 0;
-  private id(p: string) {
-    this.n += 1;
-    return `${p}:${this.n}`;
-  }
-  async getLocalVariableCollectionsAsync() {
-    return this.collections;
-  }
-  async getLocalVariablesAsync() {
-    return this.variables;
-  }
-  createVariableCollection(name: string): CollectionLike {
-    const data: Record<string, string> = {};
-    const self = this;
-    const c: CollectionLike = {
-      id: this.id("C"),
-      name,
-      modes: [{ modeId: this.id("M"), name: "Mode 1" }],
-      addMode(n) {
-        const modeId = self.id("M");
-        c.modes.push({ modeId, name: n });
-        return modeId;
-      },
-      renameMode(modeId, n) {
-        c.modes.find((m) => m.modeId === modeId)!.name = n;
-      },
-      getPluginData: (k) => data[k] ?? "",
-      setPluginData: (k, v) => {
-        data[k] = v;
-      },
-    };
-    this.collections.push(c);
-    return c;
-  }
-  createVariable(name: string, collection: CollectionLike, type: string): VariableLike {
-    const data: Record<string, string> = {};
-    const self = this;
-    const v: VariableLike = {
-      id: this.id("V"),
-      name,
-      resolvedType: type,
-      variableCollectionId: collection.id,
-      valuesByMode: {},
-      hiddenFromPublishing: false,
-      description: "",
-      codeSyntax: {},
-      setValueForMode(modeId: string, value: RawValue) {
-        v.valuesByMode[modeId] = value;
-      },
-      setVariableCodeSyntax(_p, value) {
-        v.codeSyntax.WEB = value;
-      },
-      getPluginData: (k) => data[k] ?? "",
-      setPluginData: (k, val) => {
-        data[k] = val;
-      },
-      remove() {
-        self.variables = self.variables.filter((x) => x !== v);
-      },
-    };
-    this.variables.push(v);
-    return v;
-  }
-  createVariableAlias(variable: VariableLike) {
-    return { type: "VARIABLE_ALIAS" as const, id: variable.id };
-  }
-}
 
 const sync = async (fig: FakeFigma, set = dummy()) => {
   const { specs, skipped } = buildSpecs(set);
@@ -141,7 +70,7 @@ describe("sync to a Figma file", () => {
   it("creates the UI Kit collections with the right modes, and every variable", async () => {
     const fig = new FakeFigma();
     const plan = await sync(fig);
-    expect(plan.add.length).toBe(105);
+    expect(plan.add.length).toBe(106);
     expect(Object.fromEntries(fig.collections.map((c) => [c.name, c.modes.map((m) => m.name)]))).toEqual({
       "Colour primitives": ["Value"],
       "Space primitives": ["Value"],
@@ -152,7 +81,7 @@ describe("sync to a Figma file", () => {
       "Fluid tokens": ["Min", "Max"],
       "Other tokens": ["Value"],
     });
-    expect(fig.variables).toHaveLength(105);
+    expect(fig.variables).toHaveLength(106);
   });
 
   it("uses the collections and modes already in the file, whatever their case or name", async () => {
@@ -200,7 +129,7 @@ describe("sync to a Figma file", () => {
     await sync(fig);
     const { specs } = buildSpecs(dummy());
     const again = planSync(specs, await readExisting(fig));
-    expect([again.add.length, again.change.length, again.remove.length, again.unchanged]).toEqual([0, 0, 0, 105]);
+    expect([again.add.length, again.change.length, again.remove.length, again.unchanged]).toEqual([0, 0, 0, 106]);
   });
 
   it("updates a changed value and reports the difference", async () => {

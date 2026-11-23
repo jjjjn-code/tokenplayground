@@ -13,6 +13,7 @@ The product requirements are in [`docs/PRD.md`](docs/PRD.md).
 | 3 | Push to repo (F5) | Done, tested live on the sandbox |
 | 4 | Pull and history (F6 to F8) | Done, deployed |
 | 5 | Figma plugin (F9) | Built and tested with a fake Figma. Next: test in a real Figma file |
+| F12 | Component scan | Step 1 of 4 done: scan logic, tested with a fake Figma. Next: the Scan component tab in the plugin |
 
 ## Running it
 
@@ -72,7 +73,7 @@ The tool runs in 1 of 3 modes:
 | `app/` | The screens. Shared pieces are in `app/_components/`; the working copy is in `app/_lib/store.tsx` |
 | `src/lib/git/` | Saving to the token data repo and pushing to the code repo, with a fake GitHub for tests and demo mode |
 | `src/lib/server/` and `app/api/` | Sign-in with the GitHub App and the endpoints the screens call |
-| `src/lib/figma/` | Figma sync: tokens to variable specs, the compare plan, and writing variables |
+| `src/lib/figma/` | Figma sync: tokens to variable specs, the compare plan, and writing variables. Component scan: `scan.ts` drafts the tokens, `scan-figma.ts` reads a component set and writes the result |
 | `figma-plugin/` | The Figma plugin. Build with `npm run plugin:build`; this also makes `public/token-library-figma-plugin.zip` |
 | `components/ui/` | shadcn/ui components, added with the shadcn command line tool |
 | `data/dummy/` | Dummy token set and history. Moves to the token data repo in phase 3 |
@@ -110,3 +111,9 @@ These are working assumptions until the open questions in the PRD are answered:
 - The plugin network address is `https://tokenplayground-drab.vercel.app`, set in `figma-plugin/manifest.json`. Change it there and in `figma-plugin/src/ui.ts` if the address changes.
 - Parent CSS path is `styles/colors.css`; component files are `components/[name]/[name].css`.
 - Typography tokens with several parts (older data) are still written Tailwind style: the font size is the main value, with `--line-height`, `--font-weight` and `--font-family` alongside. New semantic typography tokens are fluid sizes.
+- Component scan: a coloured layer whose name is not `surface`, `line`, `content` or `icon` is listed as a warning and left unchanged. It does not block the scan.
+- Component scan: a raw colour is matched to the primitive with exactly the same colour. With no match, the designer chooses the light and dark primitives.
+- Component scan: the role comes from the 1 variant property apart from `State` that has more than 1 value. With 2 or more such properties, the scan stops.
+- Component scan: when 2 layers with the same name in 1 state have different colours, the scan stops, because they would share 1 token.
+- Component scan: a state that looks the same as the default reuses the `-default` token. A part bound to a primitive counts as that primitive in both themes when compared.
+- The dummy set has a `transparent` primitive (`#00000000`), as in the handoff.

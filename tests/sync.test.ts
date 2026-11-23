@@ -18,7 +18,7 @@ beforeEach(() => {
 describe("load and save", () => {
   it("loads the seeded data", async () => {
     const d = await loadData(host, cfg);
-    expect(d.set.tokens).toHaveLength(107);
+    expect(d.set.tokens).toHaveLength(108);
     expect(d.history).toHaveLength(3);
     expect(d.lastPush?.title).toBe("Initial set-up");
   });
