@@ -340,3 +340,93 @@ describe("component scan: what the plugin shows", () => {
     expect(done.css).toContain("--control-surface-hover: var(--color-neutral-600);");
   });
 });
+
+describe("component scan: the structure of the real control (UAL UI Sandbox, 23 Nov)", () => {
+  /** Fill and stroke on the variant frame; the arrow is a vector inside an icon instance, with a mask. Disabled has no fill. */
+  function realControl(fig: FakeFigma) {
+    const variant = (state: string, fill: string | null, stroke: string, arrow: string): NodeLike => ({
+      id: `N:${++n}`,
+      name: `State=${state}`,
+      type: "COMPONENT",
+      variantProperties: { State: state },
+      fills: fill ? [paint(fig, fill)] : [],
+      strokes: [paint(fig, stroke)],
+      children: [
+        {
+          id: `N:${++n}`,
+          name: "Icon",
+          type: "INSTANCE",
+          fills: [],
+          children: [
+            { id: `N:${++n}`, name: "Bounding box", type: "RECTANGLE", isMask: true, fills: [paint(fig, "#D9D9D9")] },
+            { id: `N:${++n}`, name: "icon", type: "VECTOR", fills: [paint(fig, arrow)] },
+          ],
+        },
+      ],
+    });
+    return {
+      id: `N:${++n}`,
+      name: "Control",
+      type: "COMPONENT_SET",
+      componentPropertyDefinitions: { State: { type: "VARIANT", variantOptions: ["Default", "Hover", "Pressed", "Disabled"] } },
+      children: [
+        variant("Default", P("transparent"), S("line-default"), S("content-default")),
+        variant("Hover", P("neutral-200"), S("line-default"), S("content-default")),
+        variant("Pressed", P("neutral-600"), S("line-default"), S("content-on-inverse")),
+        variant("Disabled", null, S("line-disabled"), P("neutral-400")),
+      ],
+    } as ComponentSetLike;
+  }
+
+  it("reads the frame's fill as surface, its stroke as line, and the arrow as content, and skips the mask", async () => {
+    const fig = await file();
+    const input = await readComponentSet(fig, realControl(fig));
+    const r = scanComponent(input);
+    expect(r.unknown).toEqual([]);
+    expect(r.layers.filter((l) => l.paint.state === "default").map((l) => [l.paint.layerName, l.paint.paint, l.category])).toEqual([
+      ["variant frame", "fills", "surface"],
+      ["variant frame", "strokes", "line"],
+      ["icon in Icon", "fills", "content"],
+    ]);
+    expect(r.tokens.map((t) => t.name)).toEqual([
+      "control-surface-default",
+      "control-surface-hover",
+      "control-surface-pressed",
+      "control-line-default",
+      "control-line-disabled",
+      "control-content-default",
+      "control-content-pressed",
+      "control-content-disabled",
+    ]);
+    expect(summarise(r, input.variables).sentence).toBe(
+      "This creates 8 variables in Colour tokens / Interactive / Control, hides 5 from publishing, changes 11 layers across 4 variants, and adds 8 tokens to Token Library.",
+    );
+  });
+
+  it("binds the frame and the arrow inside the icon to the new variables", async () => {
+    const fig = await file();
+    const set = realControl(fig);
+    const input = await readComponentSet(fig, set);
+    const r = scanComponent(input);
+    await applyScan(fig, set, r, withChoices(r.tokens, DARK), input.variables);
+    const hover = set.children[1];
+    expect((hover.fills as PaintLike[])[0].boundVariables!.color!.id).toBe(fig.byName("Interactive/Control/Surface/surface-hover")!.id);
+    const arrow = hover.children![0].children![1];
+    expect((arrow.fills as PaintLike[])[0].boundVariables!.color!.id).toBe(fig.byName("Interactive/Control/Content/content-default")!.id);
+    const mask = hover.children![0].children![0];
+    expect((mask.fills as PaintLike[])[0].boundVariables).toBeUndefined();
+  });
+
+  it("stops when Colour tokens comes from a library", async () => {
+    const fig = await file();
+    // In a file that uses the library, Colour tokens and its variables are not local; they are read by id.
+    const lib = fig.collections.find((c) => c.name === "Colour tokens")!;
+    const localCollections = fig.collections.filter((c) => c !== lib);
+    const localVariables = fig.variables.filter((v) => v.variableCollectionId !== lib.id);
+    fig.getLocalVariableCollectionsAsync = async () => localCollections;
+    fig.getLocalVariablesAsync = async () => localVariables;
+    const r = scanComponent(await readComponentSet(fig, realControl(fig)));
+    expect(r.status).toBe("blocked");
+    expect(r.issues.find((i) => i.code === "scan.library")?.message).toMatch(/^Colour tokens is not a collection of this file/);
+  });
+});

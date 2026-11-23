@@ -13,7 +13,7 @@ The product requirements are in [`docs/PRD.md`](docs/PRD.md).
 | 3 | Push to repo (F5) | Done, tested live on the sandbox |
 | 4 | Pull and history (F6 to F8) | Done, deployed |
 | 5 | Figma plugin (F9) | Built and tested with a fake Figma. Next: test in a real Figma file |
-| F12 | Component scan | Steps 1 to 3 of 4 done: scan logic, the Scan component tab (6 screens) and the endpoint in the tool, tested with a fake Figma and in demo mode. Next: test on the Control frame in the UAL UI Sandbox file |
+| F12 | Component scan | Steps 1 to 3 of 4 done: scan logic, the Scan component tab (6 screens) and the endpoint in the tool, tested with a fake Figma and in demo mode. Next: test in a copy of the UAL UI Kit file, with the control made into a component set |
 
 ## Running it
 
@@ -113,6 +113,7 @@ These are working assumptions until the open questions in the PRD are answered:
 - Parent CSS path is `styles/colors.css`; component files are `components/[name]/[name].css`.
 - Typography tokens with several parts (older data) are still written Tailwind style: the font size is the main value, with `--line-height`, `--font-weight` and `--font-family` alongside. New semantic typography tokens are fluid sizes.
 - Component scan: a coloured layer whose name is not `surface`, `line`, `content` or `icon` is listed as a warning and left unchanged. It does not block the scan.
+- Component scan: masks are not read. Every coloured layer inside an instance is read as `content` (decided), including a nested component that is not an icon. Check this when a component contains another component, for example a button inside a card.
 - Component scan: a raw colour is matched to the primitive with exactly the same colour. With no match, the designer chooses the light and dark primitives.
 - Component scan: the role comes from the 1 variant property apart from `State` that has more than 1 value. With 2 or more such properties, the scan stops.
 - Component scan: when 2 layers with the same name in 1 state have different colours, the scan stops, because they would share 1 token.

@@ -24,6 +24,8 @@ export interface NodeLike {
   name: string;
   type: string;
   visible?: boolean;
+  /** A mask is not drawn, so its colour is not read. */
+  isMask?: boolean;
   children?: readonly NodeLike[];
   /** Figma gives a symbol (figma.mixed) when a text layer has several fills. */
   fills?: readonly PaintLike[] | symbol;
@@ -168,8 +170,12 @@ export async function readComponentSet(api: ScanVariablesApi, set: ComponentSetL
     if (stateProp && !state) issues.push(issue("error", "scan.state-value", `The variant ${node.name} has no State value. Give it a State value.`));
     variants.push({ id: node.id, name: node.name, state, role });
 
-    const walk = (n: NodeLike) => {
-      if (n.visible === false) return;
+    /**
+     * `category` forces a category: the variant frame's fill is surface and
+     * its stroke is line; every colour inside an instance (an icon) is content.
+     */
+    const read = (n: NodeLike, layerName: string, category: (field: "fills" | "strokes") => string | undefined) => {
+      if (n.isMask) return;
       for (const field of ["fills", "strokes"] as const) {
         const list = n[field];
         if (!list) continue;
@@ -186,19 +192,37 @@ export async function readComponentSet(api: ScanVariablesApi, set: ComponentSetL
             state,
             role,
             nodeId: n.id,
-            layerName: n.name,
+            layerName,
             paint: field,
             index,
             binding: bound ? { kind: "variable", id: bound } : { kind: "raw", color: { ...p.color!, a: p.opacity ?? 1 } },
+            category: category(field),
           });
         });
       }
-      for (const c of n.children ?? []) walk(c);
     };
-    for (const c of node.children ?? []) walk(c);
+    const walk = (n: NodeLike, inInstance: string | null) => {
+      if (n.visible === false) return;
+      read(n, inInstance ? `${n.name} in ${inInstance}` : n.name, () => (inInstance ? "content" : undefined));
+      const inside = inInstance ?? (n.type === "INSTANCE" ? n.name : null);
+      for (const c of n.children ?? []) walk(c, inside);
+    };
+    read(node, "variant frame", (field) => (field === "fills" ? "surface" : "line"));
+    for (const c of node.children ?? []) walk(c, null);
   }
   if (stateProp && !variants.some((v) => v.state === "default")) {
     issues.push(issue("error", "scan.no-default", `${set.name} has no variant with State=Default. Add a default variant.`));
+  }
+  const names = namesOf(opts);
+  const local = await api.getLocalVariableCollectionsAsync();
+  if (!local.some((c) => collectionKey(c, names) === "colour-tokens")) {
+    issues.push(
+      issue(
+        "error",
+        "scan.library",
+        `${names["colour-tokens"]} is not a collection of this file. It comes from a library, and a plugin cannot add variables to a library from a different file. Run the scan in the file that has ${names["colour-tokens"]}, for example the UAL UI Kit or a copy of it.`,
+      ),
+    );
   }
   const boundIds = paints.flatMap((p) => (p.binding.kind === "variable" ? [p.binding.id] : []));
   const variables = await readVariables(api, boundIds, opts);

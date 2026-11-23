@@ -49,6 +49,12 @@ export interface ScannedPaint {
   paint: "fills" | "strokes";
   index: number;
   binding: Binding;
+  /**
+   * The category when it does not come from the layer name: the variant
+   * frame's own fill (surface) and stroke (line), and layers inside an
+   * instance such as an icon (content).
+   */
+  category?: string;
 }
 
 export interface ScanInput {
@@ -319,7 +325,7 @@ export function scanComponent(input: ScanInput, group = DEFAULT_FIGMA_GROUP): Sc
     const source = sourceOf(paint.binding, component, input.variables, byId);
     // Transparent looks the same in every theme, so it is not flagged.
     const fixed = (source.kind === "primitive" || source.kind === "raw") && !isTransparent(source.value.color);
-    return { paint, category: categoryOfLayer(paint.layerName), source, sameInBoth: fixed };
+    return { paint, category: paint.category ?? categoryOfLayer(paint.layerName), source, sameInBoth: fixed };
   });
   const layers = all.filter((l) => l.category);
   const unknown = all.filter((l) => !l.category);

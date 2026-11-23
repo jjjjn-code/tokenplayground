@@ -1023,9 +1023,10 @@
     const byId = new Map(input.variables.map((v) => [v.id, v]));
     const issues = [...input.issues];
     const all = input.paints.map((paint) => {
+      var _a2;
       const source = sourceOf(paint.binding, component, input.variables, byId);
       const fixed = (source.kind === "primitive" || source.kind === "raw") && !isTransparent(source.value.color);
-      return { paint, category: categoryOfLayer(paint.layerName), source, sameInBoth: fixed };
+      return { paint, category: (_a2 = paint.category) != null ? _a2 : categoryOfLayer(paint.layerName), source, sameInBoth: fixed };
     });
     const layers = all.filter((l) => l.category);
     const unknown = all.filter((l) => !l.category);
@@ -1306,9 +1307,8 @@
       const role = roleProp ? slug((_e = props[roleProp]) != null ? _e : "") || void 0 : void 0;
       if (stateProp && !state) issues.push(issue3("error", "scan.state-value", `The variant ${node.name} has no State value. Give it a State value.`));
       variants.push({ id: node.id, name: node.name, state, role });
-      const walk = (n) => {
-        var _a2;
-        if (n.visible === false) return;
+      const read = (n, layerName, category) => {
+        if (n.isMask) return;
         for (const field of ["fills", "strokes"]) {
           const list = n[field];
           if (!list) continue;
@@ -1317,28 +1317,47 @@
             continue;
           }
           list.forEach((p, index) => {
-            var _a3, _b2, _c2;
+            var _a2, _b2, _c2;
             if (p.visible === false || p.type !== "SOLID") return;
-            const bound = (_b2 = (_a3 = p.boundVariables) == null ? void 0 : _a3.color) == null ? void 0 : _b2.id;
+            const bound = (_b2 = (_a2 = p.boundVariables) == null ? void 0 : _a2.color) == null ? void 0 : _b2.id;
             paints.push({
               variantId: node.id,
               variant: node.name,
               state,
               role,
               nodeId: n.id,
-              layerName: n.name,
+              layerName,
               paint: field,
               index,
-              binding: bound ? { kind: "variable", id: bound } : { kind: "raw", color: __spreadProps(__spreadValues({}, p.color), { a: (_c2 = p.opacity) != null ? _c2 : 1 }) }
+              binding: bound ? { kind: "variable", id: bound } : { kind: "raw", color: __spreadProps(__spreadValues({}, p.color), { a: (_c2 = p.opacity) != null ? _c2 : 1 }) },
+              category: category(field)
             });
           });
         }
-        for (const c of (_a2 = n.children) != null ? _a2 : []) walk(c);
       };
-      for (const c of (_f = node.children) != null ? _f : []) walk(c);
+      const walk = (n, inInstance) => {
+        var _a2;
+        if (n.visible === false) return;
+        read(n, inInstance ? `${n.name} in ${inInstance}` : n.name, () => inInstance ? "content" : void 0);
+        const inside = inInstance != null ? inInstance : n.type === "INSTANCE" ? n.name : null;
+        for (const c of (_a2 = n.children) != null ? _a2 : []) walk(c, inside);
+      };
+      read(node, "variant frame", (field) => field === "fills" ? "surface" : "line");
+      for (const c of (_f = node.children) != null ? _f : []) walk(c, null);
     }
     if (stateProp && !variants.some((v) => v.state === "default")) {
       issues.push(issue3("error", "scan.no-default", `${set.name} has no variant with State=Default. Add a default variant.`));
+    }
+    const names = namesOf(opts);
+    const local = await api2.getLocalVariableCollectionsAsync();
+    if (!local.some((c) => collectionKey(c, names) === "colour-tokens")) {
+      issues.push(
+        issue3(
+          "error",
+          "scan.library",
+          `${names["colour-tokens"]} is not a collection of this file. It comes from a library, and a plugin cannot add variables to a library from a different file. Run the scan in the file that has ${names["colour-tokens"]}, for example the UAL UI Kit or a copy of it.`
+        )
+      );
     }
     const boundIds = paints.flatMap((p) => p.binding.kind === "variable" ? [p.binding.id] : []);
     const variables = await readVariables(api2, boundIds, opts);

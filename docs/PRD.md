@@ -254,7 +254,8 @@ Agreed on 23 Nov 2026 (handoff note from Jane Ngan).
 | Input | Rule |
 | --- | --- |
 | Selection | A component set with a `State` variant property (for example `State=Hover`). No variables need to exist first. |
-| Layers | Layers named `surface`, `line`, `content` or `icon` are read in every variant. The layer name gives the category. Any other coloured layer is listed as unknown, for the designer to rename. |
+| Layers | In every variant, the variant frame's own fill is `surface` and its stroke is `line`. Layers named `surface`, `line`, `content` or `icon` are also read, and the layer name gives the category. Every coloured layer inside an instance (for example the arrow inside a library icon) is `content`. Masks are not read, because Figma does not draw them. Any other coloured layer is listed as unknown, for the designer to rename. Decided 23 Nov 2026 after reading the real control. |
+| Where it runs | In the file that owns the `Colour tokens` collection (the UAL UI Kit, or a copy of it for testing). A plugin cannot add variables to a library collection from a file that only uses the library, so in any other file the scan stops and says so. Decided 23 Nov 2026. |
 | State | From the `State` variant property. Disabled is a state, like hover and pressed. |
 | Light and dark | From the modes of the `Colour tokens` collection (`light` and `dark`). Each binding is resolved in both modes. |
 
