@@ -890,6 +890,7 @@
   }
 
   // src/lib/figma/scan.ts
+  var localFirst = (vars) => [...vars.filter((v) => !v.remote), ...vars.filter((v) => v.remote)];
   var CATEGORIES = COMPONENT_CATEGORIES;
   var CATEGORY_ORDER = ["surface", "line", "content", "icon"];
   var TRANSPARENT_ALPHA = 1e-3;
@@ -926,7 +927,7 @@
     return v.layer === "primitive" ? { primitive: v.token, color: next.color } : next;
   }
   function matchPrimitive(vars, byId, color) {
-    const prims = vars.filter((v) => v.layer === "primitive");
+    const prims = localFirst(vars).filter((v) => v.layer === "primitive");
     if (isTransparent(color)) {
       const t = prims.find((v) => v.token === "transparent");
       if (t) return t.token;
@@ -1148,8 +1149,10 @@
     var _a;
     const byId = new Map(vars.map((v) => [v.id, v]));
     const tokens = [];
-    for (const v of vars) {
-      if (!v.layer) continue;
+    const seen = /* @__PURE__ */ new Set();
+    for (const v of localFirst(vars)) {
+      if (!v.layer || seen.has(v.token)) continue;
+      seen.add(v.token);
       const modes = v.layer === "primitive" ? ["value"] : ["light", "dark"];
       const values = {};
       for (const m of modes) {
@@ -1277,7 +1280,7 @@
           if (color) values[mode] = { color };
         }
       }
-      out.push({ id: v.id, token: tokenNameOf(v, layer), name: v.name, collection: key, layer, values });
+      out.push({ id: v.id, token: tokenNameOf(v, layer), name: v.name, collection: key, layer, values, remote: !!v.remote });
     }
     return out;
   }
@@ -1383,7 +1386,7 @@
     const missing = drafts.filter((d) => !d.light || !d.dark);
     if (missing.length) throw new Error(`Choose light and dark values for ${missing.map((d) => d.name).join(", ")}.`);
     const primitive = async (token) => {
-      const sv = vars.find((v2) => v2.token === token && v2.layer === "primitive");
+      const sv = localFirst(vars).find((v2) => v2.token === token && v2.layer === "primitive");
       const v = sv ? await api2.getVariableByIdAsync(sv.id) : null;
       if (!v) throw new Error(`The primitive ${token} is not in this file.`);
       return v;
@@ -1658,14 +1661,15 @@ ${BLOCK_END}`;
   function primitiveSwatches(vars) {
     const index = variablesToTokenSet(vars);
     const byName = new Map(index.tokens.map((t) => [t.name, t]));
-    const hexOf = (name, seen = []) => {
+    const hexOf = (name, seen2 = []) => {
       const t = byName.get(name);
       const v = t == null ? void 0 : t.values.value;
       if (typeof v === "string") return v;
-      if (v && typeof v === "object" && "ref" in v && typeof v.ref === "string" && !seen.includes(v.ref)) return hexOf(v.ref, [...seen, name]);
+      if (v && typeof v === "object" && "ref" in v && typeof v.ref === "string" && !seen2.includes(v.ref)) return hexOf(v.ref, [...seen2, name]);
       return null;
     };
-    return vars.filter((v) => v.layer === "primitive").map((v) => {
+    const seen = /* @__PURE__ */ new Set();
+    return localFirst(vars).filter((v) => v.layer === "primitive" && !seen.has(v.token) && seen.add(v.token)).map((v) => {
       var _a;
       return { label: v.token, hex: (_a = hexOf(v.token)) != null ? _a : "" };
     }).filter((s) => s.hex).sort((a, b) => a.label.localeCompare(b.label, "en", { numeric: true }));

@@ -6,7 +6,7 @@
 import { componentCss } from "../tokens/css";
 import { serialiseDtcg } from "../tokens/dtcg";
 import type { Issue, Token } from "../tokens/types";
-import { colourIn, draftsToTokens, rgbaToHex, sourceLabel, variablesToTokenSet, withChoices, type Choices, type ScannedLayer, type ScanResult, type ScanStatus, type ScanVariable, type Source } from "./scan";
+import { colourIn, localFirst, draftsToTokens, rgbaToHex, sourceLabel, variablesToTokenSet, withChoices, type Choices, type ScannedLayer, type ScanResult, type ScanStatus, type ScanVariable, type Source } from "./scan";
 
 export interface Swatch {
   hex: string;
@@ -104,8 +104,9 @@ export function primitiveSwatches(vars: ScanVariable[]): Swatch[] {
     if (v && typeof v === "object" && "ref" in v && typeof v.ref === "string" && !seen.includes(v.ref)) return hexOf(v.ref, [...seen, name]);
     return null;
   };
-  return vars
-    .filter((v) => v.layer === "primitive")
+  const seen = new Set<string>();
+  return localFirst(vars)
+    .filter((v) => v.layer === "primitive" && !seen.has(v.token) && seen.add(v.token))
     .map((v) => ({ label: v.token, hex: hexOf(v.token) ?? "" }))
     .filter((s) => s.hex)
     .sort((a, b) => a.label.localeCompare(b.label, "en", { numeric: true }));

@@ -430,3 +430,51 @@ describe("component scan: the structure of the real control (UAL UI Sandbox, 23 
     expect(r.issues.find((i) => i.code === "scan.library")?.message).toMatch(/^Colour tokens is not a collection of this file/);
   });
 });
+
+describe("component scan: layers pasted from a file that uses the library", () => {
+  /** The file plus a library copy of every variable (same names, other ids), and a control bound to the library copies. */
+  async function pasted() {
+    const fig = await file();
+    const lib = await file();
+    const id = (x: string) => `L${x}`;
+    for (const c of lib.collections) c.id = id(c.id);
+    for (const v of lib.variables) {
+      v.id = id(v.id);
+      v.variableCollectionId = id(v.variableCollectionId);
+      v.remote = true;
+      for (const [m, raw] of Object.entries(v.valuesByMode)) {
+        delete v.valuesByMode[m];
+        v.valuesByMode[id(m)] = typeof raw === "object" && raw && "type" in raw ? { type: "VARIABLE_ALIAS", id: id(raw.id) } : raw;
+      }
+    }
+    for (const c of lib.collections) for (const m of c.modes) m.modeId = id(m.modeId);
+    const localCollections = [...fig.collections];
+    const localVariables = [...fig.variables];
+    fig.collections.push(...lib.collections);
+    fig.variables.push(...lib.variables);
+    fig.getLocalVariableCollectionsAsync = async () => localCollections;
+    fig.getLocalVariablesAsync = async () => fig.variables.filter((v) => !v.remote);
+    const set = control(lib); // bound to the library copies
+    return { fig, lib, set, localVariables };
+  }
+
+  it("points the new tokens at this file's primitives, and lists each primitive once", async () => {
+    const { fig, set } = await pasted();
+    const input = await readComponentSet(fig, set);
+    const r = scanComponent(input);
+    expect(r.status).toBe("draft");
+    expect(r.layers.every((l) => l.source.kind !== "missing")).toBe(true);
+    const v = scanView(r, input.variables);
+    expect(v.primitives.filter((p) => p.label === "neutral-200")).toHaveLength(1);
+    expect(checkDrafts(r, input.variables, DARK).ok).toBe(true);
+
+    await applyScan(fig, set, r, withChoices(r.tokens, DARK), input.variables);
+    const hover = fig.byName("Interactive/Control/Surface/surface-hover")!;
+    expect(hover.remote).toBeFalsy();
+    const targets = Object.values(hover.valuesByMode).map((raw) => fig.variables.find((x) => typeof raw === "object" && "id" in raw && x.id === raw.id)!);
+    expect(targets.map((t) => [t.name, !!t.remote])).toEqual([
+      ["neutral-200", false],
+      ["neutral-600", false],
+    ]);
+  });
+});

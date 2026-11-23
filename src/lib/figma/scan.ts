@@ -31,7 +31,12 @@ export interface ScanVariable {
   layer: Layer | null;
   /** By mode key (`value`, `light`, `dark`): a colour, or the id of another variable. */
   values: Record<Mode, { color: Rgba } | { alias: string }>;
+  /** From a library, not from this file. When a name is in both, this file's variable is used. */
+  remote?: boolean;
 }
+
+/** This file's variables first, so a name that is also in a library resolves to this file's variable. */
+export const localFirst = (vars: ScanVariable[]): ScanVariable[] => [...vars.filter((v) => !v.remote), ...vars.filter((v) => v.remote)];
 
 export type Binding = { kind: "variable"; id: string } | { kind: "raw"; color: Rgba };
 
@@ -202,7 +207,7 @@ function resolveVariable(byId: Map<string, ScanVariable>, id: string, mode: Mode
 
 /** A primitive with exactly this colour, for a raw value. Transparent matches `transparent` first. */
 function matchPrimitive(vars: ScanVariable[], byId: Map<string, ScanVariable>, color: Rgba): string | null {
-  const prims = vars.filter((v) => v.layer === "primitive");
+  const prims = localFirst(vars).filter((v) => v.layer === "primitive");
   if (isTransparent(color)) {
     const t = prims.find((v) => v.token === "transparent");
     if (t) return t.token;
@@ -459,8 +464,10 @@ export function draftsToTokens(tokens: DraftToken[]): Token[] {
 export function variablesToTokenSet(vars: ScanVariable[]): TokenSet {
   const byId = new Map(vars.map((v) => [v.id, v]));
   const tokens: Token[] = [];
-  for (const v of vars) {
-    if (!v.layer) continue;
+  const seen = new Set<string>();
+  for (const v of localFirst(vars)) {
+    if (!v.layer || seen.has(v.token)) continue;
+    seen.add(v.token);
     const modes = v.layer === "primitive" ? ["value"] : ["light", "dark"];
     const values: Token["values"] = {};
     for (const m of modes) {

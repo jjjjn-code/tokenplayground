@@ -9,7 +9,7 @@ import { DEFAULT_FIGMA_GROUP } from "../tokens/rules";
 import type { Issue, Layer } from "../tokens/types";
 import type { CollectionLike, RawValue, VariableLike } from "./apply";
 import { COLLECTIONS, modeKeyOf, type CollectionKey } from "./plan";
-import type { DraftToken, Rgba, ScanInput, ScannedPaint, ScanResult, ScanVariable } from "./scan";
+import { localFirst, type DraftToken, type Rgba, type ScanInput, type ScannedPaint, type ScanResult, type ScanVariable } from "./scan";
 
 export interface PaintLike {
   type: string;
@@ -138,7 +138,7 @@ async function readVariables(api: ScanVariablesApi, boundIds: string[], opts: Sc
         if (color) values[mode] = { color };
       }
     }
-    out.push({ id: v.id, token: tokenNameOf(v, layer), name: v.name, collection: key, layer, values });
+    out.push({ id: v.id, token: tokenNameOf(v, layer), name: v.name, collection: key, layer, values, remote: !!v.remote });
   }
   return out;
 }
@@ -271,7 +271,8 @@ export async function applyScan(
   if (missing.length) throw new Error(`Choose light and dark values for ${missing.map((d) => d.name).join(", ")}.`);
 
   const primitive = async (token: string) => {
-    const sv = vars.find((v) => v.token === token && v.layer === "primitive");
+    // This file's primitive, not a library copy with the same name.
+    const sv = localFirst(vars).find((v) => v.token === token && v.layer === "primitive");
     const v = sv ? await api.getVariableByIdAsync(sv.id) : null;
     if (!v) throw new Error(`The primitive ${token} is not in this file.`);
     return v;

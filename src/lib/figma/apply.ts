@@ -36,6 +36,8 @@ export interface VariableLike {
   getPluginData(key: string): string;
   setPluginData(key: string, value: string): void;
   remove(): void;
+  /** True for a variable from a library. */
+  remote?: boolean;
 }
 
 export interface VariablesApi {
