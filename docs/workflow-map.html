@@ -203,15 +203,15 @@ a { color: var(--code); }
           <tbody>
             <tr><td class="layers">Container fill (State=Default)</td><td><span class="sw"><i style="background:#f2f2f2"></i>neutral-100</span></td><td><span class="sw"><i style="background:#262626"></i>neutral-900</span></td><td class="now-raw">Raw primitive</td><td class="proposed">control-surface-default</td></tr>
             <tr><td class="layers">Container fill (State=Hover)</td><td><span class="sw"><i style="background:#e0e0e0"></i>neutral-200</span></td><td><span class="sw"><i style="background:#3d3d3d"></i>neutral-800</span></td><td class="now-raw">Raw primitive</td><td class="proposed">control-surface-hover</td></tr>
-            <tr><td class="layers">Label text, Helper text (3 layers)</td><td><span class="sw"><i style="background:#000"></i>black</span></td><td><span class="sw"><i style="background:#fff"></i>white</span></td><td class="now-sem">content-default</td><td class="proposed">control-content-default <span style="color:var(--muted)">→ content-default</span></td></tr>
+            <tr><td class="layers">Label text, Helper text (3 layers)</td><td><span class="sw"><i style="background:#000"></i>black</span></td><td><span class="sw"><i style="background:#fff"></i>white</span></td><td class="now-sem">content-default</td><td class="proposed">control-content-default <span style="color:var(--muted)">→ black / white</span></td></tr>
             <tr><td class="layers">Container stroke (2 states)</td><td><span class="sw"><i style="background:#8a8a8a"></i>neutral-500</span></td><td><span class="sw"><i style="background:#8a8a8a"></i>neutral-500</span></td><td class="now-raw">Raw primitive</td><td class="proposed">control-line-default</td></tr>
-            <tr><td class="layers">Chevron vector, Check vector</td><td><span class="sw"><i style="background:#000"></i>black</span></td><td><span class="sw"><i style="background:#fff"></i>white</span></td><td class="now-sem">content-default</td><td class="proposed">control-icon-default <span style="color:var(--muted)">→ content-default</span></td></tr>
+            <tr><td class="layers">Arrow inside the icon instance</td><td><span class="sw"><i style="background:#000"></i>black</span></td><td><span class="sw"><i style="background:#fff"></i>white</span></td><td class="now-sem">content-default</td><td class="proposed">control-content-default <span style="color:var(--muted)">reused</span></td></tr>
           </tbody>
         </table>
       </div>
       <div class="mock-foot">
-        <span>Semantic tokens already in use stay as references: <code>control-content-default</code> points at <code>content-default</code>, not at black.</span>
-        <span>Category guesses: text → <code>content</code>, stroke → <code>line</code>, vector inside an icon → <code>icon</code>, frame fill → <code>surface</code>. State comes from the variant property. You can rename, merge or split any row before publishing.</span>
+        <span>Every component token points to a primitive, as agreed on 23 Nov 2026. A part that used <code>content-default</code> gets the primitive behind it in each mode, so a later change to <code>content-default</code> does not change the control. Dark values come from the dark duplicate.</span>
+        <span>Categories: the frame's own fill → <code>surface</code>, its stroke → <code>line</code>, layers named <code>surface</code>, <code>line</code>, <code>content</code> or <code>icon</code> → that category, anything inside an instance such as an icon → <code>content</code>. State comes from the <code>State</code> option, for example <code>Hover</code> in <code>State=Hover</code>. You can rename, merge or split any row before accepting.</span>
       </div>
     </div>
   </section>
@@ -226,9 +226,9 @@ a { color: var(--code); }
       <article class="check"><header><h3>Pairing the light and dark frames</h3><span class="verdict v-ok">Agreed</span></header>
         <p>The dark frame is always a duplicate of the light one, with only the colours changed, so the plugin pairs layers by their position in the frame. Anything that does not line up is still flagged, in case a layer was added to 1 frame only.</p></article>
       <article class="check"><header><h3>Guessing category, role and state</h3><span class="verdict v-rule">Test run needed</span></header>
-        <p>The plugin reuses the tool's naming rules: the 4 categories, the suggested roles and states, and no focus tokens. Category comes from the layer type. Role and state come from variant values that match those lists (for example <code>Hover</code>). A value it does not know is flagged as a possible new state, so a test run on a few real components will show the edge cases.</p></article>
+        <p>The plugin reuses the tool's naming rules: the 4 categories, the suggested roles and states, and no focus tokens. Category comes from the layer. State comes from the option chosen in the <code>State</code> property, the part after the <code>=</code> in <code>State=Hover</code>. An option the rules do not know is flagged as a possible new state, so a test run on a few real components will show the edge cases.</p></article>
       <article class="check"><header><h3>Keeping the "never mix" rule</h3><span class="verdict v-ok">Works</span></header>
-        <p>If any layer needs a component token, the plugin proposes a full component set and turns the semantic ones into component tokens that reference them. That matches your Control example and keeps references as references.</p></article>
+        <p>If any layer needs a component token, the plugin proposes a full component set. Parts that used a semantic token become component tokens that point to the primitive behind it, as agreed on 23 Nov 2026.</p></article>
       <article class="check"><header><h3>Creating the variables</h3><span class="verdict v-ok">Already built</span></header>
         <p>Phase 5 already creates variables with light and dark modes, aliases and hidden non-default states. The scan would reuse that code and the same naming rules engine the tool uses, so names are checked the same way in both places.</p></article>
       <article class="check"><header><h3>Binding the new tokens back onto the layers</h3><span class="verdict v-ok">Works</span></header>
@@ -255,9 +255,8 @@ a { color: var(--code); }
     </div>
     <ul class="plain">
       <li><strong>End-to-end workflow</strong> gains a second entry route: "Create in Figma, send to the tool" next to "Create in the tool".</li>
-      <li><strong>New feature F10, Scan and tidy</strong>, colour only: scan, propose, accept names, save and publish variables, then apply them to the layers as a separate step.</li>
-      <li><strong>New feature F11, Send to the tool</strong>: new tokens arrive as drafts with a "new from Figma" banner, ready to review and push.</li>
-      <li><strong>Phase 5</strong> splits in 2: 5a sync down (built), 5b scan and send up.</li>
+      <li><strong>Component scan (F12)</strong> already exists in the PRD and is mostly built (23 Nov 2026). It is updated, colour only: read dark values from the dark duplicate, then accept names, save and publish, apply to layers and send to the tool as separate steps.</li>
+      <li>Tokens arrive in the tool as drafts marked "new from Figma", ready for a designer to review and push.</li>
       <li><strong>Hand-off screenshot</strong> is replaced by the pull request and its changelog.</li>
     </ul>
   </section>
@@ -271,6 +270,8 @@ a { color: var(--code); }
       <li>You accept the names in the plugin, then save and publish the variables to Figma. Applying them to the layers is a separate step after that.</li>
       <li>Any designer can review tokens that arrive from Figma before they are pushed to code.</li>
       <li>The scan covers colour only for now.</li>
+      <li>Component tokens always point to a primitive, never to a semantic token (kept from 23 Nov 2026).</li>
+      <li>This builds on the Component scan work from 23 Nov 2026, not a new branch.</li>
     </ol>
   </section>
 </div>
