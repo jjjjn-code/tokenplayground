@@ -133,8 +133,10 @@
     { key: "select", label: "Select" },
     { key: "scan", label: "Scan" },
     { key: "changes", label: "Changes" },
-    { key: "review", label: "Review" },
-    { key: "confirm", label: "Confirm" },
+    { key: "names", label: "Names" },
+    { key: "publish", label: "Publish" },
+    { key: "apply", label: "Apply" },
+    { key: "send", label: "Send" },
     { key: "done", label: "Done" }
   ];
   var el = (tag, cls = "", text = "") => {
@@ -211,6 +213,7 @@
     let choices = {};
     let checked = null;
     let done = null;
+    let published = null;
     let pending = null;
     let busy = "";
     let error = "";
@@ -257,7 +260,9 @@
         box.appendChild(actions(button("Send again", () => void sendPending(), true), button("Download JSON", () => download(pending.json, `${pending.component}-tokens.json`))));
         out.appendChild(box);
       }
-      out.appendChild(el("p", "hint", "Select a finished component set with a State variant property, for example State=Hover. The scan reads the layers called surface, line, content and icon in every variant."));
+      out.appendChild(
+        el("p", "hint", 'Select a finished component set with a State variant property, for example State=Hover, and shift-click its dark copy. The dark copy is a duplicate with only the colours changed, with "dark" in its name. The scan reads the layers called surface, line, content and icon in every variant.')
+      );
       if (!selection) {
         out.appendChild(status(selectionMessage));
         return;
@@ -265,6 +270,7 @@
       const card = el("div", "card");
       card.appendChild(el("strong", "", selection.name));
       card.appendChild(el("span", "sub", `${plural(selection.variants, "variant")} \xB7 ${plural(selection.layers, "coloured layer")}`));
+      card.appendChild(el("span", "sub", selection.dark ? `Dark copy: ${selection.dark.name}` : "No dark copy selected. You will choose dark values by hand for parts that use a primitive."));
       out.appendChild(card);
       out.appendChild(actions(button(busy ? "Scanning\u2026" : "Scan", () => run(), true, !!busy)));
     }
@@ -273,6 +279,7 @@
       error = "";
       choices = {};
       checked = null;
+      published = null;
       render2();
       post2({ type: "scan-run" });
     }
@@ -287,6 +294,8 @@
       body.appendChild(el("span", "mono", l.label));
       body.appendChild(pair(l.light, l.dark));
       li.appendChild(body);
+      if (l.darkLabel) li.appendChild(el("span", "sub mono", `Dark copy: ${l.darkLabel}`));
+      if (l.noMatch) li.appendChild(el("span", "flag", "No matching layer in the dark copy"));
       if (l.sameInBoth) li.appendChild(el("span", "flag", "Shows the same in both themes"));
       return li;
     }
@@ -300,7 +309,7 @@
       if (!view) return;
       const v = view;
       out.appendChild(el("h2", "", v.title));
-      out.appendChild(el("span", "sub", `${plural(v.variants, "variant")} \xB7 ${plural(v.layers.length, "named layer")}${v.unknown.length ? ` \xB7 ${v.unknown.length} not recognised` : ""}`));
+      out.appendChild(el("span", "sub", `${plural(v.variants, "variant")} \xB7 ${plural(v.layers.length, "named layer")}${v.unknown.length ? ` \xB7 ${v.unknown.length} not recognised` : ""}${v.darkName ? ` \xB7 dark from ${v.darkName}` : ""}`));
       if (v.status === "fine") out.appendChild(status(`${v.title} uses Base semantic tokens in every part. It does not need its own tokens.`, "ok"));
       if (v.status === "own-tokens") out.appendChild(status(`${v.title} already uses its own tokens in every part. Nothing to change.`, "ok"));
       if (v.status === "blocked") out.appendChild(status(`The scan cannot continue. Fix the problems below in Figma, then scan again.`, "error"));
@@ -343,7 +352,7 @@
     function renderChanges(out) {
       if (!view) return;
       out.appendChild(el("h2", "", "Changes to the layers"));
-      out.appendChild(el("p", "hint", "Each layer, before and after. A ? means that you choose the value in Review."));
+      out.appendChild(el("p", "hint", "Each layer, before and after. A ? means that you choose the value in Accept names."));
       for (const [variant, cs] of byVariant(view.changes, (c) => c.before.variant)) {
         const d = el("details", "group");
         d.open = true;
@@ -353,8 +362,8 @@
         d.appendChild(ul);
         out.appendChild(d);
       }
-      out.appendChild(actions(button("Back", () => go("scan")), button("Review the tokens", () => {
-        go("review");
+      out.appendChild(actions(button("Back", () => go("scan")), button("See the names", () => {
+        go("names");
         check2();
       }, true)));
     }
@@ -386,13 +395,14 @@
       label.appendChild(sel);
       return label;
     }
-    function renderReview(out) {
+    function renderNames(out) {
       var _a;
       if (!view) return;
-      out.appendChild(el("h2", "", "Review the tokens"));
+      out.appendChild(el("h2", "", "Accept names"));
       const flagged = view.tokens.filter((t) => t.needsDark && !valueOf(t, "dark") || t.needsLight && !valueOf(t, "light"));
+      const why = view.darkName ? "These parts have no matching layer in the dark copy, or a colour that no primitive has." : "These parts use a primitive and no dark copy was selected, so the plugin cannot know their dark value.";
       out.appendChild(
-        el("p", "hint", flagged.length ? `Choose the missing values for ${plural(flagged.length, "token")}. These parts use a primitive, so the plugin cannot know their dark value.` : "Every token has a light and a dark value.")
+        el("p", "hint", flagged.length ? `Choose the missing values for ${plural(flagged.length, "token")}. ${why}` : "Check each name and value. Nothing is created in Figma until you accept the names.")
       );
       const groups = /* @__PURE__ */ new Map();
       for (const t of view.tokens) groups.set(t.group, [...(_a = groups.get(t.group)) != null ? _a : [], t]);
@@ -422,35 +432,73 @@
         out.appendChild(el("h3", "", "Checks"));
         out.appendChild(checked.issues.length ? issueList(checked.issues) : status("No problems found.", "ok"));
       }
-      out.appendChild(actions(button("Back", () => go("changes")), button("Continue", () => go("confirm"), true, !(checked == null ? void 0 : checked.ok))));
+      out.appendChild(actions(button("Back", () => go("changes")), button("Accept names", () => go("publish"), true, !(checked == null ? void 0 : checked.ok))));
     }
     function check2() {
       checked = null;
       post2({ type: "scan-check", choices });
     }
-    function renderConfirm(out) {
+    function renderPublish(out) {
       if (!view || !checked) return;
       const s = checked.summary;
-      out.appendChild(el("h2", "", "Confirm"));
+      out.appendChild(el("h2", "", "Save and publish"));
       out.appendChild(el("p", "lead", s.sentence));
       const ul = el("ul", "plain");
       const items = [
         s.create ? `Create ${plural(s.create, "variable")} in Colour tokens, group Interactive / ${view.title}.` : "",
         s.update ? `Update ${plural(s.update, "variable")} that are already in this file.` : "",
         `Hide ${s.hidden} from publishing. Only the -default tokens are published.`,
-        `Bind ${plural(s.layers, "layer")} in ${plural(s.variants, "variant")} to the new variables.`,
-        `Send ${plural(s.tokens, "token")} to Token Library. They are not sent to code until someone uses Send to code.`
+        "No layer changes yet. You apply the variables to the layers in the next step."
       ].filter(Boolean);
       items.forEach((i) => ul.appendChild(el("li", "", i)));
       out.appendChild(ul);
-      out.appendChild(el("p", "hint", "The plugin cannot publish the library. When it is finished, publish from the Assets panel."));
-      out.appendChild(actions(button("Back", () => go("review")), button(busy ? "Working\u2026" : "Create and sync", () => apply(), true, !!busy)));
+      out.appendChild(actions(button("Back", () => go("names")), button(busy ? "Saving\u2026" : "Save and publish", () => publish(), true, !!busy)));
     }
-    function apply() {
-      busy = "apply";
-      done = null;
+    function publish() {
+      busy = "publish";
       render2();
-      post2({ type: "scan-apply", choices });
+      post2({ type: "scan-publish", choices });
+    }
+    function renderApply(out) {
+      if (!view || !checked) return;
+      out.appendChild(el("h2", "", "Apply to layers"));
+      if (published) out.appendChild(status(`${published.created ? `Created ${plural(published.created, "variable")}` : ""}${published.created && published.updated ? ", " : ""}${published.updated ? `updated ${plural(published.updated, "variable")}` : ""}.`, "ok"));
+      out.appendChild(el("p", "lead", checked.summary.applySentence));
+      out.appendChild(el("p", "hint", "Check where each token goes. You can undo this step in Figma."));
+      for (const [variant, cs] of byVariant(view.changes, (c) => c.before.variant)) {
+        const d = el("details", "group");
+        d.open = false;
+        d.appendChild(el("summary", "", `${variant} \xB7 ${plural(cs.length, "layer")}`));
+        const ul = el("ul");
+        cs.forEach((c) => ul.appendChild(changeRow(c)));
+        d.appendChild(ul);
+        out.appendChild(d);
+      }
+      out.appendChild(actions(button(busy ? "Applying\u2026" : "Apply to layers", () => bind(), true, !!busy)));
+    }
+    function bind() {
+      busy = "bind";
+      render2();
+      post2({ type: "scan-bind" });
+    }
+    function renderSend(out) {
+      var _a;
+      if (!done) return;
+      const d = done;
+      out.appendChild(el("h2", "", "Send to Token Library"));
+      out.appendChild(
+        el("p", "hint", `${d.title} now uses its new tokens in Figma. Send them to Token Library, where a designer checks them before Send to code. Until then, the plugin remembers that they are not sent.`)
+      );
+      out.appendChild(tokenTable(d));
+      out.appendChild(el("h3", "", "CSS that Send to code will write"));
+      out.appendChild(el("pre", "css", d.css));
+      if (d.sending === "failed") {
+        const box = el("div", "callout error");
+        box.appendChild(el("p", "", `${(_a = d.sendError) != null ? _a : "Token Library did not receive the tokens."} The changes in Figma stay. Send again, or download the tokens as JSON.`));
+        box.appendChild(actions(button("Download JSON", () => download(d.json, `${d.component}-tokens.json`))));
+        out.appendChild(box);
+      }
+      out.appendChild(actions(button(d.sending === "working" ? "Sending\u2026" : d.sending === "failed" ? "Send again" : "Send to Token Library", () => void send(), true, d.sending === "working")));
     }
     function tick(state, text, extra) {
       const li = el("li", `tick ${state}`);
@@ -461,49 +509,43 @@
       li.appendChild(body);
       return li;
     }
-    function renderDone(out) {
-      var _a, _b;
-      if (!done) return;
-      const d = done;
-      out.appendChild(el("h2", "", `${d.title}: done`));
-      const ul = el("ul", "ticks");
-      ul.appendChild(tick(d.variables, `${d.created ? `Created ${plural(d.created, "variable")}` : ""}${d.created && d.updated ? ", " : ""}${d.updated ? `updated ${plural(d.updated, "variable")}` : ""} in Colour tokens / Interactive / ${d.title}`));
-      ul.appendChild(tick(d.binding, `Bound ${plural(d.layers, "layer")} to the new variables`));
-      let extra;
-      if (d.sending === "failed") {
-        extra = el("div", "callout error");
-        extra.appendChild(el("p", "", `${(_a = d.sendError) != null ? _a : "Token Library did not receive the tokens."} The changes in Figma stay. Send again, or download the tokens as JSON.`));
-        extra.appendChild(actions(button("Send again", () => void send(), true), button("Download JSON", () => download(d.json, `${d.component}-tokens.json`))));
-      }
-      ul.appendChild(tick(d.sending, d.sending === "done" ? `Sent ${plural(d.tokens.length, "token")} to Token Library` : d.sending === "failed" ? "Not sent to Token Library" : `Sending ${plural(d.tokens.length, "token")} to Token Library`, extra));
-      out.appendChild(ul);
-      out.appendChild(el("h3", "", "In Token Library"));
+    function tokenTable(d) {
+      var _a;
       const table = el("table", "tokens");
       const head = el("tr");
-      ["Token", "Light", "Dark", "Status"].forEach((h) => head.appendChild(el("th", "", h)));
+      ["Token", "Light", "Dark"].forEach((h) => head.appendChild(el("th", "", h)));
       table.appendChild(head);
       for (const t of d.tokens) {
         const tr = el("tr");
         tr.appendChild(el("td", "mono", t.name));
         for (const m of ["light", "dark"]) {
           const td = el("td");
-          const name = (_b = t.values[m]) == null ? void 0 : _b.ref;
+          const name = (_a = t.values[m]) == null ? void 0 : _a.ref;
           const cell = el("span", "cell");
           cell.appendChild(swatch(hexOf(name)));
           cell.appendChild(el("span", "mono", name != null ? name : ""));
           td.appendChild(cell);
           tr.appendChild(td);
         }
-        tr.appendChild(el("td", "sub", "Not sent to code"));
         table.appendChild(tr);
       }
-      out.appendChild(table);
-      out.appendChild(el("h3", "", "CSS that Send to code will write"));
-      out.appendChild(el("pre", "css", d.css));
+      return table;
+    }
+    function renderDone(out) {
+      if (!done) return;
+      const d = done;
+      out.appendChild(el("h2", "", `${d.title}: done`));
+      const ul = el("ul", "ticks");
+      ul.appendChild(tick("done", `${d.created ? `Created ${plural(d.created, "variable")}` : ""}${d.created && d.updated ? ", " : ""}${d.updated ? `updated ${plural(d.updated, "variable")}` : ""} in Colour tokens / Interactive / ${d.title}`));
+      ul.appendChild(tick("done", `Bound ${plural(d.layers, "layer")} to the new variables${d.darkLayers ? `, and ${plural(d.darkLayers, "layer")} in the dark copy` : ""}`));
+      ul.appendChild(tick("done", `Sent ${plural(d.tokens.length, "token")} to Token Library. A designer checks them there before Send to code.`));
+      out.appendChild(ul);
+      if (d.darkLayers) out.appendChild(el("p", "hint", "The dark copy now uses the same tokens in dark mode. You can delete it if you do not need it."));
       out.appendChild(status("Next: publish the library from the Assets panel, so other files get the new variables.", "ok"));
       out.appendChild(actions(button("Scan another component", () => {
         view = null;
         done = null;
+        published = null;
         go("select");
         post2({ type: "scan-selection" });
       }, true)));
@@ -546,11 +588,12 @@
       if (err) {
         done.sending = "failed";
         done.sendError = err;
+        render2();
       } else {
         done.sending = "done";
         savePending(null);
+        go("done");
       }
-      render2();
     }
     async function sendPending() {
       if (!pending) return;
@@ -579,14 +622,16 @@
       if (step === "select") renderSelect(out);
       if (step === "scan") renderScan(out);
       if (step === "changes") renderChanges(out);
-      if (step === "review") renderReview(out);
-      if (step === "confirm") renderConfirm(out);
+      if (step === "names") renderNames(out);
+      if (step === "publish") renderPublish(out);
+      if (step === "apply") renderApply(out);
+      if (step === "send") renderSend(out);
       if (step === "done") renderDone(out);
       if (error) out.appendChild(status(error, "error"));
       root.appendChild(out);
     }
     function onMessage(msg) {
-      var _a;
+      var _a, _b, _c;
       switch (msg.type) {
         case "scan-selection": {
           const next = msg.selection;
@@ -594,7 +639,7 @@
           if (step === "select") {
             selection = next;
             render2();
-          } else if (step !== "done" && next && next.id !== (selection == null ? void 0 : selection.id)) {
+          } else if (["scan", "changes", "names"].includes(step) && next && next.id !== (selection == null ? void 0 : selection.id)) {
             selection = next;
             view = null;
             go("select");
@@ -608,19 +653,25 @@
           return true;
         case "scan-checked":
           checked = { ok: msg.ok, issues: msg.issues, summary: msg.summary };
-          if (step === "review") render2();
+          if (step === "names") render2();
           return true;
         case "scan-progress":
           return true;
-        case "scan-applied": {
+        case "scan-published":
+          busy = "";
+          published = { created: msg.result.created.length, updated: msg.result.updated.length };
+          go("apply");
+          return true;
+        case "scan-bound": {
           busy = "";
           done = {
             title: msg.title,
             component: msg.component,
             fileName: msg.fileName,
-            created: msg.result.created.length,
-            updated: msg.result.updated.length,
+            created: (_b = published == null ? void 0 : published.created) != null ? _b : 0,
+            updated: (_c = published == null ? void 0 : published.updated) != null ? _c : 0,
             layers: msg.result.layers,
+            darkLayers: msg.result.darkLayers,
             tokens: msg.preview.tokens,
             css: msg.preview.css,
             json: msg.preview.json,
@@ -628,8 +679,8 @@
             binding: "done",
             sending: "waiting"
           };
-          go("done");
-          void send();
+          savePending({ fileName: done.fileName, component: done.component, title: done.title, json: done.json, count: done.tokens.length });
+          go("send");
           return true;
         }
         case "scan-error":

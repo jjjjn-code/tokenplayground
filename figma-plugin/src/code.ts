@@ -5,7 +5,7 @@
 import { applyPlan, DEFAULT_COLLECTION_NAMES, readExisting, type CollectionNames, type VariablesApi } from "../../src/lib/figma/apply";
 import { buildSpecs, planSync, type SyncPlan } from "../../src/lib/figma/plan";
 import { checkDrafts, scanComponent, summarise, withChoices, type Choices, type ScanInput, type ScanResult } from "../../src/lib/figma/scan";
-import { applyScan, readComponentSet, type ComponentSetLike, type NodeLike, type ScanVariablesApi } from "../../src/lib/figma/scan-figma";
+import { bindScan, publishScan, readComponentSet, whichIsDark, type ComponentSetLike, type NodeLike, type ScanVariablesApi } from "../../src/lib/figma/scan-figma";
 import { donePreview, scanView } from "../../src/lib/figma/scan-view";
 import { parseDtcg } from "../../src/lib/tokens/dtcg";
 
@@ -21,17 +21,53 @@ let lastNames: CollectionNames = DEFAULT_COLLECTION_NAMES;
 
 figma.showUI(__html__, { width: 480, height: 680, themeColors: true, title: "Token Library" });
 
-// Component scan (F12): the last scan, kept so Review and Create work on the same reading.
+// Component scan (F12): the last scan, kept so every step works on the same reading.
 const scanApi = () => figma.variables as unknown as ScanVariablesApi;
-let scan: { set: ComponentSetLike; input: ScanInput; result: ScanResult } | null = null;
+let scan: { set: ComponentSetLike; dark: NodeLike | null; input: ScanInput; result: ScanResult; choices?: Choices } | null = null;
 
-/** The selected component set. A selected variant, or a layer inside one, counts as its set. */
-function selectedSet(): ComponentSetLike | null {
-  const sel = figma.currentPage.selection;
-  if (sel.length !== 1) return null;
-  let n: any = sel[0];
+/** The component set a layer belongs to: itself, or the set around a selected variant or layer. */
+function setOf(node: any): any {
+  let n = node;
   while (n && n.type !== "COMPONENT_SET") n = n.parent;
   return n ?? null;
+}
+
+/** Dark mode ids of every local collection, to tell which selected copy is the dark one. */
+async function darkModeIds(): Promise<string[]> {
+  const cs = await figma.variables.getLocalVariableCollectionsAsync();
+  return cs.flatMap((c: any) => c.modes.filter((m: any) => /dark/i.test(m.name)).map((m: any) => m.modeId));
+}
+
+interface Picked {
+  set: ComponentSetLike | null;
+  dark: NodeLike | null;
+  message?: string;
+}
+
+/**
+ * The selection: 1 component set, or the component set and its dark copy
+ * (24 Nov 2026). The dark copy has "dark" in its name or is set to dark mode.
+ */
+async function picked(): Promise<Picked> {
+  const sel = figma.currentPage.selection;
+  if (!sel.length) return { set: null, dark: null, message: "Select the component set and its dark copy on the canvas." };
+  const tops: any[] = [];
+  for (const n of sel) {
+    const top = setOf(n) ?? n;
+    if (!tops.includes(top)) tops.push(top);
+  }
+  if (tops.length > 2) return { set: null, dark: null, message: "Select only the component set and its dark copy." };
+  if (tops.length === 1) {
+    const t = tops[0];
+    return t.type === "COMPONENT_SET"
+      ? { set: t, dark: null }
+      : { set: null, dark: null, message: "This is not a component set. Select a component set, for example Control, and its dark copy." };
+  }
+  const i = whichIsDark([tops[0], tops[1]], await darkModeIds());
+  if (i === null) return { set: null, dark: null, message: 'The plugin cannot tell which copy is the dark one. Add "dark" to the dark copy\'s name, for example "Control dark".' };
+  const set = tops[1 - i];
+  if (set.type !== "COMPONENT_SET") return { set: null, dark: null, message: `${set.name} is not a component set. Select the component set and its dark copy.` };
+  return { set, dark: tops[i] };
 }
 
 function countColouredLayers(set: NodeLike): number {
@@ -46,26 +82,26 @@ function countColouredLayers(set: NodeLike): number {
   return count;
 }
 
-function postSelection() {
-  const set = selectedSet();
+async function postSelection() {
+  const { set, dark, message } = await picked();
   if (!set) {
-    const sel = figma.currentPage.selection;
-    figma.ui.postMessage({
-      type: "scan-selection",
-      selection: null,
-      message: sel.length > 1 ? "Select only 1 component set." : sel.length === 1 ? "This is not a component set. Select a component set, for example Control." : "Select a component set on the canvas.",
-    });
+    figma.ui.postMessage({ type: "scan-selection", selection: null, message });
     return;
   }
   const variants = set.children.filter((c) => c.type === "COMPONENT").length;
-  figma.ui.postMessage({ type: "scan-selection", selection: { id: set.id, name: set.name, variants, layers: countColouredLayers(set) } });
+  figma.ui.postMessage({
+    type: "scan-selection",
+    selection: { id: set.id, name: set.name, variants, layers: countColouredLayers(set), dark: dark ? { id: dark.id, name: dark.name } : null },
+  });
 }
 
 figma.on("selectionchange", () => {
-  // Only a different component set makes the last scan out of date.
-  const set = selectedSet();
-  if (set && scan && set.id !== scan.set.id) scan = null;
-  postSelection();
+  void (async () => {
+    // Only a different component set makes the last scan out of date.
+    const { set } = await picked();
+    if (set && scan && set.id !== scan.set.id) scan = null;
+    await postSelection();
+  })();
 });
 
 figma.ui.onmessage = async (msg: any) => {
@@ -103,13 +139,13 @@ figma.ui.onmessage = async (msg: any) => {
       figma.ui.postMessage({ type: "applied", result, fileName: figma.root.name });
       figma.notify(`Token Library: ${result.added.length} added, ${result.changed.length} changed, ${result.removed.length} removed.`);
     }
-    if (msg.type === "scan-selection") postSelection();
+    if (msg.type === "scan-selection") await postSelection();
     if (msg.type === "scan-run") {
-      const set = selectedSet();
-      if (!set) throw new Error("Select a component set on the canvas.");
-      const input = await readComponentSet(scanApi(), set, { names: lastNames });
+      const { set, dark, message } = await picked();
+      if (!set) throw new Error(message ?? "Select a component set on the canvas.");
+      const input = await readComponentSet(scanApi(), set, { names: lastNames, dark });
       const result = scanComponent(input);
-      scan = { set, input, result };
+      scan = { set, dark, input, result };
       figma.ui.postMessage({ type: "scan-result", view: scanView(result, input.variables) });
     }
     if (msg.type === "scan-check") {
@@ -119,22 +155,34 @@ figma.ui.onmessage = async (msg: any) => {
       const summary = summarise(scan.result, scan.input.variables, lastNames["colour-tokens"]);
       figma.ui.postMessage({ type: "scan-checked", ok: checked.ok, issues: checked.issues, summary });
     }
-    if (msg.type === "scan-apply") {
+    // Step 5, Save and publish: create the variables. No layer changes yet.
+    if (msg.type === "scan-publish") {
       if (!scan) throw new Error("Scan the component again.");
       const choices = (msg.choices ?? {}) as Choices;
       const checked = checkDrafts(scan.result, scan.input.variables, choices);
-      if (!checked.ok) throw new Error("Some tokens still have problems. Go back to Review.");
+      if (!checked.ok) throw new Error("Some tokens still have problems. Go back to Accept names.");
       const drafts = withChoices(scan.result.tokens, choices);
-      const result = await applyScan(scanApi(), scan.set, scan.result, drafts, scan.input.variables, {
+      const result = await publishScan(scanApi(), drafts, scan.input.variables, {
         names: lastNames,
         onStep: (step, done, total) => figma.ui.postMessage({ type: "scan-progress", step, done, total }),
       });
-      // 1 undo step for the whole scan.
       figma.commitUndo();
-      const preview = donePreview(scan.result, scan.input.variables, choices);
-      figma.ui.postMessage({ type: "scan-applied", result, preview, component: scan.result.component, title: scan.result.title, fileName: figma.root.name });
-      figma.notify(`Token Library: ${result.created.length + result.updated.length} variables for ${scan.result.title}, ${result.layers} layers bound.`);
-      scan = null;
+      scan.choices = choices;
+      figma.ui.postMessage({ type: "scan-published", result });
+      figma.notify(`Token Library: ${result.created.length + result.updated.length} variables saved for ${scan.result.title}.`);
+    }
+    // Step 6, Apply to layers: bind the component set, and the dark copy, to the new variables.
+    if (msg.type === "scan-bind") {
+      if (!scan || !scan.choices) throw new Error("Use Save and publish first.");
+      const result = await bindScan(scanApi(), scan.set, scan.result, {
+        names: lastNames,
+        dark: scan.dark,
+        onStep: (step, done, total) => figma.ui.postMessage({ type: "scan-progress", step, done, total }),
+      });
+      figma.commitUndo();
+      const preview = donePreview(scan.result, scan.input.variables, scan.choices);
+      figma.ui.postMessage({ type: "scan-bound", result, preview, component: scan.result.component, title: scan.result.title, fileName: figma.root.name });
+      figma.notify(`Token Library: ${result.layers + result.darkLayers} layers bound in ${scan.result.title}.`);
     }
     if (msg.type === "scan-save-pending") await figma.clientStorage.setAsync(PENDING, msg.pending ?? null);
     if (msg.type === "close") figma.closePlugin();

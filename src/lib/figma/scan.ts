@@ -7,7 +7,7 @@
  * The rules are in the PRD, section "Component scan (F12)".
  */
 import { buildComponentTokenName, figmaPath, normaliseComponentName } from "../tokens/naming";
-import { COMPONENT_CATEGORIES, DEFAULT_FIGMA_GROUP, SUGGESTED_STATES } from "../tokens/rules";
+import { COMPONENT_CATEGORIES, DEFAULT_FIGMA_GROUP, FORBIDDEN_STATES, SUGGESTED_ROLES, SUGGESTED_STATES } from "../tokens/rules";
 import { checkBeforeSave } from "../tokens/validate";
 import type { Issue, Layer, Mode, Token, TokenSet } from "../tokens/types";
 import type { CollectionKey } from "./plan";
@@ -55,6 +55,12 @@ export interface ScannedPaint {
   index: number;
   binding: Binding;
   /**
+   * The same paint in the dark copy (24 Nov 2026): its layer and binding.
+   * Undefined when no dark copy was selected; null when the dark copy has
+   * no matching layer.
+   */
+  dark?: { nodeId: string; binding: Binding } | null;
+  /**
    * The category when it does not come from the layer name: the variant
    * frame's own fill (surface) and stroke (line), and layers inside an
    * instance such as an icon (content).
@@ -70,6 +76,8 @@ export interface ScanInput {
   variables: ScanVariable[];
   /** Problems found while reading, for example no `State` property. */
   issues: Issue[];
+  /** The dark copy's name, when one was selected. Dark values then come from it. */
+  darkName?: string;
 }
 
 /** A primitive and its colour in 1 mode. */
@@ -91,7 +99,11 @@ export interface ScannedLayer {
   /** The category from the layer name; null when the name is not recognised. */
   category: string | null;
   source: Source;
-  /** Shows the same in light and dark because it uses a primitive or a raw value. */
+  /** The matching paint in the dark copy, resolved in dark mode. Absent when there is no dark copy or no match. */
+  darkSource?: Source;
+  /** A dark copy was selected, but it has no layer that matches this one. */
+  noMatch: boolean;
+  /** Shows the same in light and dark because it uses a primitive or a raw value, and no dark copy gives its dark value. */
   sameInBoth: boolean;
 }
 
@@ -118,6 +130,8 @@ export interface DraftToken {
   needsDark: boolean;
   /** The designer must choose the light value: a raw colour that matches no primitive. */
   needsLight: boolean;
+  /** The dark value was read from the dark copy, so a primitive that is the same in both is worth a check. */
+  fromDarkCopy: boolean;
 }
 
 export interface LayerChange {
@@ -145,6 +159,8 @@ export interface ScanResult {
   /** The name as typed in Figma, for example `Control`. */
   title: string;
   variants: number;
+  /** The dark copy's name, when one was selected. */
+  darkName?: string;
   layers: ScannedLayer[];
   /** Coloured layers with a name the scan does not know. They are not changed. */
   unknown: ScannedLayer[];
@@ -298,12 +314,59 @@ function lookOf(source: Source): Look | null {
   }
 }
 
+/** The primitive (or hex value) a source shows in dark: its dark mode, or the value of a primitive or raw colour. */
+function darkKey(source: Source): { primitive: string | null; hex: string } | null {
+  switch (source.kind) {
+    case "semantic":
+    case "component":
+      return { primitive: source.dark.primitive, hex: rgbaToHex(source.dark.color) };
+    case "primitive":
+      return { primitive: source.token, hex: rgbaToHex(source.value.color) };
+    case "raw":
+      return { primitive: source.value.primitive, hex: rgbaToHex(source.value.color) };
+    default:
+      return null;
+  }
+}
+
+/**
+ * True when the dark copy binds the same semantic or component token as the
+ * light side: that token already has its own dark value, so the copy adds
+ * nothing. A primitive has no modes, so the copy's primitive is always the
+ * dark answer, even when it is the same as the light one.
+ */
+const sameBinding = (a: Source, b: Source | undefined) =>
+  !!b && (a.kind === "semantic" || a.kind === "component") && a.kind === b.kind && "token" in b && a.token === b.token;
+
+/** What a part will look like, with the dark value taken from the dark copy when there is one. */
+function lookWithDark(layer: ScannedLayer): Look | null {
+  const look = lookOf(layer.source);
+  if (!look || !layer.darkSource || sameBinding(layer.source, layer.darkSource)) return look;
+  const d = darkKey(layer.darkSource);
+  if (!d) return { ...look, dark: null, needsDark: true };
+  // The dark copy agrees with what the light side already gives (for example transparent): nothing to add.
+  if (!look.needsDark && look.dark && look.dark === d.primitive) return look;
+  const label = layer.darkSource.kind === "raw" ? `raw value ${d.hex}` : sourceLabel(layer.darkSource);
+  return {
+    ...look,
+    dark: d.primitive,
+    needsDark: !d.primitive,
+    source: `${look.source}; dark from the dark copy (${label}${d.primitive || layer.darkSource.kind !== "raw" ? "" : ", no primitive has this colour"})`,
+  };
+}
+
 /**
  * The value a part has, for comparing states. A part that needs a dark
  * decision compares on what it shows today, so 2 states bound to the same
  * primitive count as the same.
  */
-function signature(source: Source): string {
+function signature(layer: ScannedLayer): string {
+  const source = layer.source;
+  if (layer.darkSource && !sameBinding(source, layer.darkSource)) {
+    const light = signature({ ...layer, darkSource: undefined }).split("|")[0];
+    const d = darkKey(layer.darkSource);
+    return `${light}|${d ? (d.primitive ?? d.hex) : "missing"}`;
+  }
   switch (source.kind) {
     case "semantic":
     case "component":
@@ -326,12 +389,35 @@ export function scanComponent(input: ScanInput, group = DEFAULT_FIGMA_GROUP): Sc
   const byId = new Map(input.variables.map((v) => [v.id, v]));
   const issues: Issue[] = [...input.issues];
 
-  const all: ScannedLayer[] = input.paints.map((paint) => {
-    const source = sourceOf(paint.binding, component, input.variables, byId);
-    // Transparent looks the same in every theme, so it is not flagged.
-    const fixed = (source.kind === "primitive" || source.kind === "raw") && !isTransparent(source.value.color);
-    return { paint, category: paint.category ?? categoryOfLayer(paint.layerName), source, sameInBoth: fixed };
-  });
+  // Focus has no tokens: focus uses the system default, so focus variants are not read.
+  const forbidden = new Set<string>(FORBIDDEN_STATES);
+  for (const v of input.variants.filter((x) => forbidden.has(x.state))) {
+    issues.push(issue("warning", "scan.focus", `The variant ${v.name} is not read. There are no focus tokens, because focus uses the system default.`));
+  }
+  // A state or role that the naming rules do not know is allowed, but flagged so the designer can check it.
+  const knownStates = new Set<string>(SUGGESTED_STATES);
+  const knownRoles = new Set<string>(SUGGESTED_ROLES);
+  for (const state of new Set(input.variants.map((v) => v.state))) {
+    if (state && !knownStates.has(state) && !forbidden.has(state)) {
+      issues.push(issue("warning", "scan.new-state", `State=${title(state)} is not a state in the naming rules. It becomes a new state, for example ${component || "control"}-surface-${state}. Make sure that this is correct, or rename the option in Figma.`));
+    }
+  }
+  for (const role of new Set(input.variants.map((v) => v.role).filter((r): r is string => !!r))) {
+    if (!knownRoles.has(role)) {
+      issues.push(issue("warning", "scan.new-role", `The role ${role} is not a role in the naming rules. It is used as a new role. Make sure that this is correct, or rename the option in Figma.`));
+    }
+  }
+
+  const all: ScannedLayer[] = input.paints
+    .filter((paint) => !forbidden.has(paint.state))
+    .map((paint) => {
+      const source = sourceOf(paint.binding, component, input.variables, byId);
+      const darkSource = paint.dark ? sourceOf(paint.dark.binding, component, input.variables, byId) : undefined;
+      const noMatch = paint.dark === null;
+      // Transparent looks the same in every theme, so it is not flagged. A dark copy gives the dark value.
+      const fixed = !darkSource && (source.kind === "primitive" || source.kind === "raw") && !isTransparent(source.value.color);
+      return { paint, category: paint.category ?? categoryOfLayer(paint.layerName), source, darkSource, noMatch, sameInBoth: fixed };
+    });
   const layers = all.filter((l) => l.category);
   const unknown = all.filter((l) => !l.category);
 
@@ -340,6 +426,7 @@ export function scanComponent(input: ScanInput, group = DEFAULT_FIGMA_GROUP): Sc
     component,
     title: input.componentName,
     variants: input.variants.length,
+    darkName: input.darkName,
     layers,
     unknown,
     tokens,
@@ -357,7 +444,16 @@ export function scanComponent(input: ScanInput, group = DEFAULT_FIGMA_GROUP): Sc
       ),
     );
   }
-  for (const l of all.filter((x) => x.source.kind === "missing")) {
+  for (const l of layers.filter((x) => x.noMatch)) {
+    issues.push(
+      issue(
+        "warning",
+        "scan.no-match",
+        `The ${l.paint.layerName} ${l.paint.paint === "fills" ? "fill" : "stroke"} in ${l.paint.variant} has no matching layer in ${input.darkName ?? "the dark copy"}. Make the dark copy a duplicate with the same layers, or choose the dark value in Accept names.`,
+      ),
+    );
+  }
+  for (const l of all.filter((x) => x.source.kind === "missing" || x.darkSource?.kind === "missing")) {
     issues.push(issue("error", "scan.missing", `The ${l.paint.layerName} layer in ${l.paint.variant} uses a variable that the plugin cannot read. Bind it to a variable in this file.`));
   }
   if (!layers.length && !issues.some((i) => i.severity === "error")) {
@@ -365,8 +461,10 @@ export function scanComponent(input: ScanInput, group = DEFAULT_FIGMA_GROUP): Sc
   }
   if (issues.some((i) => i.severity === "error")) return result("blocked");
 
-  if (layers.every((l) => l.source.kind === "semantic")) return result("fine");
-  if (layers.every((l) => l.source.kind === "component" && l.source.own)) return result("own-tokens");
+  // With a dark copy, a part only counts as unchanged when the dark copy binds the same token.
+  const darkAgrees = (l: ScannedLayer) => !l.darkSource || sameBinding(l.source, l.darkSource);
+  if (layers.every((l) => l.source.kind === "semantic" && darkAgrees(l))) return result("fine");
+  if (layers.every((l) => l.source.kind === "component" && l.source.own && darkAgrees(l))) return result("own-tokens");
 
   // Group parts by category, role and state.
   const groupKey = (category: string, role: string | undefined) => [category, role].filter(Boolean).join("|");
@@ -391,7 +489,7 @@ export function scanComponent(input: ScanInput, group = DEFAULT_FIGMA_GROUP): Sc
     // Every layer of a part in 1 state must look the same, as they will share 1 token.
     let conflict = false;
     for (const ls of byState.values()) {
-      if (new Set(ls.map((l) => signature(l.source))).size > 1) {
+      if (new Set(ls.map((l) => signature(l))).size > 1) {
         conflict = true;
         issues.push(
           issue(
@@ -410,13 +508,14 @@ export function scanComponent(input: ScanInput, group = DEFAULT_FIGMA_GROUP): Sc
       continue;
     }
     const states = [...byState.keys()].sort((a, b) => stateRank(a) - stateRank(b) || a.localeCompare(b));
-    const defSig = signature(def[0].source);
+    const defSig = signature(def[0]);
     for (const state of states) {
       const ls = byState.get(state)!;
-      const reuse = state !== "default" && signature(ls[0].source) === defSig;
+      const reuse = state !== "default" && signature(ls[0]) === defSig;
       const name = buildComponentTokenName({ component, category, role, state: reuse ? "default" : state });
       if (!reuse) {
-        const look = lookOf(ls[0].source)!;
+        const look = lookWithDark(ls[0])!;
+        const fromDarkCopy = !!ls[0].darkSource && !sameBinding(ls[0].source, ls[0].darkSource);
         const draft: Token = { name, layer: "component", kind: "color", component, values: {}, status: "active" };
         const path = figmaPath(draft, group)!;
         tokens.push({
@@ -433,6 +532,7 @@ export function scanComponent(input: ScanInput, group = DEFAULT_FIGMA_GROUP): Sc
           dark: look.dark,
           needsDark: look.needsDark,
           needsLight: look.needsLight,
+          fromDarkCopy,
         });
       }
       for (const l of ls) changes.push({ layer: l, token: name, reused: reuse });
@@ -506,8 +606,9 @@ export function checkDrafts(result: ScanResult, vars: ScanVariable[], choices: C
     if ((p && p.layer !== "primitive") || (q && q.layer !== "primitive")) {
       out.push(issue("error", "scan.not-primitive", `${d.name} must point to a primitive. Select a primitive, for example neutral-200.`, d.name));
     }
-    if (d.needsDark && d.light && d.light === d.dark) {
-      out.push(issue("warning", "scan.same-primitive", `${d.name} uses ${d.light} in light and dark. This is correct for some tokens, for example a brand colour. Make sure that this is correct.`, d.name));
+    if ((d.needsDark || d.fromDarkCopy) && d.light && d.light === d.dark && d.light !== "transparent") {
+      const where = d.fromDarkCopy && !d.needsDark ? " The dark copy has the same colour as the light component." : "";
+      out.push(issue("warning", "scan.same-primitive", `${d.name} uses ${d.light} in light and dark.${where} This is correct for some tokens, for example a brand colour. Make sure that this is correct.`, d.name));
     }
   }
   return { ok: !out.some((i) => i.severity === "error"), issues: out };
@@ -520,18 +621,23 @@ export interface ScanSummary {
   update: number;
   /** Variables hidden from publishing. */
   hidden: number;
-  /** Layers (paints) to rebind. */
+  /** Layers (paints) to bind in the component set. */
   layers: number;
   variants: number;
+  /** Paints in the dark copy that are bound too. */
+  darkLayers: number;
   /** Tokens to add to the tool. */
   tokens: number;
-  /** For example "This creates 8 variables in Colour tokens / Interactive / Control, ...". */
+  /** Save and publish, for example "This creates 8 variables in Colour tokens / Interactive / Control and hides 5 from publishing." */
   sentence: string;
+  /** Apply to layers, for example "This binds 12 layers across 4 variants to the new variables." */
+  applySentence: string;
 }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const list = (parts: string[]) => (parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0]);
 
-/** What Create and sync will do, for the Confirm screen. */
+/** What Save and publish, and then Apply to layers, will do. */
 export function summarise(result: ScanResult, vars: ScanVariable[], collectionName = "Colour tokens", group = DEFAULT_FIGMA_GROUP): ScanSummary {
   const existing = new Set(vars.filter((v) => v.collection === "colour-tokens").map((v) => v.name));
   const update = result.tokens.filter((t) => existing.has(t.figmaPath)).length;
@@ -539,15 +645,16 @@ export function summarise(result: ScanResult, vars: ScanVariable[], collectionNa
   const hidden = result.tokens.filter((t) => !t.published).length;
   const changed = result.changes;
   const layers = changed.length;
+  const darkLayers = changed.filter((c) => c.layer.paint.dark).length;
   const variants = new Set(changed.map((c) => c.layer.paint.variantId)).size;
   const where = `${collectionName} / ${group} / ${title(result.component)}`;
   const parts = [
     create ? `creates ${plural(create, "variable")} in ${where}` : "",
     update ? `updates ${plural(update, "variable")} in ${where}` : "",
     hidden ? `hides ${hidden} from publishing` : "",
-    `changes ${plural(layers, "layer")} across ${plural(variants, "variant")}`,
-    `adds ${plural(result.tokens.length, "token")} to Token Library`,
   ].filter(Boolean);
-  const sentence = `This ${parts.length > 1 ? `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}` : parts[0]}.`;
-  return { create, update, hidden, layers, variants, tokens: result.tokens.length, sentence };
+  const sentence = `This ${list(parts)}.`;
+  const dark = darkLayers ? ` It also binds ${plural(darkLayers, "layer")} in ${result.darkName ?? "the dark copy"} and sets it to dark mode, so it looks the same as before.` : "";
+  const applySentence = `This binds ${plural(layers, "layer")} across ${plural(variants, "variant")} to the new variables.${dark}`;
+  return { create, update, hidden, layers, variants, darkLayers, tokens: result.tokens.length, sentence, applySentence };
 }

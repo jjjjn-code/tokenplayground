@@ -36,6 +36,7 @@
     "success-on-inverse",
     "danger-on-inverse"
   ];
+  var SUGGESTED_ROLES = ["primary", "secondary", "tertiary"];
   var SUGGESTED_STATES = [
     "default",
     "hover",
@@ -167,8 +168,8 @@
     if (suggestion && allowed.includes(suggestion)) {
       return `"${category}" is not a category in our system. Do you mean "${suggestion}"?`;
     }
-    const list = allowed.length === 3 ? `${allowed[0]}, ${allowed[1]} or ${allowed[2]}` : `${allowed.slice(0, -1).join(", ")} or ${allowed[allowed.length - 1]}`;
-    return `"${category}" is not a category. Use ${list}.`;
+    const list2 = allowed.length === 3 ? `${allowed[0]}, ${allowed[1]} or ${allowed[2]}` : `${allowed.slice(0, -1).join(", ")} or ${allowed[allowed.length - 1]}`;
+    return `"${category}" is not a category. Use ${list2}.`;
   }
   function checkName(token) {
     const n = token.name;
@@ -1001,17 +1002,50 @@
         return null;
     }
   }
-  function signature(source) {
-    var _a, _b, _c;
+  function darkKey(source) {
     switch (source.kind) {
       case "semantic":
       case "component":
-        return `${(_a = source.light.primitive) != null ? _a : rgbaToHex(source.light.color)}|${(_b = source.dark.primitive) != null ? _b : rgbaToHex(source.dark.color)}`;
+        return { primitive: source.dark.primitive, hex: rgbaToHex(source.dark.color) };
+      case "primitive":
+        return { primitive: source.token, hex: rgbaToHex(source.value.color) };
+      case "raw":
+        return { primitive: source.value.primitive, hex: rgbaToHex(source.value.color) };
+      default:
+        return null;
+    }
+  }
+  var sameBinding = (a, b) => !!b && (a.kind === "semantic" || a.kind === "component") && a.kind === b.kind && "token" in b && a.token === b.token;
+  function lookWithDark(layer) {
+    const look = lookOf(layer.source);
+    if (!look || !layer.darkSource || sameBinding(layer.source, layer.darkSource)) return look;
+    const d = darkKey(layer.darkSource);
+    if (!d) return __spreadProps(__spreadValues({}, look), { dark: null, needsDark: true });
+    if (!look.needsDark && look.dark && look.dark === d.primitive) return look;
+    const label = layer.darkSource.kind === "raw" ? `raw value ${d.hex}` : sourceLabel(layer.darkSource);
+    return __spreadProps(__spreadValues({}, look), {
+      dark: d.primitive,
+      needsDark: !d.primitive,
+      source: `${look.source}; dark from the dark copy (${label}${d.primitive || layer.darkSource.kind !== "raw" ? "" : ", no primitive has this colour"})`
+    });
+  }
+  function signature(layer) {
+    var _a, _b, _c, _d;
+    const source = layer.source;
+    if (layer.darkSource && !sameBinding(source, layer.darkSource)) {
+      const light = signature(__spreadProps(__spreadValues({}, layer), { darkSource: void 0 })).split("|")[0];
+      const d = darkKey(layer.darkSource);
+      return `${light}|${d ? (_a = d.primitive) != null ? _a : d.hex : "missing"}`;
+    }
+    switch (source.kind) {
+      case "semantic":
+      case "component":
+        return `${(_b = source.light.primitive) != null ? _b : rgbaToHex(source.light.color)}|${(_c = source.dark.primitive) != null ? _c : rgbaToHex(source.dark.color)}`;
       case "primitive":
         return isTransparent(source.value.color) ? "transparent|transparent" : `${source.token}|${source.token}`;
       case "raw": {
         if (isTransparent(source.value.color)) return "transparent|transparent";
-        const k = (_c = source.value.primitive) != null ? _c : rgbaToHex(source.value.color);
+        const k = (_d = source.value.primitive) != null ? _d : rgbaToHex(source.value.color);
         return `${k}|${k}`;
       }
       default:
@@ -1019,15 +1053,33 @@
     }
   }
   function scanComponent(input, group = DEFAULT_FIGMA_GROUP) {
-    var _a, _b;
+    var _a, _b, _c;
     const component = normaliseComponentName(input.componentName).slug;
     const byId = new Map(input.variables.map((v) => [v.id, v]));
     const issues = [...input.issues];
-    const all = input.paints.map((paint) => {
+    const forbidden = new Set(FORBIDDEN_STATES);
+    for (const v of input.variants.filter((x) => forbidden.has(x.state))) {
+      issues.push(issue2("warning", "scan.focus", `The variant ${v.name} is not read. There are no focus tokens, because focus uses the system default.`));
+    }
+    const knownStates = new Set(SUGGESTED_STATES);
+    const knownRoles = new Set(SUGGESTED_ROLES);
+    for (const state of new Set(input.variants.map((v) => v.state))) {
+      if (state && !knownStates.has(state) && !forbidden.has(state)) {
+        issues.push(issue2("warning", "scan.new-state", `State=${title3(state)} is not a state in the naming rules. It becomes a new state, for example ${component || "control"}-surface-${state}. Make sure that this is correct, or rename the option in Figma.`));
+      }
+    }
+    for (const role of new Set(input.variants.map((v) => v.role).filter((r) => !!r))) {
+      if (!knownRoles.has(role)) {
+        issues.push(issue2("warning", "scan.new-role", `The role ${role} is not a role in the naming rules. It is used as a new role. Make sure that this is correct, or rename the option in Figma.`));
+      }
+    }
+    const all = input.paints.filter((paint) => !forbidden.has(paint.state)).map((paint) => {
       var _a2;
       const source = sourceOf(paint.binding, component, input.variables, byId);
-      const fixed = (source.kind === "primitive" || source.kind === "raw") && !isTransparent(source.value.color);
-      return { paint, category: (_a2 = paint.category) != null ? _a2 : categoryOfLayer(paint.layerName), source, sameInBoth: fixed };
+      const darkSource = paint.dark ? sourceOf(paint.dark.binding, component, input.variables, byId) : void 0;
+      const noMatch = paint.dark === null;
+      const fixed = !darkSource && (source.kind === "primitive" || source.kind === "raw") && !isTransparent(source.value.color);
+      return { paint, category: (_a2 = paint.category) != null ? _a2 : categoryOfLayer(paint.layerName), source, darkSource, noMatch, sameInBoth: fixed };
     });
     const layers = all.filter((l) => l.category);
     const unknown = all.filter((l) => !l.category);
@@ -1036,6 +1088,7 @@
       component,
       title: input.componentName,
       variants: input.variants.length,
+      darkName: input.darkName,
       layers,
       unknown,
       tokens: tokens2,
@@ -1052,21 +1105,34 @@
         )
       );
     }
-    for (const l of all.filter((x) => x.source.kind === "missing")) {
+    for (const l of layers.filter((x) => x.noMatch)) {
+      issues.push(
+        issue2(
+          "warning",
+          "scan.no-match",
+          `The ${l.paint.layerName} ${l.paint.paint === "fills" ? "fill" : "stroke"} in ${l.paint.variant} has no matching layer in ${(_a = input.darkName) != null ? _a : "the dark copy"}. Make the dark copy a duplicate with the same layers, or choose the dark value in Accept names.`
+        )
+      );
+    }
+    for (const l of all.filter((x) => {
+      var _a2;
+      return x.source.kind === "missing" || ((_a2 = x.darkSource) == null ? void 0 : _a2.kind) === "missing";
+    })) {
       issues.push(issue2("error", "scan.missing", `The ${l.paint.layerName} layer in ${l.paint.variant} uses a variable that the plugin cannot read. Bind it to a variable in this file.`));
     }
     if (!layers.length && !issues.some((i) => i.severity === "error")) {
       issues.push(issue2("error", "scan.empty", "No layer is called surface, line, content or icon. Rename the coloured layers, then scan again."));
     }
     if (issues.some((i) => i.severity === "error")) return result("blocked");
-    if (layers.every((l) => l.source.kind === "semantic")) return result("fine");
-    if (layers.every((l) => l.source.kind === "component" && l.source.own)) return result("own-tokens");
+    const darkAgrees = (l) => !l.darkSource || sameBinding(l.source, l.darkSource);
+    if (layers.every((l) => l.source.kind === "semantic" && darkAgrees(l))) return result("fine");
+    if (layers.every((l) => l.source.kind === "component" && l.source.own && darkAgrees(l))) return result("own-tokens");
     const groupKey = (category, role) => [category, role].filter(Boolean).join("|");
     const parts = /* @__PURE__ */ new Map();
     for (const l of layers) {
       const g = groupKey(l.category, l.paint.role);
-      const byState = (_a = parts.get(g)) != null ? _a : /* @__PURE__ */ new Map();
-      byState.set(l.paint.state, [...(_b = byState.get(l.paint.state)) != null ? _b : [], l]);
+      const byState = (_b = parts.get(g)) != null ? _b : /* @__PURE__ */ new Map();
+      byState.set(l.paint.state, [...(_c = byState.get(l.paint.state)) != null ? _c : [], l]);
       parts.set(g, byState);
     }
     const tokens = [];
@@ -1081,7 +1147,7 @@
       const label = [category, role].filter(Boolean).join(" ");
       let conflict = false;
       for (const ls of byState.values()) {
-        if (new Set(ls.map((l) => signature(l.source))).size > 1) {
+        if (new Set(ls.map((l) => signature(l))).size > 1) {
           conflict = true;
           issues.push(
             issue2(
@@ -1100,13 +1166,14 @@
         continue;
       }
       const states = [...byState.keys()].sort((a, b) => stateRank(a) - stateRank(b) || a.localeCompare(b));
-      const defSig = signature(def[0].source);
+      const defSig = signature(def[0]);
       for (const state of states) {
         const ls = byState.get(state);
-        const reuse = state !== "default" && signature(ls[0].source) === defSig;
+        const reuse = state !== "default" && signature(ls[0]) === defSig;
         const name = buildComponentTokenName({ component, category, role, state: reuse ? "default" : state });
         if (!reuse) {
-          const look = lookOf(ls[0].source);
+          const look = lookWithDark(ls[0]);
+          const fromDarkCopy = !!ls[0].darkSource && !sameBinding(ls[0].source, ls[0].darkSource);
           const draft = { name, layer: "component", kind: "color", component, values: {}, status: "active" };
           const path = figmaPath(draft, group);
           tokens.push({
@@ -1122,7 +1189,8 @@
             light: look.light,
             dark: look.dark,
             needsDark: look.needsDark,
-            needsLight: look.needsLight
+            needsLight: look.needsLight,
+            fromDarkCopy
           });
         }
         for (const l of ls) changes.push({ layer: l, token: name, reused: reuse });
@@ -1182,31 +1250,35 @@
       if (p && p.layer !== "primitive" || q && q.layer !== "primitive") {
         out.push(issue2("error", "scan.not-primitive", `${d.name} must point to a primitive. Select a primitive, for example neutral-200.`, d.name));
       }
-      if (d.needsDark && d.light && d.light === d.dark) {
-        out.push(issue2("warning", "scan.same-primitive", `${d.name} uses ${d.light} in light and dark. This is correct for some tokens, for example a brand colour. Make sure that this is correct.`, d.name));
+      if ((d.needsDark || d.fromDarkCopy) && d.light && d.light === d.dark && d.light !== "transparent") {
+        const where = d.fromDarkCopy && !d.needsDark ? " The dark copy has the same colour as the light component." : "";
+        out.push(issue2("warning", "scan.same-primitive", `${d.name} uses ${d.light} in light and dark.${where} This is correct for some tokens, for example a brand colour. Make sure that this is correct.`, d.name));
       }
     }
     return { ok: !out.some((i) => i.severity === "error"), issues: out };
   }
   var plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+  var list = (parts) => parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0];
   function summarise(result, vars, collectionName = "Colour tokens", group = DEFAULT_FIGMA_GROUP) {
+    var _a;
     const existing = new Set(vars.filter((v) => v.collection === "colour-tokens").map((v) => v.name));
     const update = result.tokens.filter((t) => existing.has(t.figmaPath)).length;
     const create = result.tokens.length - update;
     const hidden = result.tokens.filter((t) => !t.published).length;
     const changed = result.changes;
     const layers = changed.length;
+    const darkLayers = changed.filter((c) => c.layer.paint.dark).length;
     const variants = new Set(changed.map((c) => c.layer.paint.variantId)).size;
     const where = `${collectionName} / ${group} / ${title3(result.component)}`;
     const parts = [
       create ? `creates ${plural(create, "variable")} in ${where}` : "",
       update ? `updates ${plural(update, "variable")} in ${where}` : "",
-      hidden ? `hides ${hidden} from publishing` : "",
-      `changes ${plural(layers, "layer")} across ${plural(variants, "variant")}`,
-      `adds ${plural(result.tokens.length, "token")} to Token Library`
+      hidden ? `hides ${hidden} from publishing` : ""
     ].filter(Boolean);
-    const sentence = `This ${parts.length > 1 ? `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}` : parts[0]}.`;
-    return { create, update, hidden, layers, variants, tokens: result.tokens.length, sentence };
+    const sentence = `This ${list(parts)}.`;
+    const dark = darkLayers ? ` It also binds ${plural(darkLayers, "layer")} in ${(_a = result.darkName) != null ? _a : "the dark copy"} and sets it to dark mode, so it looks the same as before.` : "";
+    const applySentence = `This binds ${plural(layers, "layer")} across ${plural(variants, "variant")} to the new variables.${dark}`;
+    return { create, update, hidden, layers, variants, darkLayers, tokens: result.tokens.length, sentence, applySentence };
   }
 
   // src/lib/figma/scan-figma.ts
@@ -1285,11 +1357,37 @@
     return out;
   }
   var isSymbol = (x) => typeof x === "symbol";
+  function whichIsDark(nodes, darkModeIds2 = []) {
+    const named = nodes.map((n) => /\bdark\b/i.test(n.name));
+    if (named[0] !== named[1]) return named[0] ? 0 : 1;
+    const moded = nodes.map((n) => {
+      var _a;
+      return Object.values((_a = n.explicitVariableModes) != null ? _a : {}).some((m) => darkModeIds2.includes(m));
+    });
+    if (moded[0] !== moded[1]) return moded[0] ? 0 : 1;
+    return null;
+  }
+  function darkVariantFor(dark, light, index, lightCount) {
+    var _a, _b;
+    const kids = (_a = dark.children) != null ? _a : [];
+    const byName = kids.filter((k) => k.name === light.name);
+    if (byName.length === 1) return byName[0];
+    return kids.length === lightCount ? (_b = kids[index]) != null ? _b : null : null;
+  }
+  function darkChild(d, n, index, count) {
+    var _a;
+    if (!d) return null;
+    const kids = (_a = d.children) != null ? _a : [];
+    if (kids.length !== count) return null;
+    const k = kids[index];
+    return k && k.type === n.type ? k : null;
+  }
   async function readComponentSet(api2, set, opts = {}) {
-    var _a, _b, _c, _d, _e, _f;
+    var _a, _b, _c, _d, _e, _f, _g, _h;
+    const darkRoot = (_a = opts.dark) != null ? _a : null;
     const issues = [];
-    const defs = Object.entries((_a = set.componentPropertyDefinitions) != null ? _a : {}).filter(([, d]) => d.type === "VARIANT");
-    const stateProp = (_b = defs.find(([n]) => n.trim().toLowerCase() === "state")) == null ? void 0 : _b[0];
+    const defs = Object.entries((_b = set.componentPropertyDefinitions) != null ? _b : {}).filter(([, d]) => d.type === "VARIANT");
+    const stateProp = (_c = defs.find(([n]) => n.trim().toLowerCase() === "state")) == null ? void 0 : _c[0];
     if (!stateProp) {
       issues.push(issue3("error", "scan.state", `${set.name} has no State property. Add a variant property called State, with values such as Default, Hover, Pressed and Disabled.`));
     }
@@ -1303,26 +1401,37 @@
     const roleProp = roleProps.length === 1 ? roleProps[0] : void 0;
     const variants = [];
     const paints = [];
-    for (const node of set.children) {
-      if (node.type !== "COMPONENT") continue;
-      const props = (_c = node.variantProperties) != null ? _c : {};
-      const state = stateProp ? slug((_d = props[stateProp]) != null ? _d : "") : "";
-      const role = roleProp ? slug((_e = props[roleProp]) != null ? _e : "") || void 0 : void 0;
+    const lightVariants = set.children.filter((c) => c.type === "COMPONENT");
+    if (darkRoot) {
+      const darkCount = ((_d = darkRoot.children) != null ? _d : []).length;
+      if (darkCount !== lightVariants.length) {
+        issues.push(issue3("warning", "scan.dark-variants", `${set.name} has ${lightVariants.length} variants and ${darkRoot.name} has ${darkCount}. Make the dark copy a duplicate of the component set, with only the colours changed.`));
+      }
+    }
+    for (const [vi, node] of lightVariants.entries()) {
+      const props = (_e = node.variantProperties) != null ? _e : {};
+      const state = stateProp ? slug((_f = props[stateProp]) != null ? _f : "") : "";
+      const role = roleProp ? slug((_g = props[roleProp]) != null ? _g : "") || void 0 : void 0;
       if (stateProp && !state) issues.push(issue3("error", "scan.state-value", `The variant ${node.name} has no State value. Give it a State value.`));
       variants.push({ id: node.id, name: node.name, state, role });
-      const read = (n, layerName, category) => {
+      const darkVariant = darkRoot ? darkVariantFor(darkRoot, node, vi, lightVariants.length) : null;
+      const read = (n, d, layerName, category) => {
         if (n.isMask) return;
         for (const field of ["fills", "strokes"]) {
-          const list = n[field];
-          if (!list) continue;
-          if (isSymbol(list)) {
+          const list2 = n[field];
+          if (!list2) continue;
+          const darkList = d == null ? void 0 : d[field];
+          const darkPaints = darkList && !isSymbol(darkList) ? darkList : null;
+          if (isSymbol(list2)) {
             issues.push(issue3("warning", "scan.mixed", `The text layer "${n.name}" in ${node.name} has more than 1 colour. The scan does not read it. Give the text 1 colour.`));
             continue;
           }
-          list.forEach((p, index) => {
+          list2.forEach((p, index) => {
             var _a2, _b2, _c2;
             if (p.visible === false || p.type !== "SOLID") return;
             const bound = (_b2 = (_a2 = p.boundVariables) == null ? void 0 : _a2.color) == null ? void 0 : _b2.id;
+            const dp = darkPaints && darkPaints.length === list2.length ? darkPaints[index] : void 0;
+            const darkPair = !darkRoot ? void 0 : dp && dp.visible !== false && dp.type === "SOLID" && d ? { nodeId: d.id, binding: bindingOf(dp) } : null;
             paints.push({
               variantId: node.id,
               variant: node.name,
@@ -1333,20 +1442,23 @@
               paint: field,
               index,
               binding: bound ? { kind: "variable", id: bound } : { kind: "raw", color: __spreadProps(__spreadValues({}, p.color), { a: (_c2 = p.opacity) != null ? _c2 : 1 }) },
+              dark: darkPair,
               category: category(field)
             });
           });
         }
       };
-      const walk = (n, inInstance) => {
+      const walk = (n, d, inInstance) => {
         var _a2;
         if (n.visible === false) return;
-        read(n, inInstance ? `${n.name} in ${inInstance}` : n.name, () => inInstance ? "content" : void 0);
+        read(n, d, inInstance ? `${n.name} in ${inInstance}` : n.name, () => inInstance ? "content" : void 0);
         const inside = inInstance != null ? inInstance : n.type === "INSTANCE" ? n.name : null;
-        for (const c of (_a2 = n.children) != null ? _a2 : []) walk(c, inside);
+        const kids = (_a2 = n.children) != null ? _a2 : [];
+        kids.forEach((c, i) => walk(c, darkChild(d, c, i, kids.length), inside));
       };
-      read(node, "variant frame", (field) => field === "fills" ? "surface" : "line");
-      for (const c of (_f = node.children) != null ? _f : []) walk(c, null);
+      read(node, darkVariant, "variant frame", (field) => field === "fills" ? "surface" : "line");
+      const top = (_h = node.children) != null ? _h : [];
+      top.forEach((c, i) => walk(c, darkChild(darkVariant, c, i, top.length), null));
     }
     if (stateProp && !variants.some((v) => v.state === "default")) {
       issues.push(issue3("error", "scan.no-default", `${set.name} has no variant with State=Default. Add a default variant.`));
@@ -1362,9 +1474,17 @@
         )
       );
     }
-    const boundIds = paints.flatMap((p) => p.binding.kind === "variable" ? [p.binding.id] : []);
+    const boundIds = paints.flatMap((p) => {
+      var _a2;
+      return [p.binding, (_a2 = p.dark) == null ? void 0 : _a2.binding].flatMap((b) => (b == null ? void 0 : b.kind) === "variable" ? [b.id] : []);
+    });
     const variables = await readVariables(api2, boundIds, opts);
-    return { componentName: set.name, variants, paints, variables, issues };
+    return { componentName: set.name, variants, paints, variables, issues, darkName: darkRoot == null ? void 0 : darkRoot.name };
+  }
+  function bindingOf(p) {
+    var _a, _b, _c;
+    const bound = (_b = (_a = p.boundVariables) == null ? void 0 : _a.color) == null ? void 0 : _b.id;
+    return bound ? { kind: "variable", id: bound } : { kind: "raw", color: __spreadProps(__spreadValues({}, p.color), { a: (_c = p.opacity) != null ? _c : 1 }) };
   }
   function findNode(root, id) {
     var _a;
@@ -1375,14 +1495,18 @@
     }
     return null;
   }
-  async function applyScan(api2, set, result, drafts, vars, opts = {}) {
-    var _a, _b, _c, _d, _e;
+  async function colourTokens(api2, opts) {
     const names = namesOf(opts);
     const collection = (await api2.getLocalVariableCollectionsAsync()).find((c) => collectionKey(c, names) === "colour-tokens");
     if (!collection) throw new Error(`This file has no ${names["colour-tokens"]} collection. Add it, or run Sync from tool first.`);
     const light = collection.modes.find((m) => modeKeyOf(m.name) === "light");
     const dark = collection.modes.find((m) => modeKeyOf(m.name) === "dark");
     if (!light || !dark) throw new Error(`The ${collection.name} collection must have a light and a dark mode.`);
+    return { collection, light, dark };
+  }
+  async function publishScan(api2, drafts, vars, opts = {}) {
+    var _a;
+    const { collection, light, dark } = await colourTokens(api2, opts);
     const missing = drafts.filter((d) => !d.light || !d.dark);
     if (missing.length) throw new Error(`Choose light and dark values for ${missing.map((d) => d.name).join(", ")}.`);
     const primitive = async (token) => {
@@ -1392,7 +1516,6 @@
       return v;
     };
     const local = (await api2.getLocalVariablesAsync()).filter((v) => v.variableCollectionId === collection.id);
-    const byToken = /* @__PURE__ */ new Map();
     const created = [];
     const updated = [];
     for (const [i, d] of drafts.entries()) {
@@ -1409,33 +1532,55 @@
       v.hiddenFromPublishing = !d.published;
       v.description = d.state === "default" ? "" : `State: ${d.state}.`;
       v.setVariableCodeSyntax("WEB", `var(${cssVariableName({ name: d.name, kind: "color", layer: "component" })})`);
-      byToken.set(d.name, v);
       (_a = opts.onStep) == null ? void 0 : _a.call(opts, "variables", i + 1, drafts.length);
     }
+    return { created, updated };
+  }
+  async function bindScan(api2, set, result, opts = {}) {
+    var _a, _b, _c;
+    const { collection, dark: darkMode } = await colourTokens(api2, opts);
+    const local = (await api2.getLocalVariablesAsync()).filter((v) => v.variableCollectionId === collection.id);
+    const tokens = new Set(result.changes.map((c) => c.token));
+    const byToken = /* @__PURE__ */ new Map();
+    for (const t of tokens) {
+      const draft = result.tokens.find((d) => d.name === t);
+      const v = local.find((x) => x.getPluginData("token") === t || draft && x.name === draft.figmaPath);
+      if (!v) throw new Error(`The variable for ${t} is not in this file. Use Save and publish first.`);
+      byToken.set(t, v);
+    }
     const byNode = /* @__PURE__ */ new Map();
+    const add = (root, nodeId, field, index, variable, dark, what) => {
+      var _a2, _b2, _c2;
+      const key = `${nodeId}|${field}`;
+      const node = (_b2 = (_a2 = byNode.get(key)) == null ? void 0 : _a2.node) != null ? _b2 : findNode(root, nodeId);
+      if (!node) throw new Error(`The layer ${what} is gone. Scan again.`);
+      const entry = (_c2 = byNode.get(key)) != null ? _c2 : { node, field, items: [], dark };
+      entry.items.push({ index, variable });
+      byNode.set(key, entry);
+    };
     for (const c of result.changes) {
       const variable = byToken.get(c.token);
-      if (!variable) throw new Error(`The variable for ${c.token} is missing.`);
-      const key = `${c.layer.paint.nodeId}|${c.layer.paint.paint}`;
-      const node = (_c = (_b = byNode.get(key)) == null ? void 0 : _b.node) != null ? _c : findNode(set, c.layer.paint.nodeId);
-      if (!node) throw new Error(`The layer ${c.layer.paint.layerName} in ${c.layer.paint.variant} is gone. Scan again.`);
-      const entry = (_d = byNode.get(key)) != null ? _d : { node, field: c.layer.paint.paint, items: [] };
-      entry.items.push({ index: c.layer.paint.index, variable });
-      byNode.set(key, entry);
+      const p = c.layer.paint;
+      add(set, p.nodeId, p.paint, p.index, variable, false, `${p.layerName} in ${p.variant}`);
+      if (p.dark && opts.dark) add(opts.dark, p.dark.nodeId, p.paint, p.index, variable, true, `${p.layerName} in the dark copy of ${p.variant}`);
     }
     let layers = 0;
-    for (const { node, field, items } of byNode.values()) {
-      const list = node[field];
-      if (!list || isSymbol(list)) continue;
-      const next = [...list];
+    let darkLayers = 0;
+    const total = [...byNode.values()].reduce((n, e) => n + e.items.length, 0);
+    for (const { node, field, items, dark } of byNode.values()) {
+      const list2 = node[field];
+      if (!list2 || isSymbol(list2)) continue;
+      const next = [...list2];
       for (const { index, variable } of items) {
         next[index] = api2.setBoundVariableForPaint(next[index], "color", variable);
-        layers += 1;
+        if (dark) darkLayers += 1;
+        else layers += 1;
       }
       node[field] = next;
-      (_e = opts.onStep) == null ? void 0 : _e.call(opts, "layers", layers, result.changes.length);
+      (_a = opts.onStep) == null ? void 0 : _a.call(opts, "layers", layers + darkLayers, total);
     }
-    return { created, updated, layers };
+    (_c = (_b = opts.dark) == null ? void 0 : _b.setExplicitVariableModeForCollection) == null ? void 0 : _c.call(_b, collection, darkMode.modeId);
+    return { layers, darkLayers };
   }
 
   // src/lib/tokens/repo.ts
@@ -1645,6 +1790,8 @@ ${BLOCK_END}`;
     return { hex, label };
   }
   function layerView(l) {
+    const darkFromCopy = l.darkSource ? swatchOf(l.darkSource, "dark") : null;
+    const darkLabel = l.darkSource && sourceLabel(l.darkSource) !== sourceLabel(l.source) ? sourceLabel(l.darkSource) : void 0;
     return {
       variant: l.paint.variant,
       state: l.paint.state,
@@ -1654,7 +1801,9 @@ ${BLOCK_END}`;
       kind: l.source.kind,
       label: sourceLabel(l.source),
       light: swatchOf(l.source, "light"),
-      dark: swatchOf(l.source, "dark"),
+      dark: darkFromCopy != null ? darkFromCopy : swatchOf(l.source, "dark"),
+      darkLabel,
+      noMatch: l.noMatch,
       sameInBoth: l.sameInBoth
     };
   }
@@ -1680,6 +1829,7 @@ ${BLOCK_END}`;
       title: result.title,
       component: result.component,
       variants: result.variants,
+      darkName: result.darkName,
       layers: result.layers.map(layerView),
       unknown: result.unknown.map(layerView),
       changes: result.changes.map((c) => ({ before: layerView(c.layer), token: c.token, reused: c.reused })),
@@ -1693,7 +1843,8 @@ ${BLOCK_END}`;
         light: t.light,
         dark: t.dark,
         needsDark: t.needsDark,
-        needsLight: t.needsLight
+        needsLight: t.needsLight,
+        fromDarkCopy: t.fromDarkCopy
       })),
       issues: result.issues,
       primitives: primitiveSwatches(vars)
@@ -1718,12 +1869,34 @@ ${BLOCK_END}`;
   figma.showUI(__html__, { width: 480, height: 680, themeColors: true, title: "Token Library" });
   var scanApi = () => figma.variables;
   var scan = null;
-  function selectedSet() {
-    const sel = figma.currentPage.selection;
-    if (sel.length !== 1) return null;
-    let n = sel[0];
+  function setOf(node) {
+    let n = node;
     while (n && n.type !== "COMPONENT_SET") n = n.parent;
     return n != null ? n : null;
+  }
+  async function darkModeIds() {
+    const cs = await figma.variables.getLocalVariableCollectionsAsync();
+    return cs.flatMap((c) => c.modes.filter((m) => /dark/i.test(m.name)).map((m) => m.modeId));
+  }
+  async function picked() {
+    var _a;
+    const sel = figma.currentPage.selection;
+    if (!sel.length) return { set: null, dark: null, message: "Select the component set and its dark copy on the canvas." };
+    const tops = [];
+    for (const n of sel) {
+      const top = (_a = setOf(n)) != null ? _a : n;
+      if (!tops.includes(top)) tops.push(top);
+    }
+    if (tops.length > 2) return { set: null, dark: null, message: "Select only the component set and its dark copy." };
+    if (tops.length === 1) {
+      const t = tops[0];
+      return t.type === "COMPONENT_SET" ? { set: t, dark: null } : { set: null, dark: null, message: "This is not a component set. Select a component set, for example Control, and its dark copy." };
+    }
+    const i = whichIsDark([tops[0], tops[1]], await darkModeIds());
+    if (i === null) return { set: null, dark: null, message: `The plugin cannot tell which copy is the dark one. Add "dark" to the dark copy's name, for example "Control dark".` };
+    const set = tops[1 - i];
+    if (set.type !== "COMPONENT_SET") return { set: null, dark: null, message: `${set.name} is not a component set. Select the component set and its dark copy.` };
+    return { set, dark: tops[i] };
   }
   function countColouredLayers(set) {
     let count = 0;
@@ -1737,24 +1910,24 @@ ${BLOCK_END}`;
     walk(set);
     return count;
   }
-  function postSelection() {
-    const set = selectedSet();
+  async function postSelection() {
+    const { set, dark, message } = await picked();
     if (!set) {
-      const sel = figma.currentPage.selection;
-      figma.ui.postMessage({
-        type: "scan-selection",
-        selection: null,
-        message: sel.length > 1 ? "Select only 1 component set." : sel.length === 1 ? "This is not a component set. Select a component set, for example Control." : "Select a component set on the canvas."
-      });
+      figma.ui.postMessage({ type: "scan-selection", selection: null, message });
       return;
     }
     const variants = set.children.filter((c) => c.type === "COMPONENT").length;
-    figma.ui.postMessage({ type: "scan-selection", selection: { id: set.id, name: set.name, variants, layers: countColouredLayers(set) } });
+    figma.ui.postMessage({
+      type: "scan-selection",
+      selection: { id: set.id, name: set.name, variants, layers: countColouredLayers(set), dark: dark ? { id: dark.id, name: dark.name } : null }
+    });
   }
   figma.on("selectionchange", () => {
-    const set = selectedSet();
-    if (set && scan && set.id !== scan.set.id) scan = null;
-    postSelection();
+    void (async () => {
+      const { set } = await picked();
+      if (set && scan && set.id !== scan.set.id) scan = null;
+      await postSelection();
+    })();
   });
   figma.ui.onmessage = async (msg) => {
     var _a, _b, _c, _d, _e;
@@ -1794,13 +1967,13 @@ ${BLOCK_END}`;
         figma.ui.postMessage({ type: "applied", result, fileName: figma.root.name });
         figma.notify(`Token Library: ${result.added.length} added, ${result.changed.length} changed, ${result.removed.length} removed.`);
       }
-      if (msg.type === "scan-selection") postSelection();
+      if (msg.type === "scan-selection") await postSelection();
       if (msg.type === "scan-run") {
-        const set = selectedSet();
-        if (!set) throw new Error("Select a component set on the canvas.");
-        const input = await readComponentSet(scanApi(), set, { names: lastNames });
+        const { set, dark, message } = await picked();
+        if (!set) throw new Error(message != null ? message : "Select a component set on the canvas.");
+        const input = await readComponentSet(scanApi(), set, { names: lastNames, dark });
         const result = scanComponent(input);
-        scan = { set, input, result };
+        scan = { set, dark, input, result };
         figma.ui.postMessage({ type: "scan-result", view: scanView(result, input.variables) });
       }
       if (msg.type === "scan-check") {
@@ -1810,21 +1983,32 @@ ${BLOCK_END}`;
         const summary = summarise(scan.result, scan.input.variables, lastNames["colour-tokens"]);
         figma.ui.postMessage({ type: "scan-checked", ok: checked.ok, issues: checked.issues, summary });
       }
-      if (msg.type === "scan-apply") {
+      if (msg.type === "scan-publish") {
         if (!scan) throw new Error("Scan the component again.");
         const choices = (_d = msg.choices) != null ? _d : {};
         const checked = checkDrafts(scan.result, scan.input.variables, choices);
-        if (!checked.ok) throw new Error("Some tokens still have problems. Go back to Review.");
+        if (!checked.ok) throw new Error("Some tokens still have problems. Go back to Accept names.");
         const drafts = withChoices(scan.result.tokens, choices);
-        const result = await applyScan(scanApi(), scan.set, scan.result, drafts, scan.input.variables, {
+        const result = await publishScan(scanApi(), drafts, scan.input.variables, {
           names: lastNames,
           onStep: (step, done, total) => figma.ui.postMessage({ type: "scan-progress", step, done, total })
         });
         figma.commitUndo();
-        const preview = donePreview(scan.result, scan.input.variables, choices);
-        figma.ui.postMessage({ type: "scan-applied", result, preview, component: scan.result.component, title: scan.result.title, fileName: figma.root.name });
-        figma.notify(`Token Library: ${result.created.length + result.updated.length} variables for ${scan.result.title}, ${result.layers} layers bound.`);
-        scan = null;
+        scan.choices = choices;
+        figma.ui.postMessage({ type: "scan-published", result });
+        figma.notify(`Token Library: ${result.created.length + result.updated.length} variables saved for ${scan.result.title}.`);
+      }
+      if (msg.type === "scan-bind") {
+        if (!scan || !scan.choices) throw new Error("Use Save and publish first.");
+        const result = await bindScan(scanApi(), scan.set, scan.result, {
+          names: lastNames,
+          dark: scan.dark,
+          onStep: (step, done, total) => figma.ui.postMessage({ type: "scan-progress", step, done, total })
+        });
+        figma.commitUndo();
+        const preview = donePreview(scan.result, scan.input.variables, scan.choices);
+        figma.ui.postMessage({ type: "scan-bound", result, preview, component: scan.result.component, title: scan.result.title, fileName: figma.root.name });
+        figma.notify(`Token Library: ${result.layers + result.darkLayers} layers bound in ${scan.result.title}.`);
       }
       if (msg.type === "scan-save-pending") await figma.clientStorage.setAsync(PENDING, (_e = msg.pending) != null ? _e : null);
       if (msg.type === "close") figma.closePlugin();

@@ -317,7 +317,7 @@ Reused, not created: the hover line, pressed line, hover content and disabled su
 2. The Scan component tab in the plugin, with all 6 screens.
 3. The endpoint in the tool that receives the drafted tokens, with retry and the JSON fallback.
 4. Test on the Control frame in the UAL UI Sandbox file: read only first, write only after Jane agrees.
-5. Changes agreed on 24 Nov 2026: read dark values from the dark duplicate, flag variant options the rules do not know, and split Create and sync into Save and publish, Apply to layers, and Send to the tool.
+5. Done 24 Nov 2026 (tested with a fake Figma, not yet in the sandbox file): read dark values from the dark duplicate, flag variant options the rules do not know, and split Create and sync into Save and publish, Apply to layers, and Send to the tool.
 6. Test run on 2 or 3 more real components to find edge cases, such as interactive states not yet in the rules.
 
 **Done when** scanning the control and its dark duplicate in the sandbox file creates the 8 variables in the right group with no dark value picked by hand, rebinds every layer, leaves the dark theme correct for hover and pressed, and the 8 tokens appear in the tool as unpushed.

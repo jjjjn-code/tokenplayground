@@ -27,6 +27,10 @@ export interface LayerView {
   label: string;
   light: Swatch | null;
   dark: Swatch | null;
+  /** The binding in the dark copy, when it differs from the light one. */
+  darkLabel?: string;
+  /** A dark copy was selected, but it has no matching layer. */
+  noMatch: boolean;
   sameInBoth: boolean;
 }
 
@@ -49,6 +53,7 @@ export interface TokenView {
   dark: string | null;
   needsDark: boolean;
   needsLight: boolean;
+  fromDarkCopy: boolean;
 }
 
 export interface ScanView {
@@ -56,6 +61,8 @@ export interface ScanView {
   title: string;
   component: string;
   variants: number;
+  /** The dark copy's name, when one was selected. */
+  darkName?: string;
   layers: LayerView[];
   unknown: LayerView[];
   changes: ChangeView[];
@@ -79,6 +86,9 @@ function swatchOf(source: Source, mode: "light" | "dark"): Swatch | null {
 }
 
 function layerView(l: ScannedLayer): LayerView {
+  // With a dark copy, the dark swatch is the copy's paint in dark mode.
+  const darkFromCopy = l.darkSource ? swatchOf(l.darkSource, "dark") : null;
+  const darkLabel = l.darkSource && sourceLabel(l.darkSource) !== sourceLabel(l.source) ? sourceLabel(l.darkSource) : undefined;
   return {
     variant: l.paint.variant,
     state: l.paint.state,
@@ -88,7 +98,9 @@ function layerView(l: ScannedLayer): LayerView {
     kind: l.source.kind,
     label: sourceLabel(l.source),
     light: swatchOf(l.source, "light"),
-    dark: swatchOf(l.source, "dark"),
+    dark: darkFromCopy ?? swatchOf(l.source, "dark"),
+    darkLabel,
+    noMatch: l.noMatch,
     sameInBoth: l.sameInBoth,
   };
 }
@@ -118,6 +130,7 @@ export function scanView(result: ScanResult, vars: ScanVariable[]): ScanView {
     title: result.title,
     component: result.component,
     variants: result.variants,
+    darkName: result.darkName,
     layers: result.layers.map(layerView),
     unknown: result.unknown.map(layerView),
     changes: result.changes.map((c) => ({ before: layerView(c.layer), token: c.token, reused: c.reused })),
@@ -132,6 +145,7 @@ export function scanView(result: ScanResult, vars: ScanVariable[]): ScanView {
       dark: t.dark,
       needsDark: t.needsDark,
       needsLight: t.needsLight,
+      fromDarkCopy: t.fromDarkCopy,
     })),
     issues: result.issues,
     primitives: primitiveSwatches(vars),

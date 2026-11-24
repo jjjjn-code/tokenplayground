@@ -4,7 +4,7 @@ import { buildSpecs, hexToRgba, planSync } from "@/src/lib/figma/plan";
 import { checkDrafts, draftsToTokens, scanComponent, summarise, withChoices, type Choices } from "@/src/lib/figma/scan";
 import { donePreview, scanView } from "@/src/lib/figma/scan-view";
 import { parseDtcg } from "@/src/lib/tokens";
-import { applyScan, readComponentSet, type ComponentSetLike, type NodeLike, type PaintLike } from "@/src/lib/figma/scan-figma";
+import { applyScan, bindScan, publishScan, readComponentSet, whichIsDark, type ComponentSetLike, type NodeLike, type PaintLike } from "@/src/lib/figma/scan-figma";
 import { FakeFigma } from "./fake-figma";
 import { codes, dummy } from "./helpers";
 
@@ -168,10 +168,10 @@ describe("component scan: drafting (the control)", async () => {
     expect(after.issues.find((i) => i.code === "scan.same-primitive")?.token).toBe("control-content-disabled");
   });
 
-  it("sums up what Create and sync will do", () => {
-    expect(summarise(r, input.variables).sentence).toBe(
-      "This creates 8 variables in Colour tokens / Interactive / Control, hides 5 from publishing, changes 12 layers across 4 variants, and adds 8 tokens to Token Library.",
-    );
+  it("sums up what Save and publish, and then Apply to layers, will do", () => {
+    const sum = summarise(r, input.variables);
+    expect(sum.sentence).toBe("This creates 8 variables in Colour tokens / Interactive / Control and hides 5 from publishing.");
+    expect(sum.applySentence).toBe("This binds 12 layers across 4 variants to the new variables.");
   });
 
   it("gives tool tokens that point to primitives", () => {
@@ -341,9 +341,24 @@ describe("component scan: what the plugin shows", () => {
   });
 });
 
+/** The real control: state, frame fill, frame stroke, arrow. */
+const LIGHT_ROWS: [string, string | null, string, string][] = [
+  ["Default", P("transparent"), S("line-default"), S("content-default")],
+  ["Hover", P("neutral-200"), S("line-default"), S("content-default")],
+  ["Pressed", P("neutral-600"), S("line-default"), S("content-on-inverse")],
+  ["Disabled", null, S("line-disabled"), P("neutral-400")],
+];
+/** Its dark duplicate (24 Nov): the same layers, with the dark primitives chosen in DARK. */
+const DARK_ROWS: [string, string | null, string, string][] = [
+  ["Default", P("transparent"), S("line-default"), S("content-default")],
+  ["Hover", P("neutral-600"), S("line-default"), S("content-default")],
+  ["Pressed", P("neutral-200"), S("line-default"), S("content-on-inverse")],
+  ["Disabled", null, S("line-disabled"), P("neutral-400")],
+];
+
 describe("component scan: the structure of the real control (UAL UI Sandbox, 23 Nov)", () => {
   /** Fill and stroke on the variant frame; the arrow is a vector inside an icon instance, with a mask. Disabled has no fill. */
-  function realControl(fig: FakeFigma) {
+  function realControl(fig: FakeFigma, name = "Control", rows: [string, string | null, string, string][] = LIGHT_ROWS) {
     const variant = (state: string, fill: string | null, stroke: string, arrow: string): NodeLike => ({
       id: `N:${++n}`,
       name: `State=${state}`,
@@ -364,17 +379,17 @@ describe("component scan: the structure of the real control (UAL UI Sandbox, 23 
         },
       ],
     });
+    const modes: Record<string, string> = {};
     return {
       id: `N:${++n}`,
-      name: "Control",
+      name,
       type: "COMPONENT_SET",
-      componentPropertyDefinitions: { State: { type: "VARIANT", variantOptions: ["Default", "Hover", "Pressed", "Disabled"] } },
-      children: [
-        variant("Default", P("transparent"), S("line-default"), S("content-default")),
-        variant("Hover", P("neutral-200"), S("line-default"), S("content-default")),
-        variant("Pressed", P("neutral-600"), S("line-default"), S("content-on-inverse")),
-        variant("Disabled", null, S("line-disabled"), P("neutral-400")),
-      ],
+      componentPropertyDefinitions: { State: { type: "VARIANT", variantOptions: rows.map((r) => r[0]) } },
+      children: rows.map((r) => variant(...r)),
+      explicitVariableModes: modes,
+      setExplicitVariableModeForCollection(c: { id: string }, modeId: string) {
+        modes[c.id] = modeId;
+      },
     } as ComponentSetLike;
   }
 
@@ -398,9 +413,7 @@ describe("component scan: the structure of the real control (UAL UI Sandbox, 23 
       "control-content-pressed",
       "control-content-disabled",
     ]);
-    expect(summarise(r, input.variables).sentence).toBe(
-      "This creates 8 variables in Colour tokens / Interactive / Control, hides 5 from publishing, changes 11 layers across 4 variants, and adds 8 tokens to Token Library.",
-    );
+    expect(summarise(r, input.variables).applySentence).toBe("This binds 11 layers across 4 variants to the new variables.");
   });
 
   it("binds the frame and the arrow inside the icon to the new variables", async () => {
@@ -415,6 +428,101 @@ describe("component scan: the structure of the real control (UAL UI Sandbox, 23 
     expect((arrow.fills as PaintLike[])[0].boundVariables!.color!.id).toBe(fig.byName("Interactive/Control/Content/content-default")!.id);
     const mask = hover.children![0].children![0];
     expect((mask.fills as PaintLike[])[0].boundVariables).toBeUndefined();
+  });
+
+  describe("with a dark copy (24 Nov)", () => {
+    it("takes every dark value from the dark copy, so none is chosen by hand", async () => {
+      const fig = await file();
+      const input = await readComponentSet(fig, realControl(fig), { dark: realControl(fig, "Control dark", DARK_ROWS) });
+      expect(input.issues).toEqual([]);
+      const r = scanComponent(input);
+      expect(r.status).toBe("draft");
+      expect(r.tokens.every((t) => !t.needsDark && t.dark)).toBe(true);
+      expect(r.tokens).toEqual(withChoices(r.tokens, DARK));
+      expect(r.tokens.find((t) => t.name === "control-surface-hover")).toMatchObject({ light: "neutral-200", dark: "neutral-600", fromDarkCopy: true });
+      expect(r.layers.some((l) => l.sameInBoth)).toBe(false);
+      // Semantic parts still take the primitive behind the semantic in dark mode.
+      expect(r.tokens.find((t) => t.name === "control-content-default")).toMatchObject({ light: "black", dark: "white", fromDarkCopy: false });
+    });
+
+    it("warns when the dark copy has the same primitive as the light component", async () => {
+      const fig = await file();
+      const input = await readComponentSet(fig, realControl(fig), { dark: realControl(fig, "Control dark", DARK_ROWS) });
+      const checked = checkDrafts(scanComponent(input), input.variables);
+      expect(checked.ok).toBe(true);
+      expect(checked.issues.filter((i) => i.code === "scan.same-primitive").map((i) => i.token)).toEqual(["control-content-disabled"]);
+    });
+
+    it("binds the dark copy to the same variables and sets it to dark mode", async () => {
+      const fig = await file();
+      const set = realControl(fig);
+      const dark = realControl(fig, "Control dark", DARK_ROWS);
+      const input = await readComponentSet(fig, set, { dark });
+      const r = scanComponent(input);
+      const published = await publishScan(fig, r.tokens, input.variables);
+      expect(published.created).toHaveLength(8);
+      // Publishing changes no layer.
+      expect((set.children[1].fills as PaintLike[])[0].boundVariables!.color!.id).toBe(fig.byName("neutral-200")!.id);
+      const bound = await bindScan(fig, set, r, { dark });
+      expect(bound).toEqual({ layers: 11, darkLayers: 11 });
+      const hoverVar = fig.byName("Interactive/Control/Surface/surface-hover")!.id;
+      expect((set.children[1].fills as PaintLike[])[0].boundVariables!.color!.id).toBe(hoverVar);
+      expect((dark.children[1].fills as PaintLike[])[0].boundVariables!.color!.id).toBe(hoverVar);
+      const tokensCollection = fig.collections.find((c) => c.name === "Colour tokens")!;
+      const darkMode = tokensCollection.modes.find((m) => m.name.toLowerCase() === "dark")!.modeId;
+      expect(dark.explicitVariableModes![tokensCollection.id]).toBe(darkMode);
+      // The dark copy looks the same as before: hover is still neutral-600 in dark mode.
+      expect(fig.resolve(hoverVar, "dark")).toEqual(fig.resolve(fig.byName("neutral-600")!.id, "value"));
+      expect(scanComponent(await readComponentSet(fig, set, { dark })).status).toBe("own-tokens");
+    });
+
+    it("refuses to apply before the variables are published", async () => {
+      const fig = await file();
+      const set = realControl(fig);
+      const input = await readComponentSet(fig, set);
+      await expect(bindScan(fig, set, scanComponent(input))).rejects.toThrow(/Save and publish first/);
+    });
+
+    it("flags a layer with no match in the dark copy, and asks for its dark value", async () => {
+      const fig = await file();
+      const dark = realControl(fig, "Control dark", DARK_ROWS);
+      // The hover icon was deleted from the dark copy.
+      (dark.children[1] as { children?: readonly NodeLike[] }).children = [];
+      const input = await readComponentSet(fig, realControl(fig), { dark });
+      const r = scanComponent(input);
+      expect(r.issues.filter((i) => i.code === "scan.no-match")).toHaveLength(1);
+      expect(r.layers.find((l) => l.noMatch)?.paint.layerName).toBe("icon in Icon");
+    });
+
+    it("is not needed when the dark copy uses the same semantic tokens", async () => {
+      const fig = await file();
+      const rows: [string, string | null, string, string][] = [
+        ["Default", S("surface-default"), S("line-default"), S("content-default")],
+        ["Hover", S("surface-elevated"), S("line-default"), S("content-default")],
+      ];
+      const r = scanComponent(await readComponentSet(fig, realControl(fig, "Control", rows), { dark: realControl(fig, "Control dark", rows) }));
+      expect(r.status).toBe("fine");
+    });
+
+    it("tells the dark copy from the component by its name, or else by its mode", () => {
+      const a = { id: "1", name: "Control", type: "COMPONENT_SET" };
+      const b = { id: "2", name: "Control dark", type: "COMPONENT_SET" };
+      expect(whichIsDark([a, b])).toBe(1);
+      expect(whichIsDark([b, a])).toBe(0);
+      const c = { id: "3", name: "Control copy", type: "COMPONENT_SET", explicitVariableModes: { C: "M-dark" } };
+      expect(whichIsDark([c, a], ["M-dark"])).toBe(0);
+      expect(whichIsDark([a, { ...a, id: "4" }])).toBeNull();
+    });
+  });
+
+  it("flags a state the naming rules do not know, and skips focus", async () => {
+    const fig = await file();
+    const rows: [string, string | null, string, string][] = [...LIGHT_ROWS, ["Active", P("neutral-600"), S("line-default"), S("content-default")], ["Focus", P("neutral-200"), S("line-default"), S("content-default")]];
+    const r = scanComponent(await readComponentSet(fig, realControl(fig, "Control", rows)));
+    expect(codes(r.issues)).toEqual(expect.arrayContaining(["scan.new-state", "scan.focus"]));
+    expect(r.issues.find((i) => i.code === "scan.new-state")?.message).toContain("State=Active");
+    expect(r.tokens.map((t) => t.state)).not.toContain("focus");
+    expect(r.layers.some((l) => l.paint.state === "focus")).toBe(false);
   });
 
   it("stops when Colour tokens comes from a library", async () => {
