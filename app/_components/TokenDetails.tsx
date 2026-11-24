@@ -13,16 +13,19 @@ import {
   cssFileFor,
   cssVariableName,
   directDependants,
-  figmaPath,
   formatValue,
   historyFor,
   indexTokens,
   isPublishedInFigma,
+  modesOf,
   resolveToken,
+  tokenDeclarations,
+  valueInMode,
   validateTokenSet,
   type Mode,
   type Token,
 } from "@/src/lib/tokens";
+import { COLLECTIONS, collectionFor, variableName } from "@/src/lib/figma/plan";
 import { useStore } from "../_lib/store";
 import { KIND_TITLE, LAYER_TITLE } from "../_lib/sets";
 import { AliasPill, formatDate, IssueList, resolvedText, StatusBadge, Swatch } from "./ui";
@@ -68,8 +71,10 @@ export function TokenDetails({
   const all = allDependants(set, token.name);
   const indirect = all.filter((n) => !direct.includes(n));
   const timeline = historyFor(history, token.name).reverse();
-  const path = figmaPath(token);
-  const modes: Mode[] = token.layer === "primitive" ? ["light"] : ["light", "dark"];
+  const path = variableName(token);
+  const modes = modesOf(token);
+  // What the CSS gets: for a fluid token, the clamp() worked out from min and max.
+  const cssLines = tokenDeclarations(token, index).flatMap((o) => o.lines);
 
   const copy = async (text: string) => {
     try {
@@ -97,10 +102,10 @@ export function TokenDetails({
       {token.description ? <p className="text-sm text-muted-foreground">{token.description}</p> : null}
 
       <div className="grid gap-2">
-        {modes.map((m) => {
-          const v = m === "dark" ? token.values.dark ?? token.values.light : token.values.light;
+        {modes.map(({ key: m, label: modeName }) => {
+          const v = valueInMode(token, m);
           const r = resolveToken(index, token.name, m);
-          const label = token.layer === "primitive" ? "All modes" : m === "light" ? "Light" : "Dark";
+          const label = modes.length === 1 ? "All modes" : modeName;
           return (
             <div key={m} className="flex items-center gap-3 rounded-lg border p-3">
               <Swatch value={r.value} size="lg" />
@@ -146,9 +151,12 @@ export function TokenDetails({
         </span>
         <span className="text-muted-foreground">File</span>
         <span className="truncate font-mono text-[12.5px]">{cssFileFor(token)}</span>
+        <span className="text-muted-foreground">CSS</span>
+        <code className="min-w-0 font-mono text-[12px] break-all whitespace-pre-wrap text-muted-foreground">{cssLines.join("\n")}</code>
         <span className="text-muted-foreground">Figma</span>
         <span className="min-w-0">
-          {path ? <code className="block truncate font-mono text-[12.5px]">{path}</code> : <span className="block text-muted-foreground">Path to confirm</span>}
+          <code className="block truncate font-mono text-[12.5px]" title={path}>{path}</code>
+          <span className="block text-xs text-muted-foreground">{COLLECTIONS[collectionFor(token)].name}</span>
           <span className="block text-xs text-muted-foreground">{isPublishedInFigma(token) ? "Published" : "Hidden from publishing"}</span>
         </span>
       </div>
@@ -198,7 +206,7 @@ export function TokenDetails({
                 {e.reason && !(e.action === "renamed" && e.reason === `Renamed from ${e.from}`) ? <div className="mt-1">{e.reason}</div> : null}
                 {(e.before || e.after) && JSON.stringify(e.before?.values) !== JSON.stringify(e.after?.values) ? (
                   <div className="mt-1.5 rounded-md border bg-muted/20 p-2">
-                    <ValueChange before={e.before} after={e.after} layer={token.layer} index={index} />
+                    <ValueChange before={e.before} after={e.after} token={token} index={index} />
                   </div>
                 ) : null}
                 {e.before && e.after && e.before.status !== e.after.status ? (

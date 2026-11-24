@@ -204,7 +204,7 @@ export default function PushPage() {
                           <div className="truncate font-mono text-[11px] text-muted-foreground">{c.file}</div>
                         </td>
                         <td className="px-2 py-2">
-                          <ValueChange before={c.before} after={c.after} layer={(c.after ?? c.before)!.layer} index={index} />
+                          <ValueChange before={c.before} after={c.after} token={(c.after ?? c.before)!} index={index} />
                           {(c.after ?? c.before)!.status === "deprecated" ? <div className="mt-1 text-[11px] text-muted-foreground">deprecated</div> : null}
                         </td>
                       </tr>

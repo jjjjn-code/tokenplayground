@@ -1,4 +1,4 @@
-export {};
+import { createScanUi, type Pending } from "./scan-ui";
 /**
  * Token Library Figma plugin: the window. It talks to Token Library over
  * the network and to the Figma side (code.ts) through messages.
@@ -7,7 +7,6 @@ interface Settings {
   url: string;
   key: string;
   includeDrafts: boolean;
-  names: { primitives: string; semantic: string; components: string };
 }
 interface PlanView {
   add: { token: string; name: string; collection: string }[];
@@ -21,7 +20,6 @@ const DEFAULTS: Settings = {
   url: "https://tokenplayground-drab.vercel.app",
   key: "",
   includeDrafts: false,
-  names: { primitives: "Primitives", semantic: "Semantic", components: "Components" },
 };
 
 let settings: Settings = DEFAULTS;
@@ -48,11 +46,6 @@ function readForm(): Settings {
     url: $<HTMLInputElement>("url").value.trim().replace(/\/+$/, "") || DEFAULTS.url,
     key: $<HTMLInputElement>("key").value.trim(),
     includeDrafts: $<HTMLInputElement>("drafts").checked,
-    names: {
-      primitives: $<HTMLInputElement>("n-primitives").value.trim() || DEFAULTS.names.primitives,
-      semantic: $<HTMLInputElement>("n-semantic").value.trim() || DEFAULTS.names.semantic,
-      components: $<HTMLInputElement>("n-components").value.trim() || DEFAULTS.names.components,
-    },
   };
 }
 
@@ -60,9 +53,6 @@ function fillForm() {
   $<HTMLInputElement>("url").value = settings.url;
   $<HTMLInputElement>("key").value = settings.key;
   $<HTMLInputElement>("drafts").checked = settings.includeDrafts;
-  $<HTMLInputElement>("n-primitives").value = settings.names.primitives;
-  $<HTMLInputElement>("n-semantic").value = settings.names.semantic;
-  $<HTMLInputElement>("n-components").value = settings.names.components;
   ($("settings") as HTMLDetailsElement).open = !settings.key;
 }
 
@@ -90,7 +80,7 @@ async function check() {
       post({ type: "save-settings", settings });
     }
     setStatus("Comparing with the variables in this file…");
-    post({ type: "plan", tokens: body.tokens, includeDrafts: settings.includeDrafts, names: settings.names });
+    post({ type: "plan", tokens: body.tokens, includeDrafts: settings.includeDrafts });
   } catch (e) {
     const m = e instanceof Error ? e.message : String(e);
     setStatus(m.includes("Failed to fetch") ? "Token Library cannot be reached. Make sure that the address is correct." : m, "error");
@@ -147,14 +137,45 @@ async function report(result: { added: string[]; changed: string[]; removed: str
   }
 }
 
+const scanUi = createScanUi({
+  root: $("panel-scan"),
+  post,
+  settings: () => ({ url: settings.url, key: settings.key }),
+  openSettings: () => {
+    ($("settings") as HTMLDetailsElement).open = true;
+  },
+  onNewKey: (key) => {
+    settings = { ...settings, key };
+    fillForm();
+    post({ type: "save-settings", settings });
+  },
+});
+
+const TABS = ["sync", "scan"] as const;
+function showTab(tab: (typeof TABS)[number]) {
+  for (const t of TABS) {
+    $(`tab-${t}`).setAttribute("aria-selected", String(t === tab));
+    $(`panel-${t}`).hidden = t !== tab;
+  }
+  if (tab === "scan") {
+    scanUi.render();
+    post({ type: "scan-selection" });
+  }
+}
+for (const t of TABS) $(`tab-${t}`).onclick = () => showTab(t);
+
 window.onmessage = async (event: MessageEvent) => {
   const msg = event.data.pluginMessage;
   if (!msg) return;
+  if (scanUi.onMessage(msg)) return;
   if (msg.type === "settings") {
-    settings = { ...DEFAULTS, ...msg.settings, names: { ...DEFAULTS.names, ...(msg.settings?.names ?? {}) } };
+    settings = { ...DEFAULTS, url: msg.settings?.url ?? DEFAULTS.url, key: msg.settings?.key ?? "", includeDrafts: !!msg.settings?.includeDrafts };
     fileName = msg.fileName;
     $("file").textContent = fileName;
     fillForm();
+    scanUi.setPending((msg.pending as Pending | null) ?? null);
+    // A scan that did not reach Token Library is shown first.
+    if (msg.pending) showTab("scan");
   }
   if (msg.type === "plan") {
     plan = msg.plan;

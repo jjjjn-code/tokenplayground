@@ -22,6 +22,58 @@
   details.group { border-top: 1px solid var(--figma-color-border, #e6e6e6); padding-top: 6px; }
   ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
   .hint { color: var(--figma-color-text-secondary, #6b6b6b); margin: 0; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--figma-color-border, #e6e6e6); }
+  .tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 8px 10px; background: none; color: var(--figma-color-text-secondary, #6b6b6b); }
+  .tabs button[aria-selected=true] { color: inherit; border-bottom-color: var(--figma-color-border-brand-strong, #0d99ff); }
+  [hidden] { display: none !important; }
+  section { display: grid; gap: 12px; }
+  h2 { font-size: 13px; margin: 0; }
+  h3 { font-size: 12px; margin: 8px 0 0; }
+  button:disabled { opacity: .45; cursor: default; }
+  .stepper { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 0; padding: 0; color: var(--figma-color-text-tertiary, #b3b3b3); font-size: 11px; }
+  .stepper .past { color: var(--figma-color-text-secondary, #6b6b6b); }
+  .stepper .current { color: var(--figma-color-text, #1e1e1e); font-weight: 600; }
+  .steps { display: grid; gap: 10px; margin-top: 10px; }
+  .card, .callout { border: 1px solid var(--figma-color-border, #e6e6e6); border-radius: 6px; padding: 10px; display: grid; gap: 4px; }
+  .callout.error { border-color: var(--figma-color-border-danger, #f24822); }
+  .callout p { margin: 0; }
+  .between { justify-content: space-between; }
+  .actions { margin-top: 4px; }
+  .layer { border: 1px solid var(--figma-color-border, #e6e6e6); border-radius: 6px; padding: 8px; display: grid; gap: 4px; }
+  .layer.needs { border-color: var(--figma-color-border-warning, #ffc21a); }
+  .muted { color: var(--figma-color-text-secondary, #6b6b6b); }
+  .strong { font-weight: 600; }
+  .badge { font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 4px; background: var(--figma-color-bg-secondary, #f5f5f5); white-space: nowrap; }
+  .badge.kind-primitive, .badge.kind-raw { background: var(--figma-color-bg-warning-tertiary, #fff1c2); color: #6b4e00; }
+  .badge.kind-semantic { background: var(--figma-color-bg-success-tertiary, #cff7d3); color: #0b5d2a; }
+  .badge.kind-missing { background: var(--figma-color-bg-danger-tertiary, #ffe2e0); color: #9b1c0b; }
+  .flag { font-size: 11px; color: #8a6400; }
+  .pair { display: inline-flex; gap: 10px; }
+  .mode { display: inline-flex; align-items: center; gap: 4px; }
+  .mode-label { font-size: 11px; color: var(--figma-color-text-secondary, #6b6b6b); }
+  .swatch { position: relative; display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; overflow: hidden; border: 1px solid var(--figma-color-border, #e6e6e6); vertical-align: middle; font-size: 10px; flex: none;
+    background: repeating-conic-gradient(#d9d9d9 0 25%, #fff 0 50%) 0 0 / 8px 8px; }
+  .swatch .fill { position: absolute; inset: 0; }
+  .swatch.empty { background: none; border-style: dashed; color: var(--figma-color-text-secondary, #6b6b6b); }
+  .cell { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .issue .who { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; }
+  .picker { display: flex; align-items: center; gap: 6px; font-weight: 400; }
+  select { font: inherit; padding: 4px 6px; border: 1px solid var(--figma-color-border, #e6e6e6); border-radius: 5px; background: var(--figma-color-bg, #fff); color: inherit; max-width: 150px; }
+  .issues { gap: 4px; }
+  .issue { display: flex; gap: 6px; align-items: baseline; }
+  .issue.error .badge { background: var(--figma-color-bg-danger-tertiary, #ffe2e0); color: #9b1c0b; }
+  .issue.warning .badge { background: var(--figma-color-bg-warning-tertiary, #fff1c2); color: #6b4e00; }
+  .lead { margin: 0; font-size: 13px; }
+  ul.plain { list-style: disc; padding-left: 18px; gap: 4px; }
+  .ticks { gap: 8px; }
+  .tick { display: flex; gap: 8px; align-items: flex-start; }
+  .tick .mark { width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 11px; flex: none; background: var(--figma-color-bg-secondary, #f5f5f5); }
+  .tick.done .mark { background: var(--figma-color-bg-success, #14ae5c); color: #fff; }
+  .tick.failed .mark { background: var(--figma-color-bg-danger, #f24822); color: #fff; }
+  .tick > div { display: grid; gap: 6px; }
+  table.tokens { border-collapse: collapse; width: 100%; font-size: 11px; }
+  table.tokens th, table.tokens td { text-align: left; padding: 4px 6px 4px 0; border-bottom: 1px solid var(--figma-color-border, #e6e6e6); vertical-align: middle; }
+  pre.css { margin: 0; padding: 8px; border-radius: 6px; background: var(--figma-color-bg-secondary, #f5f5f5); font: 11px/1.45 ui-monospace, "SF Mono", Menlo, monospace; overflow-x: auto; white-space: pre; }
 </style>
 </head>
 <body>
@@ -36,19 +88,23 @@
       <label>Sync key <input type="password" id="key" autocomplete="off" placeholder="Paste the key from Token Library"></label>
       <p class="hint">In Token Library, open Sync to Figma and push Make a sync key.</p>
       <label>Token Library address <input type="text" id="url" autocomplete="off"></label>
-      <label>Primitives collection <input type="text" id="n-primitives" autocomplete="off"></label>
-      <label>Semantic collection <input type="text" id="n-semantic" autocomplete="off"></label>
-      <label>Components collection <input type="text" id="n-components" autocomplete="off"></label>
       <label class="row" style="display:flex;font-weight:400"><input type="checkbox" id="drafts"> Include draft tokens</label>
       <div class="row"><button id="save" type="button">Save settings</button></div>
     </div>
   </details>
-  <div class="row">
-    <button class="primary" id="check" type="button">Check for changes</button>
-    <button class="primary" id="sync" type="button" hidden>Sync</button>
+  <div class="tabs" role="tablist">
+    <button type="button" role="tab" id="tab-sync" aria-controls="panel-sync" aria-selected="true">Sync from tool</button>
+    <button type="button" role="tab" id="tab-scan" aria-controls="panel-scan" aria-selected="false">Scan component</button>
   </div>
-  <p class="status" id="status" role="status">Push Check for changes to compare Token Library with this file.</p>
-  <div id="result"></div>
+  <section id="panel-sync" role="tabpanel" aria-labelledby="tab-sync">
+    <div class="row">
+      <button class="primary" id="check" type="button">Check for changes</button>
+      <button class="primary" id="sync" type="button" hidden>Sync</button>
+    </div>
+    <p class="status" id="status" role="status">Push Check for changes to compare Token Library with this file.</p>
+    <div id="result"></div>
+  </section>
+  <section id="panel-scan" role="tabpanel" aria-labelledby="tab-scan" hidden></section>
 </main>
 <script>/*UI_SCRIPT*/</script>
 </body>

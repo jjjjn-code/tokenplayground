@@ -20,13 +20,13 @@ describe("resolving references", () => {
   });
 
   it("resolves every part of a composite token", () => {
-    expect(resolveToken(index, "text-body", "light").value).toEqual({
-      fontFamily: "Helvetica Neue, Arial, sans-serif",
-      fontSize: "16px",
-      fontWeight: 400,
-      lineHeight: 1.45,
-    });
     expect(resolveToken(index, "border-default", "dark").value).toEqual({ color: "#F6F6F6", width: "1px", style: "solid" });
+  });
+
+  it("resolves min and max, and reads a primitive's single value in any mode", () => {
+    expect(resolveToken(index, "space-s-l", "min")).toMatchObject({ value: 16, chain: ["space-s-l", "spacing-min-s"] });
+    expect(resolveToken(index, "space-s-l", "max").value).toBe(38);
+    expect(resolveToken(index, "spacing-base", "value")).toMatchObject({ value: 38, chain: ["spacing-base", "spacing-max-l"] });
   });
 
   it("keeps references as references when shown", () => {

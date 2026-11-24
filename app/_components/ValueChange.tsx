@@ -5,8 +5,9 @@ import { cn } from "@/lib/utils";
 import {
   formatValue,
   isReference,
+  modesOf,
   resolveToken,
-  type Layer,
+  valueInMode,
   type Mode,
   type Token,
   type TokenIndex,
@@ -43,21 +44,22 @@ function Value({ v, index, mode, tone }: { v: TokenValue | undefined; index: Tok
 }
 
 /**
- * Before and after for each mode, labelled Light and Dark. Changed values
+ * Before and after for each mode, labelled with the token's columns (Value,
+ * Light and Dark, Min and Max, Default and Reduced motion). Changed values
  * show the old one in red, struck through, and the new one in green.
  */
-export function ValueChange({ before, after, layer, index }: { before: Values; after: Values; layer: Layer; index: TokenIndex }) {
-  const modes: { mode: Mode; label: string }[] =
-    layer === "primitive" ? [{ mode: "light", label: "Value" }] : [{ mode: "light", label: "Light" }, { mode: "dark", label: "Dark" }];
-  const get = (s: Values, m: Mode) => (s ? (m === "dark" ? s.values.dark ?? s.values.light : s.values.light) : undefined);
+export function ValueChange({ before, after, token, index }: { before: Values; after: Values; token: Pick<Token, "layer" | "kind">; index: TokenIndex }) {
+  const modes = modesOf(token).map((m) => ({ mode: m.key, label: m.label }));
+  // History saved before column sets keeps values under `light`; valueInMode reads those too.
+  const get = (s: Values, m: Mode) => (s ? valueInMode({ ...token, values: s.values }, m) : undefined);
   return (
-    <div className="grid gap-1">
+    <div className="grid grid-cols-[max-content_minmax(0,1fr)] items-center gap-x-2 gap-y-1">
       {modes.map(({ mode, label }) => {
         const b = get(before, mode);
         const a = get(after, mode);
         const changed = JSON.stringify(b) !== JSON.stringify(a);
         return (
-          <div key={mode} className="grid grid-cols-[40px_minmax(0,1fr)] items-center gap-2">
+          <div key={mode} className="contents">
             <span className="text-[11px] font-medium text-muted-foreground">{label}</span>
             <span className="flex min-w-0 flex-wrap items-center gap-1">
               {!changed ? (

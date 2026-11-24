@@ -10,9 +10,11 @@ const prims: Token[] = [
 ];
 
 describe("references and layers", () => {
-  it("blocks a primitive that points to another token", () => {
-    const set = { tokens: [...prims, colour("red-700", "primitive", { ref: "orange-700" })] };
-    expect(codes(validateTokenSet(set))).toContain("ref.primitive");
+  it("allows a primitive to point to another primitive, but not upwards", () => {
+    const ok = { tokens: [...prims, colour("red-700", "primitive", { ref: "orange-700" })] };
+    expect(validateTokenSet(ok).filter((i) => i.severity === "error")).toEqual([]);
+    const up = { tokens: [...prims, colour("surface-brand", "semantic", { ref: "orange-700" }), colour("red-700", "primitive", { ref: "surface-brand" })] };
+    expect(codes(validateTokenSet(up))).toContain("ref.layer");
   });
 
   it("blocks pointing upwards or sideways between layers", () => {
@@ -36,7 +38,7 @@ describe("references and layers", () => {
   it("blocks a colour token pointing to a spacing token", () => {
     const set = {
       tokens: [
-        { name: "spacing-4", layer: "primitive" as const, kind: "spacing" as const, values: { light: "16px" }, status: "active" as const },
+        { name: "spacing-4", layer: "primitive" as const, kind: "spacing" as const, values: { value: "16px" }, status: "active" as const },
         colour("surface-default", "semantic", { ref: "spacing-4" }),
       ],
     };
@@ -65,8 +67,30 @@ describe("modes", () => {
   });
 
   it("blocks a dark value on a primitive", () => {
-    const t: Token = { ...colour("orange-700", "primitive", "#FF5000"), values: { light: "#FF5000", dark: "#FF8500" } };
+    const t: Token = { ...colour("orange-700", "primitive", "#FF5000"), values: { value: "#FF5000", dark: "#FF8500" } };
     expect(codes(validateTokenSet({ tokens: [t] }))).toContain("mode.primitive");
+  });
+
+  it("blocks a fluid token without a max value, or with a max that is not a size", () => {
+    const set = dummy();
+    const noMax: Token = { name: "space-test", layer: "semantic", kind: "spacing", values: { min: { ref: "spacing-min-s" } }, status: "active" };
+    expect(checkBeforeSave(set, [noMax]).issues.map((i) => i.code)).toContain("mode.missing");
+    const notSize: Token = { ...noMax, values: { min: { ref: "spacing-min-s" }, max: { ref: "font-family-body" } } };
+    expect(checkBeforeSave(set, [notSize]).issues.map((i) => i.code)).toContain("value.fluid");
+  });
+
+  it("lets fluid type refer to spacing sizes, for example paragraph spacing", () => {
+    const set = dummy();
+    const t: Token = { name: "paragraph-spacing-step-1", layer: "semantic", kind: "typography", values: { min: { ref: "spacing-min-m" }, max: { ref: "spacing-max-m" } }, status: "active" };
+    expect(checkBeforeSave(set, [t]).ok).toBe(true);
+  });
+
+  it("gives motion primitives 1 value, and semantic motion default and reduced motion", () => {
+    const set = dummy();
+    const twoValues: Token = { name: "duration-quick", layer: "primitive", kind: "motion", values: { value: "100ms", "reduced-motion": "0ms" }, status: "active" };
+    expect(checkBeforeSave(set, [twoValues]).issues.map((i) => i.code)).toContain("mode.primitive");
+    const noReduced: Token = { name: "duration-quick", layer: "semantic", kind: "motion", values: { default: { ref: "duration-fast" } }, status: "active" };
+    expect(checkBeforeSave(set, [noReduced]).issues.map((i) => i.code)).toContain("mode.missing");
   });
 
   it("notes when a token is the same colour in both modes", () => {

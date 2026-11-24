@@ -21,15 +21,270 @@
   var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 
   // src/lib/tokens/rules.ts
+  var COMPONENT_CATEGORIES = ["surface", "content", "line", "icon"];
+  var SEMANTIC_CATEGORIES = ["surface", "content", "line"];
+  var SEMANTIC_VARIANTS = [
+    "default",
+    "elevated",
+    "inverse",
+    "primary",
+    "secondary",
+    "disabled",
+    "on-inverse",
+    "success",
+    "danger",
+    "success-on-inverse",
+    "danger-on-inverse"
+  ];
+  var SUGGESTED_STATES = [
+    "default",
+    "hover",
+    "pressed",
+    "disabled",
+    "selected",
+    "loading",
+    "on",
+    "off"
+  ];
+  var FORBIDDEN_STATES = ["focus", "focused", "focusvisible"];
   var DEFAULT_FIGMA_GROUP = "Interactive";
+  var LAYERS_BY_KIND = {
+    color: ["primitive", "semantic", "component"],
+    spacing: ["primitive", "semantic"],
+    sizing: ["primitive", "semantic"],
+    typography: ["primitive", "semantic"],
+    radius: ["primitive", "semantic"],
+    border: ["primitive", "semantic"],
+    shadow: ["primitive", "semantic"],
+    motion: ["primitive", "semantic"]
+  };
+  var COLUMN_SETS = {
+    value: { title: "Value", modes: [{ key: "value", label: "Value" }] },
+    motion: {
+      title: "Default and reduced motion",
+      modes: [
+        { key: "default", label: "Default" },
+        { key: "reduced-motion", label: "Reduced motion" }
+      ]
+    },
+    theme: {
+      title: "Light and dark",
+      modes: [
+        { key: "light", label: "Light" },
+        { key: "dark", label: "Dark" }
+      ]
+    },
+    fluid: {
+      title: "Min and max",
+      modes: [
+        { key: "min", label: "Min" },
+        { key: "max", label: "Max" }
+      ]
+    }
+  };
+  function columnSetFor(layer, kind) {
+    if (layer === "primitive") return "value";
+    switch (kind) {
+      case "color":
+      case "border":
+      case "shadow":
+        return "theme";
+      case "spacing":
+      case "sizing":
+      case "typography":
+        return "fluid";
+      case "motion":
+        return "motion";
+      default:
+        return "value";
+    }
+  }
+  var FLUID_VIEWPORT = { min: 400, max: 1600, rootFontSize: 16 };
+  var NON_COLOUR_PREFIXES = {
+    primitive: {
+      spacing: ["spacing", "grid"],
+      sizing: ["size"],
+      typography: ["font-family", "font-size", "font-weight", "line-height"],
+      radius: ["radius"],
+      border: ["border"],
+      shadow: ["shadow"],
+      motion: ["duration", "ease"]
+    },
+    semantic: {
+      spacing: ["space", "grid"],
+      sizing: ["size"],
+      typography: ["step", "paragraph-spacing", "text"],
+      radius: ["radius"],
+      border: ["border"],
+      shadow: ["shadow"],
+      motion: ["duration", "ease"]
+    }
+  };
+  var LAYER_RANK = { primitive: 0, semantic: 1, component: 2 };
 
   // src/lib/tokens/naming.ts
+  var slug = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  function normaliseComponentName(input) {
+    const s = slug(input.trim());
+    return { slug: s, changed: input.trim() !== s };
+  }
+  function buildComponentTokenName(p) {
+    return [p.component, p.category, p.role, p.state].filter(Boolean).join("-");
+  }
   function parseComponentTokenName(name) {
     const segs = name.split("-");
     if (segs.length < 3 || segs.length > 4) return null;
     const [component, category, ...rest] = segs;
     if (rest.length === 1) return { component, category, state: rest[0] };
     return { component, category, role: rest[0], state: rest[1] };
+  }
+  var SEGMENT = /^[a-z0-9]+$/;
+  var HYPHENATED = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+  function issue(severity, code, message, token) {
+    return { severity, code, message, token };
+  }
+  var CATEGORY_SYNONYMS = {
+    background: "surface",
+    bg: "surface",
+    fill: "surface",
+    backdrop: "surface",
+    text: "content",
+    foreground: "content",
+    fg: "content",
+    font: "content",
+    label: "content",
+    border: "line",
+    stroke: "line",
+    outline: "line",
+    divider: "line",
+    separator: "line",
+    rule: "line",
+    icons: "icon",
+    glyph: "icon"
+  };
+  function categoryMessage(category, allowed) {
+    const suggestion = CATEGORY_SYNONYMS[category];
+    if (suggestion && allowed.includes(suggestion)) {
+      return `"${category}" is not a category in our system. Do you mean "${suggestion}"?`;
+    }
+    const list = allowed.length === 3 ? `${allowed[0]}, ${allowed[1]} or ${allowed[2]}` : `${allowed.slice(0, -1).join(", ")} or ${allowed[allowed.length - 1]}`;
+    return `"${category}" is not a category. Use ${list}.`;
+  }
+  function checkName(token) {
+    const n = token.name;
+    const out = [];
+    if (!n) return [issue("error", "name.empty", "The name is empty. Type a name for the token.")];
+    const prefix = n.startsWith("--color-") ? "--color-" : n.startsWith("--") ? "--" : n.startsWith("color-") ? "color-" : null;
+    if (prefix) {
+      const clean = n.slice(prefix.length);
+      out.push(issue("error", "name.prefix", `Do not type the prefix "${prefix}". Type "${clean}". The prefix is added in the code.`, n));
+      return out;
+    }
+    if (!HYPHENATED.test(n)) {
+      const bad = [...new Set(n.replace(/[a-z0-9-]/g, "").split(""))].join("");
+      out.push(
+        issue(
+          "error",
+          "name.characters",
+          bad ? `Use only letters, numbers and hyphens. Remove "${bad}".` : "Use 1 hyphen between parts. Do not start or end the name with a hyphen.",
+          n
+        )
+      );
+      return out;
+    }
+    if (token.kind !== "color") return [...out, ...checkNonColourName(token)];
+    switch (token.layer) {
+      case "primitive":
+        out.push(...checkPrimitiveColourName(n));
+        break;
+      case "semantic":
+        out.push(...checkSemanticColourName(n));
+        break;
+      case "component":
+        out.push(...checkComponentName(token));
+        break;
+    }
+    return out;
+  }
+  function checkPrimitiveColourName(n) {
+    const first = n.split("-")[0];
+    if (COMPONENT_CATEGORIES.includes(first)) {
+      return [issue("error", "name.primitive.category", "This is a semantic name. For a primitive, use the format [colour]-[step]. Example: orange-700.", n)];
+    }
+    if (!/^[a-z]+(-\d+)?(-[a-z0-9]+)?$/.test(n)) {
+      return [issue("error", "name.primitive.pattern", "Use the format [colour]-[step]. Example: orange-700.", n)];
+    }
+    return [];
+  }
+  function checkSemanticColourName(n) {
+    const [category, ...rest] = n.split("-");
+    const variant = rest.join("-");
+    if (category === "icon") {
+      return [issue("error", "name.semantic.category", 'Do not use "icon" for a semantic token. Start the name with surface, content or line.', n)];
+    }
+    if (!SEMANTIC_CATEGORIES.includes(category)) {
+      return [issue("error", "name.semantic.category", categoryMessage(category, SEMANTIC_CATEGORIES), n)];
+    }
+    if (!variant) {
+      return [issue("error", "name.semantic.variant", `Add a variant to the name. Example: ${category}-default.`, n)];
+    }
+    if (!SEMANTIC_VARIANTS.includes(variant)) {
+      return [issue("info", "name.semantic.new-variant", `"${variant}" is a new variant. Make sure that the design system needs it.`, n)];
+    }
+    return [];
+  }
+  function checkComponentName(token) {
+    var _a;
+    const n = token.name;
+    const out = [];
+    const segs = n.split("-");
+    const component = (_a = token.component) != null ? _a : segs[0];
+    if (segs.length < 3) {
+      const missing = segs.length === 1 ? "The category and the state are missing." : "The state is missing. Add a state to the end of the name.";
+      const example = segs.length === 2 ? `${segs[0]}-${segs[1]}-default` : `${component}-surface-default`;
+      return [issue("error", "name.component.segments", `${missing} Example: ${example}.`, n)];
+    }
+    if (segs.length > 4) {
+      const extra = segs.slice(4);
+      return [
+        issue(
+          "error",
+          "name.component.segments",
+          `Token names use the format [component]-[category]-[role]-[state]. This name has ${extra.length} extra ${extra.length === 1 ? "part" : "parts"}: "${extra.join("-")}". Ask the design system team if you need help.`,
+          n
+        )
+      ];
+    }
+    const p = parseComponentTokenName(n);
+    if (!token.component) {
+      out.push(issue("error", "name.component.missing", "Select a component for this token.", n));
+    } else if (p.component !== token.component) {
+      out.push(issue("error", "name.component.mismatch", `Start the name with "${token.component}-".`, n));
+    }
+    if (!COMPONENT_CATEGORIES.includes(p.category)) {
+      out.push(issue("error", "name.component.category", categoryMessage(p.category, COMPONENT_CATEGORIES), n));
+    }
+    for (const s of [p.component, p.role, p.state]) {
+      if (s !== void 0 && !SEGMENT.test(s)) {
+        out.push(issue("error", "name.component.segment", `Use 1 word for each part. Change "${s}".`, n));
+      }
+    }
+    if (FORBIDDEN_STATES.includes(p.state)) {
+      out.push(issue("error", "name.component.focus", "Do not make focus tokens. The system default shows focus.", n));
+    }
+    return out;
+  }
+  function checkNonColourName(token) {
+    const n = token.name;
+    const layer = token.layer === "primitive" ? "primitive" : "semantic";
+    const prefixes = NON_COLOUR_PREFIXES[layer][token.kind];
+    const ok = prefixes.some((p) => n === p || n.startsWith(`${p}-`));
+    if (!ok) {
+      return [
+        issue("error", "name.kind.prefix", `Start the name with "${prefixes[0]}-". Example: ${prefixes[0]}-small. This rule is temporary.`, n)
+      ];
+    }
+    return [];
   }
   function cssVariableName(token) {
     if (token.kind === "color" && token.layer !== "component") return `--color-${token.name}`;
@@ -53,12 +308,99 @@
   var isReference = (v) => typeof v === "object" && v !== null && "ref" in v && typeof v.ref === "string";
   var isComposite = (v) => typeof v === "object" && v !== null && !isReference(v);
 
+  // src/lib/tokens/references.ts
+  var indexTokens = (set) => new Map(set.tokens.map((t) => [t.name, t]));
+  var columnSetOf = (t) => columnSetFor(t.layer, t.kind);
+  var modesOf = (t) => [...COLUMN_SETS[columnSetOf(t)].modes];
+  var defaultMode = (t) => COLUMN_SETS[columnSetOf(t)].modes[0].key;
+  function valueInMode(t, mode) {
+    var _a, _b;
+    if (t.values[mode] !== void 0) return t.values[mode];
+    const d = t.values[defaultMode(t)];
+    if (d !== void 0) return d;
+    return (_b = (_a = t.values.light) != null ? _a : Object.values(t.values)[0]) != null ? _b : "";
+  }
+  var defaultValue = (t) => valueInMode(t, defaultMode(t));
+  function referencesIn(v) {
+    if (v === void 0) return [];
+    if (isReference(v)) return [v.ref];
+    if (isComposite(v)) return Object.values(v).flatMap((p) => isReference(p) ? [p.ref] : []);
+    return [];
+  }
+  function referencesOf(t) {
+    return [...new Set(Object.values(t.values).flatMap((v) => referencesIn(v)))];
+  }
+  function resolveToken(index, name, mode) {
+    const t = index.get(name);
+    if (!t) return { value: null, chain: [], error: { kind: "missing", ref: name } };
+    return resolveValue(index, valueInMode(t, mode), mode, [name]);
+  }
+  function resolveValue(index, v, mode, chain) {
+    if (isReference(v)) return resolveSimple(index, v, mode, chain);
+    if (isComposite(v)) {
+      const out = {};
+      for (const [k, part] of Object.entries(v)) {
+        const r = resolveSimple(index, part, mode, chain);
+        if (r.error) return { value: null, chain, error: r.error };
+        out[k] = r.value;
+      }
+      return { value: out, chain };
+    }
+    return { value: v, chain };
+  }
+  function resolveSimple(index, v, mode, chain) {
+    if (!isReference(v)) return { value: v, chain };
+    if (chain.includes(v.ref)) return { value: null, chain, error: { kind: "cycle", chain: [...chain, v.ref] } };
+    const target = index.get(v.ref);
+    if (!target) return { value: null, chain, error: { kind: "missing", ref: v.ref } };
+    return resolveValue(index, valueInMode(target, mode), mode, [...chain, v.ref]);
+  }
+  function formatValue(v) {
+    if (v === void 0) return "none";
+    if (isReference(v)) return `{${v.ref}}`;
+    if (isComposite(v)) {
+      return Object.entries(v).map(([k, p]) => `${k}: ${formatValue(p)}`).join(", ");
+    }
+    return String(v);
+  }
+
   // src/lib/figma/plan.ts
-  var COLLECTION_MODES = {
-    primitives: ["Value"],
-    semantic: ["Light", "Dark"],
-    components: ["Light", "Dark"]
+  var COLLECTIONS = {
+    "colour-primitives": { name: "Colour primitives", columns: "value" },
+    "type-primitives": { name: "Type primitives", columns: "value" },
+    "space-primitives": { name: "Space primitives", columns: "value" },
+    "other-primitives": { name: "Other primitives", columns: "value" },
+    // The Motion collection in Figma has 2 modes; primitives write to its first mode only.
+    motion: { name: "Motion", columns: "value" },
+    "motion-tokens": { name: "Motion tokens", columns: "motion" },
+    "colour-tokens": { name: "Colour tokens", columns: "theme" },
+    "fluid-tokens": { name: "Fluid tokens", columns: "fluid" },
+    "other-tokens": { name: "Other tokens", columns: "value" }
   };
+  var collectionModes = (key) => COLUMN_SETS[COLLECTIONS[key].columns].modes;
+  var modeKeyOf = (name) => name.trim().toLowerCase().replace(/\s+/g, "-");
+  function collectionFor(t) {
+    if (t.layer === "primitive") {
+      switch (t.kind) {
+        case "color":
+          return "colour-primitives";
+        case "typography":
+          return "type-primitives";
+        case "spacing":
+        case "sizing":
+          return "space-primitives";
+        case "motion":
+          return "motion";
+        default:
+          return "other-primitives";
+      }
+    }
+    const set = columnSetOf(t);
+    if (set === "motion") return "motion-tokens";
+    if (set === "theme") return "colour-tokens";
+    if (set === "fluid") return "fluid-tokens";
+    return "other-tokens";
+  }
   var KIND_TITLE = {
     color: "Colour",
     spacing: "Spacing",
@@ -66,7 +408,8 @@
     typography: "Typography",
     radius: "Radius",
     border: "Border",
-    shadow: "Shadow"
+    shadow: "Shadow",
+    motion: "Motion"
   };
   var title2 = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
   function hexToRgba(hex) {
@@ -79,15 +422,15 @@
   }
   function variableName(t, group = DEFAULT_FIGMA_GROUP) {
     var _a;
+    if (t.figma) return t.figma;
     if (t.layer === "component") return (_a = figmaPath(t, group)) != null ? _a : `${group}/${t.name}`;
-    if (t.layer === "semantic" && t.kind === "color") return `${title2(t.name.split("-")[0])}/${t.name}`;
+    if (t.kind === "color") return t.layer === "primitive" ? t.name : `Base/${title2(t.name.split("-")[0])}/${t.name}`;
     return `${KIND_TITLE[t.kind]}/${t.name}`;
   }
   function typeFor(t) {
     if (t.kind === "color") return "COLOR";
-    const v = t.values.light;
-    if (isComposite(v)) return null;
-    if (t.name.startsWith("font-family")) return "STRING";
+    if (Object.values(t.values).some((v) => isComposite(v))) return null;
+    if (t.name.startsWith("font-family") || t.name.startsWith("ease")) return "STRING";
     return "FLOAT";
   }
   function valueFor(v, type) {
@@ -101,7 +444,7 @@
     return Number.isFinite(n) ? { kind: "float", value: n } : null;
   }
   function buildSpecs(set, opts = {}) {
-    var _a, _b;
+    var _a;
     const specs = [];
     const skipped = [];
     const byName = new Map(set.tokens.map((t) => [t.name, t]));
@@ -119,30 +462,34 @@
         skipped.push({ token: t.name, reason: `Figma variables cannot hold a ${t.kind} token with several parts. Use a Figma style for it.` });
         continue;
       }
-      const light = valueFor(t.values.light, type);
-      const darkRaw = t.layer === "primitive" ? void 0 : (_a = t.values.dark) != null ? _a : t.values.light;
-      const dark = darkRaw === void 0 ? void 0 : valueFor(darkRaw, type);
-      if (!light || darkRaw !== void 0 && !dark) {
+      const collection = collectionFor(t);
+      const values = {};
+      let bad = false;
+      for (const m of modesOf(t)) {
+        const v = valueFor(valueInMode(t, m.key), type);
+        if (!v) bad = true;
+        else values[m.key] = v;
+      }
+      if (bad) {
         skipped.push({ token: t.name, reason: "The value cannot become a Figma variable value." });
         continue;
       }
-      const missingAlias = [light, dark].find((v) => (v == null ? void 0 : v.kind) === "alias" && !syncable(v.token));
+      const missingAlias = Object.values(values).find((v) => v.kind === "alias" && !syncable(v.token));
       if (missingAlias && missingAlias.kind === "alias") {
         skipped.push({ token: t.name, reason: `It refers to ${missingAlias.token}, which is not synced.` });
         continue;
       }
       const p = t.layer === "component" ? parseComponentTokenName(t.name) : null;
-      specs.push(__spreadProps(__spreadValues({
+      specs.push({
         token: t.name,
-        collection: t.layer === "primitive" ? "primitives" : t.layer === "semantic" ? "semantic" : "components",
+        collection,
         name: variableName(t, opts.group),
         type,
-        light
-      }, dark ? { dark } : {}), {
+        values,
         hiddenFromPublishing: !isPublishedInFigma(t) || t.status === "deprecated",
-        description: [t.status === "deprecated" ? "Deprecated." : "", (_b = t.description) != null ? _b : "", p && p.state !== "default" ? `State: ${p.state}.` : ""].filter(Boolean).join(" "),
+        description: [t.status === "deprecated" ? "Deprecated." : "", (_a = t.description) != null ? _a : "", p && p.state !== "default" ? `State: ${p.state}.` : ""].filter(Boolean).join(" "),
         codeSyntax: `var(${cssVariableName(t)})`
-      }));
+      });
     }
     let changed = true;
     while (changed) {
@@ -150,7 +497,7 @@
       const names = new Set(specs.map((s) => s.token));
       for (let i = specs.length - 1; i >= 0; i -= 1) {
         const s = specs[i];
-        const bad = [s.light, s.dark].find((v) => (v == null ? void 0 : v.kind) === "alias" && !names.has(v.token));
+        const bad = Object.values(s.values).find((v) => v.kind === "alias" && !names.has(v.token));
         if (bad && bad.kind === "alias") {
           skipped.push({ token: s.token, reason: `It refers to ${bad.token}, which is not synced.` });
           specs.splice(i, 1);
@@ -178,8 +525,9 @@
     }
     return String(v.value);
   }
-  function planSync(specs, existing, skipped = []) {
+  function planSync(specs, existing, alreadySkipped = []) {
     var _a, _b, _c;
+    const skipped = [...alreadySkipped];
     const byToken = new Map(existing.filter((e) => e.token).map((e) => [e.token, e]));
     const byName = new Map(existing.filter((e) => e.collection).map((e) => [`${e.collection}|${e.name}`, e]));
     const used = /* @__PURE__ */ new Set();
@@ -193,12 +541,15 @@
         continue;
       }
       used.add(e.id);
+      if (e.type !== s.type) {
+        skipped.push({ token: s.token, reason: `In Figma, ${e.name} is a ${e.type} variable; the tool would make a ${s.type} variable. Change it by hand in Figma.` });
+        continue;
+      }
       const d = [];
       if (e.name !== s.name) d.push(`Name: ${e.name} \u2192 ${s.name}`);
-      if (e.type !== s.type) d.push(`Type: ${e.type} \u2192 ${s.type}`);
-      const lightLabel = s.collection === "primitives" ? "Value" : "Light";
-      if (!sameValue(e.light, s.light)) d.push(`${lightLabel}: ${describeValue(e.light)} \u2192 ${describeValue(s.light)}`);
-      if (s.dark && !sameValue(e.dark, s.dark)) d.push(`Dark: ${describeValue(e.dark)} \u2192 ${describeValue(s.dark)}`);
+      for (const m of collectionModes(s.collection)) {
+        if (!sameValue(e.values[m.key], s.values[m.key])) d.push(`${m.label}: ${describeValue(e.values[m.key])} \u2192 ${describeValue(s.values[m.key])}`);
+      }
       if (e.hiddenFromPublishing !== s.hiddenFromPublishing) d.push(s.hiddenFromPublishing ? "Hidden from publishing" : "Published");
       if (((_b = e.description) != null ? _b : "") !== s.description) d.push("Description");
       if (((_c = e.codeSyntax) != null ? _c : "") !== s.codeSyntax) d.push("Code syntax");
@@ -209,17 +560,15 @@
     const remove = existing.filter((e) => e.token && !used.has(e.id) && !specs.some((s) => s.token === e.token));
     return { add, change, remove, unchanged, skipped };
   }
-  function modeValues(s) {
-    var _a;
-    return s.collection === "primitives" ? { Value: s.light } : { Light: s.light, Dark: (_a = s.dark) != null ? _a : s.light };
-  }
 
   // src/lib/figma/apply.ts
-  var DEFAULT_COLLECTION_NAMES = {
-    primitives: "Primitives",
-    semantic: "Semantic",
-    components: "Components"
-  };
+  var DEFAULT_COLLECTION_NAMES = Object.fromEntries(
+    Object.entries(COLLECTIONS).map(([k, c]) => [k, c.name])
+  );
+  function findMode(c, key, mode) {
+    if (collectionModes(key).length === 1) return c.modes[0];
+    return c.modes.find((m) => modeKeyOf(m.name) === mode);
+  }
   var KEY = "tokenLibrary";
   function collectionKeyOf(c, names) {
     const stored = c.getPluginData(KEY);
@@ -244,27 +593,26 @@
     const byId = new Map(variables.map((v) => [v.id, v]));
     const colById = new Map(collections.map((c) => [c.id, c]));
     return variables.map((v) => {
-      var _a, _b, _c, _d, _e;
+      var _a, _b, _c;
       const c = colById.get(v.variableCollectionId);
       const key = c ? collectionKeyOf(c, names) : null;
-      const mode = (n) => {
-        var _a2;
-        return (_a2 = c == null ? void 0 : c.modes.find((m) => m.name === n)) == null ? void 0 : _a2.modeId;
-      };
-      const first = (_a = c == null ? void 0 : c.modes[0]) == null ? void 0 : _a.modeId;
-      const lightId = key === "primitives" ? (_b = mode("Value")) != null ? _b : first : (_c = mode("Light")) != null ? _c : first;
-      const darkId = key && key !== "primitives" ? mode("Dark") : void 0;
+      const values = {};
+      if (c && key) {
+        for (const m of collectionModes(key)) {
+          const id = (_a = findMode(c, key, m.key)) == null ? void 0 : _a.modeId;
+          values[m.key] = id ? toFigmaValue(v.valuesByMode[id], byId) : void 0;
+        }
+      }
       return {
         id: v.id,
         token: v.getPluginData("token") || void 0,
         collection: key,
         name: v.name,
         type: v.resolvedType,
-        light: lightId ? toFigmaValue(v.valuesByMode[lightId], byId) : void 0,
-        dark: darkId ? toFigmaValue(v.valuesByMode[darkId], byId) : void 0,
+        values,
         hiddenFromPublishing: v.hiddenFromPublishing,
-        description: (_d = v.description) != null ? _d : "",
-        codeSyntax: (_e = v.codeSyntax) == null ? void 0 : _e.WEB
+        description: (_b = v.description) != null ? _b : "",
+        codeSyntax: (_c = v.codeSyntax) == null ? void 0 : _c.WEB
       };
     });
   }
@@ -275,9 +623,11 @@
       let c = all.find((x) => collectionKeyOf(x, names) === key);
       if (!c) c = api2.createVariableCollection(names[key]);
       c.setPluginData(KEY, key);
-      const wanted = COLLECTION_MODES[key];
-      if (!c.modes.some((m) => m.name === wanted[0])) c.renameMode(c.modes[0].modeId, wanted[0]);
-      for (const w of wanted.slice(1)) if (!c.modes.some((m) => m.name === w)) c.addMode(w);
+      const wanted = collectionModes(key);
+      if (c.modes.length === 1 && modeKeyOf(c.modes[0].name) === "mode-1") {
+        c.renameMode(c.modes[0].modeId, wanted[0].label);
+      }
+      for (const w of wanted) if (!findMode(c, key, w.key)) c.addMode(w.label);
       out.set(key, c);
     }
     return out;
@@ -299,11 +649,8 @@
     const byId = new Map(all.map((v) => [v.id, v]));
     const varFor = /* @__PURE__ */ new Map();
     for (const c of plan.change) {
-      let v = byId.get(c.existing.id);
-      if (v.resolvedType !== c.spec.type) {
-        v.remove();
-        v = api2.createVariable(c.spec.name, collections.get(c.spec.collection), c.spec.type);
-      } else if (v.name !== c.spec.name) v.name = c.spec.name;
+      const v = byId.get(c.existing.id);
+      if (v.name !== c.spec.name) v.name = c.spec.name;
       v.setPluginData("token", c.spec.token);
       varFor.set(c.spec.token, v);
     }
@@ -321,8 +668,8 @@
     for (const s of work) {
       const v = varFor.get(s.token);
       const c = collections.get(s.collection);
-      for (const [modeName, value] of Object.entries(modeValues(s))) {
-        const modeId = c.modes.find((m) => m.name === modeName).modeId;
+      for (const [mode, value] of Object.entries(s.values)) {
+        const modeId = findMode(c, s.collection, mode).modeId;
         v.setValueForMode(modeId, toRaw(value, tokenVars, api2));
       }
       v.hiddenFromPublishing = s.hiddenFromPublishing;
@@ -336,11 +683,866 @@
     }) };
   }
 
+  // src/lib/tokens/fluid.ts
+  function toPx(v, rootFontSize = FLUID_VIEWPORT.rootFontSize) {
+    if (typeof v === "number") return Number.isFinite(v) ? v : null;
+    if (typeof v !== "string") return null;
+    const m = /^\s*(-?\d*\.?\d+)\s*(px|rem)?\s*$/.exec(v);
+    if (!m) return null;
+    const n = Number(m[1]);
+    return m[2] === "rem" ? n * rootFontSize : n;
+  }
+  var round = (n) => String(Number(n.toFixed(4)));
+  function fluidClamp(minPx, maxPx, viewport = FLUID_VIEWPORT) {
+    const rem = (px) => px / viewport.rootFontSize;
+    if (minPx === maxPx) return `${round(rem(minPx))}rem`;
+    const slope = (maxPx - minPx) / (viewport.max - viewport.min);
+    const intercept = minPx - slope * viewport.min;
+    const lower = Math.min(minPx, maxPx);
+    const upper = Math.max(minPx, maxPx);
+    const vw = round(slope * 100);
+    const middle = `${round(rem(intercept))}rem ${vw.startsWith("-") ? "-" : "+"} ${vw.replace(/^-/, "")}vw`;
+    return `clamp(${round(rem(lower))}rem, ${middle}, ${round(rem(upper))}rem)`;
+  }
+
+  // src/lib/tokens/validate.ts
+  var HEX = /^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/;
+  var kindWord = (k) => k === "color" ? "colour" : k;
+  var SIZE_KINDS = ["spacing", "sizing", "typography"];
+  function validateTokenSet(set) {
+    const index = indexTokens(set);
+    const out = [];
+    out.push(...checkDuplicates(set));
+    for (const t of set.tokens) out.push(...checkToken(t, index));
+    out.push(...checkComponents(set));
+    return out;
+  }
+  function checkDuplicates(set) {
+    const seen = /* @__PURE__ */ new Set();
+    const dupes = /* @__PURE__ */ new Set();
+    for (const t of set.tokens) (seen.has(t.name) ? dupes : seen).add(t.name);
+    return [...dupes].map((n) => ({
+      severity: "error",
+      code: "name.duplicate",
+      message: "This name is already used. Type a different name.",
+      token: n
+    }));
+  }
+  function checkToken(t, index) {
+    var _a;
+    const out = [...checkName(t)];
+    const err = (code, message) => out.push({ severity: "error", code, message, token: t.name });
+    const warn = (code, message) => out.push({ severity: "warning", code, message, token: t.name });
+    const info = (code, message) => out.push({ severity: "info", code, message, token: t.name });
+    if (!LAYERS_BY_KIND[t.kind].includes(t.layer)) {
+      err(
+        "layer.kind",
+        "Only colour tokens can be component tokens. Make this a primitive or a semantic token."
+      );
+    }
+    if (t.layer !== "component" && t.component) {
+      err("layer.component", `A ${t.layer} token cannot be part of a component. Remove the component.`);
+    }
+    const set = columnSetOf(t);
+    const modes = modesOf(t);
+    const label = (key) => {
+      var _a2, _b;
+      return (_b = (_a2 = modes.find((m) => m.key === key)) == null ? void 0 : _a2.label.toLowerCase()) != null ? _b : key;
+    };
+    const extra = Object.keys(t.values).filter((k) => !modes.some((m) => m.key === k));
+    if (extra.length) {
+      if (set === "value") err("mode.primitive", `Remove the ${extra.join(" and ")} value. A primitive has 1 value for all modes.`);
+      else err("mode.extra", `Remove the ${extra.join(" and ")} value. This token has ${modes.map((m) => m.label.toLowerCase()).join(" and ")} values.`);
+    }
+    const optional = set === "theme" && t.kind !== "color";
+    const missing = optional ? [] : modes.filter((m) => t.values[m.key] === void 0);
+    if (missing.length) {
+      err("mode.missing", `The ${missing.map((m) => m.label.toLowerCase()).join(" and ")} value is empty. Select a ${missing[0].label.toLowerCase()} value.`);
+    }
+    if (set === "theme" && t.kind === "color" && t.values.dark !== void 0) {
+      const l = resolveToken(index, t.name, "light");
+      const d = resolveToken(index, t.name, "dark");
+      if (!l.error && !d.error && l.value !== "" && l.value === d.value) {
+        info("mode.same", `This token is ${String(l.value)} in light and dark. This is correct for brand colours. For other tokens, make sure that this is correct.`);
+      }
+    }
+    const isEmpty = (v) => v === "" || v !== void 0 && isComposite(v) && Object.values(v).some((p) => p === "");
+    const emptyModes = modes.filter((m) => isEmpty(t.values[m.key])).map((m) => m.key);
+    if (emptyModes.length) {
+      const present = modes.filter((m) => t.values[m.key] !== void 0);
+      if (present.length <= 1) err("value.empty", "The value is empty. Select a token or type a value.");
+      else if (emptyModes.length === present.length) {
+        err("value.empty", `The ${present.map((m) => m.label.toLowerCase()).join(" and ")} values are empty. ${present.map((m) => `Select a ${m.label.toLowerCase()} value`).join(" and ")}.`.replace(/ and Select/, " and select"));
+      } else err("value.empty", `The ${label(emptyModes[0])} value is empty. Select a ${label(emptyModes[0])} value.`);
+    }
+    for (const v of Object.values(t.values)) {
+      if (v === void 0 || isEmpty(v)) continue;
+      if (t.layer !== "primitive" && hasRawSimpleValue(v)) {
+        warn("ref.raw", "This token has a raw value. Semantic and component tokens must refer to a token. Select a token.");
+      }
+      if (t.kind === "color" && typeof v === "string" && !HEX.test(v)) {
+        err("value.colour", `"${v}" is not a colour. Type a hex value. Example: #FF5000.`);
+      }
+      if (set === "fluid" && isComposite(v)) {
+        err("value.fluid", "A fluid token has 1 size for min and 1 size for max. Select a size token.");
+      }
+    }
+    if (set === "fluid" && !emptyModes.length && !missing.length) {
+      for (const m of modes) {
+        const r = resolveToken(index, t.name, m.key);
+        if (!r.error && toPx(r.value) === null) {
+          err("value.fluid", `The ${m.label.toLowerCase()} value is ${String(r.value)}, which is not a size. Select a size token. Example: ${t.kind === "typography" ? "font-size-min-step-0" : "spacing-min-s"}.`);
+          break;
+        }
+      }
+    }
+    for (const ref of referencesOf(t)) {
+      const target = index.get(ref);
+      if (!target) {
+        err("ref.missing", `The token "${ref}" does not exist. Select a different token.`);
+        continue;
+      }
+      const sameLayerOk = t.layer === "primitive" && target.layer === "primitive";
+      if (!sameLayerOk && LAYER_RANK[target.layer] >= LAYER_RANK[t.layer]) {
+        err("ref.layer", `A ${t.layer} token cannot refer to a ${target.layer} token. Select a token from a lower layer: ${t.layer === "component" ? "primitive or semantic" : "primitive"}.`);
+      }
+      const simple = Object.values(t.values).some((v) => isReference(v) && v.ref === ref);
+      if (simple && target.kind !== t.kind && !(SIZE_KINDS.includes(t.kind) && SIZE_KINDS.includes(target.kind))) {
+        err("ref.kind", `A ${kindWord(t.kind)} token cannot refer to a ${kindWord(target.kind)} token. Select a ${kindWord(t.kind)} token.`);
+      }
+      if (t.layer === "component" && target.layer === "semantic" && t.kind === "color") {
+        const cat = t.name.split("-")[1];
+        const targetCat = target.name.split("-")[0];
+        if (cat && targetCat !== cat && !(cat === "icon" && targetCat === "content")) {
+          warn("ref.category", `This ${cat} token refers to a ${targetCat} token. Make sure that this is correct.`);
+        }
+      }
+      if (target.status === "deprecated" && t.status !== "deprecated") {
+        warn("ref.deprecated", `"${ref}" is deprecated. Select a different token.`);
+      }
+    }
+    for (const { key: mode } of modes) {
+      const r = resolveToken(index, t.name, mode);
+      if (((_a = r.error) == null ? void 0 : _a.kind) === "cycle") {
+        err("ref.cycle", `The references make a loop: ${r.error.chain.join(" > ")}. Change 1 of the references.`);
+        break;
+      }
+    }
+    return out;
+  }
+  function hasRawSimpleValue(v) {
+    return !isReference(v) && !isComposite(v);
+  }
+  function checkComponents(set) {
+    var _a, _b;
+    const out = [];
+    const byComponent = /* @__PURE__ */ new Map();
+    for (const t of set.tokens) {
+      if (t.layer !== "component" || !t.component) continue;
+      byComponent.set(t.component, [...(_a = byComponent.get(t.component)) != null ? _a : [], t]);
+    }
+    for (const [component, tokens] of byComponent) {
+      const parts = tokens.map((t) => parseComponentTokenName(t.name)).filter((p) => p !== null);
+      const groups = /* @__PURE__ */ new Map();
+      for (const p of parts) {
+        const g = [p.category, p.role].filter(Boolean).join("-");
+        groups.set(g, ((_b = groups.get(g)) != null ? _b : /* @__PURE__ */ new Set()).add(p.state));
+      }
+      for (const [g, states] of groups) {
+        if (!states.has("default")) {
+          out.push({
+            severity: "error",
+            code: "component.default",
+            message: `${component}-${g} does not have a default token. Add ${component}-${g}-default.`,
+            component
+          });
+        }
+      }
+      const withRole = parts.filter((p) => p.role).length;
+      if (withRole && withRole !== parts.length) {
+        out.push({
+          severity: "warning",
+          code: "component.roles",
+          message: `Some ${component} tokens have a role and some do not. Use a role in all ${component} tokens or in no ${component} tokens.`,
+          component
+        });
+      }
+      if (parts.length && !withRole) {
+        out.push({
+          severity: "info",
+          code: "component.no-role",
+          message: `${component} does not use roles. If you add a second variant later, you must change the names of all ${component} tokens.`,
+          component
+        });
+      }
+    }
+    return out;
+  }
+  function checkBeforeSave(set, candidates, replacing = []) {
+    const kept = set.tokens.filter((t) => !replacing.includes(t.name));
+    const merged = { tokens: [...kept, ...candidates] };
+    const names = new Set(candidates.map((t) => t.name));
+    const components = new Set(candidates.map((t) => t.component).filter(Boolean));
+    const issues = validateTokenSet(merged).filter(
+      (i) => i.token && names.has(i.token) || i.component && components.has(i.component)
+    );
+    return { ok: !issues.some((i) => i.severity === "error"), issues };
+  }
+
+  // src/lib/figma/scan.ts
+  var localFirst = (vars) => [...vars.filter((v) => !v.remote), ...vars.filter((v) => v.remote)];
+  var CATEGORIES = COMPONENT_CATEGORIES;
+  var CATEGORY_ORDER = ["surface", "line", "content", "icon"];
+  var TRANSPARENT_ALPHA = 1e-3;
+  var issue2 = (severity, code, message, token) => ({ severity, code, message, token });
+  function rgbaToHex(c) {
+    const h = (n) => Math.round(Math.min(1, Math.max(0, n)) * 255).toString(16).padStart(2, "0").toUpperCase();
+    return `#${h(c.r)}${h(c.g)}${h(c.b)}${c.a < 1 ? h(c.a) : ""}`;
+  }
+  var sameColour = (a, b) => {
+    const close = (x, y) => Math.abs(x - y) < 2e-3;
+    if (a.a < TRANSPARENT_ALPHA && b.a < TRANSPARENT_ALPHA) return true;
+    return close(a.r, b.r) && close(a.g, b.g) && close(a.b, b.b) && close(a.a, b.a);
+  };
+  var isTransparent = (c) => c.a < TRANSPARENT_ALPHA;
+  function categoryOfLayer(name) {
+    const n = name.trim().toLowerCase();
+    return CATEGORIES.includes(n) ? n : null;
+  }
+  function stateRank(s) {
+    const i = SUGGESTED_STATES.indexOf(s);
+    return i === -1 ? SUGGESTED_STATES.length : i;
+  }
+  var title3 = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+  function resolveVariable(byId, id, mode, seen = []) {
+    var _a, _b;
+    const v = byId.get(id);
+    if (!v || seen.includes(id)) return null;
+    const keys = Object.keys(v.values);
+    const value = (_b = v.values[mode]) != null ? _b : keys.length === 1 ? v.values[keys[0]] : (_a = v.values.light) != null ? _a : v.values[keys[0]];
+    if (!value) return null;
+    if ("color" in value) return { primitive: v.layer === "primitive" ? v.token : null, color: value.color };
+    const next = resolveVariable(byId, value.alias, mode, [...seen, id]);
+    if (!next) return null;
+    return v.layer === "primitive" ? { primitive: v.token, color: next.color } : next;
+  }
+  function matchPrimitive(vars, byId, color) {
+    const prims = localFirst(vars).filter((v) => v.layer === "primitive");
+    if (isTransparent(color)) {
+      const t = prims.find((v) => v.token === "transparent");
+      if (t) return t.token;
+    }
+    for (const p of prims) {
+      const r = resolveVariable(byId, p.id, "value");
+      if (r && sameColour(r.color, color)) return p.token;
+    }
+    return null;
+  }
+  function sourceOf(binding, component, vars, byId) {
+    if (binding.kind === "raw") {
+      return { kind: "raw", value: { primitive: matchPrimitive(vars, byId, binding.color), color: binding.color } };
+    }
+    const v = byId.get(binding.id);
+    const light = resolveVariable(byId, binding.id, "light");
+    const dark = resolveVariable(byId, binding.id, "dark");
+    if (!v || !light || !dark) return { kind: "missing", id: binding.id };
+    if (v.layer === "primitive") return { kind: "primitive", token: v.token, value: light };
+    if (v.layer === "component") return { kind: "component", token: v.token, own: v.token.startsWith(`${component}-`), light, dark };
+    return { kind: "semantic", token: v.token, light, dark };
+  }
+  function colourIn(source, mode) {
+    switch (source.kind) {
+      case "semantic":
+      case "component":
+        return source[mode].color;
+      case "primitive":
+      case "raw":
+        return source.value.color;
+      default:
+        return null;
+    }
+  }
+  function sourceLabel(source) {
+    switch (source.kind) {
+      case "semantic":
+      case "component":
+      case "primitive":
+        return source.token;
+      case "raw":
+        return rgbaToHex(source.value.color);
+      default:
+        return "a variable the plugin cannot read";
+    }
+  }
+  function lookOf(source) {
+    const key = (r) => r.primitive;
+    switch (source.kind) {
+      case "semantic":
+        return { light: key(source.light), dark: key(source.dark), needsDark: false, needsLight: false, source: `From ${source.token}` };
+      case "component":
+        return { light: key(source.light), dark: key(source.dark), needsDark: false, needsLight: false, source: source.own ? `Kept from ${source.token}` : `From ${source.token}, a token of a different component` };
+      case "primitive": {
+        const t = isTransparent(source.value.color);
+        return { light: source.token, dark: t ? source.token : null, needsDark: !t, needsLight: false, source: t ? `${source.token} in both themes` : source.token };
+      }
+      case "raw": {
+        const p = source.value.primitive;
+        const t = isTransparent(source.value.color);
+        const hex = rgbaToHex(source.value.color);
+        return {
+          light: p,
+          dark: t && p ? p : null,
+          needsDark: !(t && p),
+          needsLight: !p,
+          source: p ? `Raw value ${hex}, the same as ${p}` : `Raw value ${hex}, no primitive has this colour`
+        };
+      }
+      default:
+        return null;
+    }
+  }
+  function signature(source) {
+    var _a, _b, _c;
+    switch (source.kind) {
+      case "semantic":
+      case "component":
+        return `${(_a = source.light.primitive) != null ? _a : rgbaToHex(source.light.color)}|${(_b = source.dark.primitive) != null ? _b : rgbaToHex(source.dark.color)}`;
+      case "primitive":
+        return isTransparent(source.value.color) ? "transparent|transparent" : `${source.token}|${source.token}`;
+      case "raw": {
+        if (isTransparent(source.value.color)) return "transparent|transparent";
+        const k = (_c = source.value.primitive) != null ? _c : rgbaToHex(source.value.color);
+        return `${k}|${k}`;
+      }
+      default:
+        return "missing";
+    }
+  }
+  function scanComponent(input, group = DEFAULT_FIGMA_GROUP) {
+    var _a, _b;
+    const component = normaliseComponentName(input.componentName).slug;
+    const byId = new Map(input.variables.map((v) => [v.id, v]));
+    const issues = [...input.issues];
+    const all = input.paints.map((paint) => {
+      var _a2;
+      const source = sourceOf(paint.binding, component, input.variables, byId);
+      const fixed = (source.kind === "primitive" || source.kind === "raw") && !isTransparent(source.value.color);
+      return { paint, category: (_a2 = paint.category) != null ? _a2 : categoryOfLayer(paint.layerName), source, sameInBoth: fixed };
+    });
+    const layers = all.filter((l) => l.category);
+    const unknown = all.filter((l) => !l.category);
+    const result = (status, tokens2 = [], changes2 = []) => ({
+      status,
+      component,
+      title: input.componentName,
+      variants: input.variants.length,
+      layers,
+      unknown,
+      tokens: tokens2,
+      changes: changes2,
+      issues
+    });
+    if (!component) issues.push(issue2("error", "scan.name", "The component set has no name. Give it a name in Figma, for example Control."));
+    for (const l of unknown) {
+      issues.push(
+        issue2(
+          "warning",
+          "scan.unknown",
+          `The layer "${l.paint.layerName}" in ${l.paint.variant} has a colour, but its name is not surface, line, content or icon. The scan does not change it. Rename it to 1 of these names to include it.`
+        )
+      );
+    }
+    for (const l of all.filter((x) => x.source.kind === "missing")) {
+      issues.push(issue2("error", "scan.missing", `The ${l.paint.layerName} layer in ${l.paint.variant} uses a variable that the plugin cannot read. Bind it to a variable in this file.`));
+    }
+    if (!layers.length && !issues.some((i) => i.severity === "error")) {
+      issues.push(issue2("error", "scan.empty", "No layer is called surface, line, content or icon. Rename the coloured layers, then scan again."));
+    }
+    if (issues.some((i) => i.severity === "error")) return result("blocked");
+    if (layers.every((l) => l.source.kind === "semantic")) return result("fine");
+    if (layers.every((l) => l.source.kind === "component" && l.source.own)) return result("own-tokens");
+    const groupKey = (category, role) => [category, role].filter(Boolean).join("|");
+    const parts = /* @__PURE__ */ new Map();
+    for (const l of layers) {
+      const g = groupKey(l.category, l.paint.role);
+      const byState = (_a = parts.get(g)) != null ? _a : /* @__PURE__ */ new Map();
+      byState.set(l.paint.state, [...(_b = byState.get(l.paint.state)) != null ? _b : [], l]);
+      parts.set(g, byState);
+    }
+    const tokens = [];
+    const changes = [];
+    const ordered = [...parts.entries()].sort(([a], [b]) => {
+      const [ca, ra = ""] = a.split("|");
+      const [cb, rb = ""] = b.split("|");
+      return ra.localeCompare(rb) || CATEGORY_ORDER.indexOf(ca) - CATEGORY_ORDER.indexOf(cb);
+    });
+    for (const [g, byState] of ordered) {
+      const [category, role] = g.split("|");
+      const label = [category, role].filter(Boolean).join(" ");
+      let conflict = false;
+      for (const ls of byState.values()) {
+        if (new Set(ls.map((l) => signature(l.source))).size > 1) {
+          conflict = true;
+          issues.push(
+            issue2(
+              "error",
+              "scan.conflict",
+              `In ${ls[0].paint.variant}, the ${category} layers have different colours (${ls.map((l) => sourceLabel(l.source)).join(", ")}). Layers with the same name in 1 state share 1 token. Give them the same colour.`
+            )
+          );
+        }
+      }
+      if (conflict) continue;
+      const def = byState.get("default");
+      if (!def) {
+        const name = buildComponentTokenName({ component, category, role, state: "default" });
+        issues.push(issue2("error", "scan.default", `The default variant has no ${label} layer, so ${name} has no value. Add a ${category} layer to the default variant.`, name));
+        continue;
+      }
+      const states = [...byState.keys()].sort((a, b) => stateRank(a) - stateRank(b) || a.localeCompare(b));
+      const defSig = signature(def[0].source);
+      for (const state of states) {
+        const ls = byState.get(state);
+        const reuse = state !== "default" && signature(ls[0].source) === defSig;
+        const name = buildComponentTokenName({ component, category, role, state: reuse ? "default" : state });
+        if (!reuse) {
+          const look = lookOf(ls[0].source);
+          const draft = { name, layer: "component", kind: "color", component, values: {}, status: "active" };
+          const path = figmaPath(draft, group);
+          tokens.push({
+            name,
+            figmaName: path.split("/").pop(),
+            figmaPath: path,
+            component,
+            category,
+            role,
+            state,
+            published: state === "default",
+            source: look.source,
+            light: look.light,
+            dark: look.dark,
+            needsDark: look.needsDark,
+            needsLight: look.needsLight
+          });
+        }
+        for (const l of ls) changes.push({ layer: l, token: name, reused: reuse });
+      }
+    }
+    if (issues.some((i) => i.severity === "error")) return result("blocked", tokens, changes);
+    return result("draft", tokens, changes);
+  }
+  function withChoices(tokens, choices = {}) {
+    return tokens.map((t) => {
+      var _a, _b, _c, _d;
+      return __spreadProps(__spreadValues({}, t), { light: (_b = (_a = choices[t.name]) == null ? void 0 : _a.light) != null ? _b : t.light, dark: (_d = (_c = choices[t.name]) == null ? void 0 : _c.dark) != null ? _d : t.dark });
+    });
+  }
+  function draftsToTokens(tokens) {
+    return tokens.map((d) => {
+      const values = {};
+      if (d.light) values.light = { ref: d.light };
+      if (d.dark) values.dark = { ref: d.dark };
+      return { name: d.name, layer: "component", kind: "color", component: d.component, values, status: "active" };
+    });
+  }
+  function variablesToTokenSet(vars) {
+    var _a;
+    const byId = new Map(vars.map((v) => [v.id, v]));
+    const tokens = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const v of localFirst(vars)) {
+      if (!v.layer || seen.has(v.token)) continue;
+      seen.add(v.token);
+      const modes = v.layer === "primitive" ? ["value"] : ["light", "dark"];
+      const values = {};
+      for (const m of modes) {
+        const keys = Object.keys(v.values);
+        const raw = (_a = v.values[m]) != null ? _a : keys.length === 1 ? v.values[keys[0]] : void 0;
+        if (!raw) continue;
+        if ("color" in raw) values[m] = rgbaToHex(raw.color);
+        else {
+          const target = byId.get(raw.alias);
+          if (target) values[m] = { ref: target.token };
+        }
+      }
+      tokens.push({ name: v.token, layer: v.layer, kind: "color", component: v.layer === "component" ? v.token.split("-")[0] : void 0, values, status: "active" });
+    }
+    return { tokens };
+  }
+  function checkDrafts(result, vars, choices = {}) {
+    const context = variablesToTokenSet(vars);
+    const drafts = withChoices(result.tokens, choices);
+    const own = context.tokens.filter((t) => t.layer === "component" && t.component === result.component).map((t) => t.name);
+    const { issues } = checkBeforeSave(context, draftsToTokens(drafts), own);
+    const out = issues.filter((i) => i.code !== "mode.same");
+    for (const d of drafts) {
+      const p = d.light && vars.find((v) => v.token === d.light);
+      const q = d.dark && vars.find((v) => v.token === d.dark);
+      if (d.light && !p || d.dark && !q) out.push(issue2("error", "scan.primitive", `${d.name} uses a primitive that is not in this file. Select a different primitive.`, d.name));
+      if (p && p.layer !== "primitive" || q && q.layer !== "primitive") {
+        out.push(issue2("error", "scan.not-primitive", `${d.name} must point to a primitive. Select a primitive, for example neutral-200.`, d.name));
+      }
+      if (d.needsDark && d.light && d.light === d.dark) {
+        out.push(issue2("warning", "scan.same-primitive", `${d.name} uses ${d.light} in light and dark. This is correct for some tokens, for example a brand colour. Make sure that this is correct.`, d.name));
+      }
+    }
+    return { ok: !out.some((i) => i.severity === "error"), issues: out };
+  }
+  var plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+  function summarise(result, vars, collectionName = "Colour tokens", group = DEFAULT_FIGMA_GROUP) {
+    const existing = new Set(vars.filter((v) => v.collection === "colour-tokens").map((v) => v.name));
+    const update = result.tokens.filter((t) => existing.has(t.figmaPath)).length;
+    const create = result.tokens.length - update;
+    const hidden = result.tokens.filter((t) => !t.published).length;
+    const changed = result.changes;
+    const layers = changed.length;
+    const variants = new Set(changed.map((c) => c.layer.paint.variantId)).size;
+    const where = `${collectionName} / ${group} / ${title3(result.component)}`;
+    const parts = [
+      create ? `creates ${plural(create, "variable")} in ${where}` : "",
+      update ? `updates ${plural(update, "variable")} in ${where}` : "",
+      hidden ? `hides ${hidden} from publishing` : "",
+      `changes ${plural(layers, "layer")} across ${plural(variants, "variant")}`,
+      `adds ${plural(result.tokens.length, "token")} to Token Library`
+    ].filter(Boolean);
+    const sentence = `This ${parts.length > 1 ? `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}` : parts[0]}.`;
+    return { create, update, hidden, layers, variants, tokens: result.tokens.length, sentence };
+  }
+
+  // src/lib/figma/scan-figma.ts
+  var KEY2 = "tokenLibrary";
+  var issue3 = (severity, code, message) => ({ severity, code, message });
+  function collectionKey(c, names) {
+    var _a, _b;
+    const stored = (_a = c.getPluginData) == null ? void 0 : _a.call(c, KEY2);
+    if (stored && stored in names) return stored;
+    return (_b = Object.keys(names).find((k) => names[k] === c.name)) != null ? _b : null;
+  }
+  function namesOf(opts) {
+    var _a;
+    const base = Object.fromEntries(Object.entries(COLLECTIONS).map(([k, c]) => [k, c.name]));
+    return __spreadValues(__spreadValues({}, base), (_a = opts.names) != null ? _a : {});
+  }
+  function layerOf(v, key, c, group) {
+    if (key === "colour-primitives") return "primitive";
+    if (key === "colour-tokens") return v.name.startsWith(`${group}/`) ? "component" : "semantic";
+    if (!c) return null;
+    return c.modes.length === 1 ? "primitive" : "semantic";
+  }
+  function tokenNameOf(v, layer) {
+    var _a;
+    const stored = (_a = v.getPluginData) == null ? void 0 : _a.call(v, "token");
+    if (stored) return stored;
+    const last = v.name.split("/").pop().trim();
+    if (layer !== "component") return last;
+    const parts = v.name.split("/");
+    return parts.length >= 3 ? `${slug(parts[1])}-${last}` : last;
+  }
+  function toRgba(raw) {
+    var _a;
+    if (typeof raw === "object" && raw && "r" in raw) return { r: raw.r, g: raw.g, b: raw.b, a: (_a = raw.a) != null ? _a : 1 };
+    return null;
+  }
+  async function readVariables(api2, boundIds, opts) {
+    var _a, _b, _c;
+    const names = namesOf(opts);
+    const group = (_a = opts.group) != null ? _a : DEFAULT_FIGMA_GROUP;
+    const collections = new Map((await api2.getLocalVariableCollectionsAsync()).map((c) => [c.id, c]));
+    const vars = new Map((await api2.getLocalVariablesAsync()).map((v) => [v.id, v]));
+    const queue = boundIds.filter((id) => !vars.has(id));
+    while (queue.length) {
+      const id = queue.shift();
+      if (vars.has(id)) continue;
+      const v = await api2.getVariableByIdAsync(id);
+      if (!v) continue;
+      vars.set(id, v);
+      for (const raw of Object.values(v.valuesByMode)) {
+        if (typeof raw === "object" && raw && "type" in raw && raw.type === "VARIABLE_ALIAS" && !vars.has(raw.id)) queue.push(raw.id);
+      }
+    }
+    for (const v of vars.values()) {
+      if (!collections.has(v.variableCollectionId)) collections.set(v.variableCollectionId, await api2.getVariableCollectionByIdAsync(v.variableCollectionId));
+    }
+    const out = [];
+    for (const v of vars.values()) {
+      if (v.resolvedType !== "COLOR") continue;
+      const c = (_b = collections.get(v.variableCollectionId)) != null ? _b : null;
+      const key = c ? collectionKey(c, names) : null;
+      const layer = layerOf(v, key, c, group);
+      const values = {};
+      for (const m of (_c = c == null ? void 0 : c.modes) != null ? _c : []) {
+        const raw = v.valuesByMode[m.modeId];
+        if (raw === void 0) continue;
+        const mode = c.modes.length === 1 ? "value" : modeKeyOf(m.name);
+        if (typeof raw === "object" && raw && "type" in raw && raw.type === "VARIABLE_ALIAS") values[mode] = { alias: raw.id };
+        else {
+          const color = toRgba(raw);
+          if (color) values[mode] = { color };
+        }
+      }
+      out.push({ id: v.id, token: tokenNameOf(v, layer), name: v.name, collection: key, layer, values, remote: !!v.remote });
+    }
+    return out;
+  }
+  var isSymbol = (x) => typeof x === "symbol";
+  async function readComponentSet(api2, set, opts = {}) {
+    var _a, _b, _c, _d, _e, _f;
+    const issues = [];
+    const defs = Object.entries((_a = set.componentPropertyDefinitions) != null ? _a : {}).filter(([, d]) => d.type === "VARIANT");
+    const stateProp = (_b = defs.find(([n]) => n.trim().toLowerCase() === "state")) == null ? void 0 : _b[0];
+    if (!stateProp) {
+      issues.push(issue3("error", "scan.state", `${set.name} has no State property. Add a variant property called State, with values such as Default, Hover, Pressed and Disabled.`));
+    }
+    const roleProps = defs.filter(([n, d]) => {
+      var _a2, _b2;
+      return n !== stateProp && ((_b2 = (_a2 = d.variantOptions) == null ? void 0 : _a2.length) != null ? _b2 : 0) > 1;
+    }).map(([n]) => n);
+    if (roleProps.length > 1) {
+      issues.push(issue3("error", "scan.roles", `${set.name} has ${roleProps.length} variant properties apart from State (${roleProps.join(", ")}). The scan can read 1 property as the role. Keep 1 property apart from State.`));
+    }
+    const roleProp = roleProps.length === 1 ? roleProps[0] : void 0;
+    const variants = [];
+    const paints = [];
+    for (const node of set.children) {
+      if (node.type !== "COMPONENT") continue;
+      const props = (_c = node.variantProperties) != null ? _c : {};
+      const state = stateProp ? slug((_d = props[stateProp]) != null ? _d : "") : "";
+      const role = roleProp ? slug((_e = props[roleProp]) != null ? _e : "") || void 0 : void 0;
+      if (stateProp && !state) issues.push(issue3("error", "scan.state-value", `The variant ${node.name} has no State value. Give it a State value.`));
+      variants.push({ id: node.id, name: node.name, state, role });
+      const read = (n, layerName, category) => {
+        if (n.isMask) return;
+        for (const field of ["fills", "strokes"]) {
+          const list = n[field];
+          if (!list) continue;
+          if (isSymbol(list)) {
+            issues.push(issue3("warning", "scan.mixed", `The text layer "${n.name}" in ${node.name} has more than 1 colour. The scan does not read it. Give the text 1 colour.`));
+            continue;
+          }
+          list.forEach((p, index) => {
+            var _a2, _b2, _c2;
+            if (p.visible === false || p.type !== "SOLID") return;
+            const bound = (_b2 = (_a2 = p.boundVariables) == null ? void 0 : _a2.color) == null ? void 0 : _b2.id;
+            paints.push({
+              variantId: node.id,
+              variant: node.name,
+              state,
+              role,
+              nodeId: n.id,
+              layerName,
+              paint: field,
+              index,
+              binding: bound ? { kind: "variable", id: bound } : { kind: "raw", color: __spreadProps(__spreadValues({}, p.color), { a: (_c2 = p.opacity) != null ? _c2 : 1 }) },
+              category: category(field)
+            });
+          });
+        }
+      };
+      const walk = (n, inInstance) => {
+        var _a2;
+        if (n.visible === false) return;
+        read(n, inInstance ? `${n.name} in ${inInstance}` : n.name, () => inInstance ? "content" : void 0);
+        const inside = inInstance != null ? inInstance : n.type === "INSTANCE" ? n.name : null;
+        for (const c of (_a2 = n.children) != null ? _a2 : []) walk(c, inside);
+      };
+      read(node, "variant frame", (field) => field === "fills" ? "surface" : "line");
+      for (const c of (_f = node.children) != null ? _f : []) walk(c, null);
+    }
+    if (stateProp && !variants.some((v) => v.state === "default")) {
+      issues.push(issue3("error", "scan.no-default", `${set.name} has no variant with State=Default. Add a default variant.`));
+    }
+    const names = namesOf(opts);
+    const local = await api2.getLocalVariableCollectionsAsync();
+    if (!local.some((c) => collectionKey(c, names) === "colour-tokens")) {
+      issues.push(
+        issue3(
+          "error",
+          "scan.library",
+          `${names["colour-tokens"]} is not a collection of this file. It comes from a library, and a plugin cannot add variables to a library from a different file. Run the scan in the file that has ${names["colour-tokens"]}, for example the UAL UI Kit or a copy of it.`
+        )
+      );
+    }
+    const boundIds = paints.flatMap((p) => p.binding.kind === "variable" ? [p.binding.id] : []);
+    const variables = await readVariables(api2, boundIds, opts);
+    return { componentName: set.name, variants, paints, variables, issues };
+  }
+  function findNode(root, id) {
+    var _a;
+    if (root.id === id) return root;
+    for (const c of (_a = root.children) != null ? _a : []) {
+      const f = findNode(c, id);
+      if (f) return f;
+    }
+    return null;
+  }
+  async function applyScan(api2, set, result, drafts, vars, opts = {}) {
+    var _a, _b, _c, _d, _e;
+    const names = namesOf(opts);
+    const collection = (await api2.getLocalVariableCollectionsAsync()).find((c) => collectionKey(c, names) === "colour-tokens");
+    if (!collection) throw new Error(`This file has no ${names["colour-tokens"]} collection. Add it, or run Sync from tool first.`);
+    const light = collection.modes.find((m) => modeKeyOf(m.name) === "light");
+    const dark = collection.modes.find((m) => modeKeyOf(m.name) === "dark");
+    if (!light || !dark) throw new Error(`The ${collection.name} collection must have a light and a dark mode.`);
+    const missing = drafts.filter((d) => !d.light || !d.dark);
+    if (missing.length) throw new Error(`Choose light and dark values for ${missing.map((d) => d.name).join(", ")}.`);
+    const primitive = async (token) => {
+      const sv = localFirst(vars).find((v2) => v2.token === token && v2.layer === "primitive");
+      const v = sv ? await api2.getVariableByIdAsync(sv.id) : null;
+      if (!v) throw new Error(`The primitive ${token} is not in this file.`);
+      return v;
+    };
+    const local = (await api2.getLocalVariablesAsync()).filter((v) => v.variableCollectionId === collection.id);
+    const byToken = /* @__PURE__ */ new Map();
+    const created = [];
+    const updated = [];
+    for (const [i, d] of drafts.entries()) {
+      let v = local.find((x) => x.name === d.figmaPath || x.getPluginData("token") === d.name);
+      if (v) updated.push(d.name);
+      else {
+        v = api2.createVariable(d.figmaPath, collection, "COLOR");
+        created.push(d.name);
+      }
+      if (v.name !== d.figmaPath) v.name = d.figmaPath;
+      v.setPluginData("token", d.name);
+      v.setValueForMode(light.modeId, api2.createVariableAlias(await primitive(d.light)));
+      v.setValueForMode(dark.modeId, api2.createVariableAlias(await primitive(d.dark)));
+      v.hiddenFromPublishing = !d.published;
+      v.description = d.state === "default" ? "" : `State: ${d.state}.`;
+      v.setVariableCodeSyntax("WEB", `var(${cssVariableName({ name: d.name, kind: "color", layer: "component" })})`);
+      byToken.set(d.name, v);
+      (_a = opts.onStep) == null ? void 0 : _a.call(opts, "variables", i + 1, drafts.length);
+    }
+    const byNode = /* @__PURE__ */ new Map();
+    for (const c of result.changes) {
+      const variable = byToken.get(c.token);
+      if (!variable) throw new Error(`The variable for ${c.token} is missing.`);
+      const key = `${c.layer.paint.nodeId}|${c.layer.paint.paint}`;
+      const node = (_c = (_b = byNode.get(key)) == null ? void 0 : _b.node) != null ? _c : findNode(set, c.layer.paint.nodeId);
+      if (!node) throw new Error(`The layer ${c.layer.paint.layerName} in ${c.layer.paint.variant} is gone. Scan again.`);
+      const entry = (_d = byNode.get(key)) != null ? _d : { node, field: c.layer.paint.paint, items: [] };
+      entry.items.push({ index: c.layer.paint.index, variable });
+      byNode.set(key, entry);
+    }
+    let layers = 0;
+    for (const { node, field, items } of byNode.values()) {
+      const list = node[field];
+      if (!list || isSymbol(list)) continue;
+      const next = [...list];
+      for (const { index, variable } of items) {
+        next[index] = api2.setBoundVariableForPaint(next[index], "color", variable);
+        layers += 1;
+      }
+      node[field] = next;
+      (_e = opts.onStep) == null ? void 0 : _e.call(opts, "layers", layers, result.changes.length);
+    }
+    return { created, updated, layers };
+  }
+
+  // src/lib/tokens/repo.ts
+  var BLOCK_START = "/* tokens:start (managed by the token tool) */";
+  var BLOCK_END = "/* tokens:end */";
+
+  // src/lib/tokens/css.ts
+  var FLUID_MODE = "fluid";
+  var contextOf = (mode) => mode === "dark" ? "dark" : mode === "reduced-motion" ? "reduced-motion" : "base";
+  var INDENT = "  ";
+  function needsPx(t) {
+    if (t.kind === "spacing" || t.kind === "sizing" || t.kind === "radius") return true;
+    if (t.kind === "typography") return t.name.startsWith("font-size") || t.name.startsWith("paragraph-spacing");
+    if (t.kind === "border") return t.name.startsWith("border-width");
+    return false;
+  }
+  function simpleToCss(v, index, t) {
+    if (isReference(v)) {
+      const target = index.get(v.ref);
+      return target ? `var(${cssVariableName(target)})` : `/* missing token: ${v.ref} */`;
+    }
+    if (typeof v === "number" && t && needsPx(t) && v !== 0) return `${v}px`;
+    return String(v);
+  }
+  function declarations(t, v, index) {
+    var _a;
+    const name = cssVariableName(t);
+    const note = t.status === "deprecated" ? " /* deprecated */" : "";
+    if (!isComposite(v)) return [`${name}: ${simpleToCss(v, index, t)};${note}`];
+    const c = v;
+    const part = (k) => c[k] === void 0 ? void 0 : simpleToCss(c[k], index);
+    const join = (keys) => keys.map(part).filter(Boolean).join(" ");
+    switch (t.kind) {
+      case "border":
+        return [`${name}: ${join(["width", "style", "color"])};${note}`];
+      case "shadow":
+        return [`${name}: ${join(["offsetX", "offsetY", "blur", "spread", "color"])};${note}`];
+      case "typography": {
+        const lines = [`${name}: ${(_a = part("fontSize")) != null ? _a : "inherit"};${note}`];
+        if (c.lineHeight !== void 0) lines.push(`${name}--line-height: ${part("lineHeight")};`);
+        if (c.fontWeight !== void 0) lines.push(`${name}--font-weight: ${part("fontWeight")};`);
+        if (c.fontFamily !== void 0) lines.push(`${name}--font-family: ${part("fontFamily")};`);
+        return lines;
+      }
+      default:
+        return Object.keys(c).map((k) => `${name}-${k}: ${part(k)};`);
+    }
+  }
+  function fluidDeclarations(t, index) {
+    const name = cssVariableName(t);
+    const note = t.status === "deprecated" ? " /* deprecated */" : "";
+    const [min, max] = ["min", "max"].map((m) => toPx(resolveToken(index, t.name, m).value));
+    const from = ["min", "max"].map((m) => `${m}: ${formatValue(valueInMode(t, m)).replace(/[{}]/g, "")}`).join(", ");
+    if (min === null || max === null) return [`${name}: /* missing size (${from}) */;${note}`];
+    return [`${name}: ${fluidClamp(min, max)};${note || ` /* ${from} */`}`];
+  }
+  function tokenDeclarations(t, index) {
+    if (columnSetOf(t) === "fluid") return [{ context: "base", mode: FLUID_MODE, lines: fluidDeclarations(t, index) }];
+    const first = modesOf(t)[0].key;
+    return modesOf(t).filter((m, i) => i === 0 || t.values[m.key] !== void 0).filter((m) => m.key !== "reduced-motion" || JSON.stringify(t.values[m.key]) !== JSON.stringify(t.values[first])).map((m) => ({ context: contextOf(m.key), mode: m.key, lines: declarations(t, valueInMode(t, m.key), index) }));
+  }
+  var rule = (selector, lines) => `${selector} {
+${lines.map((l) => INDENT + l).join("\n")}
+}`;
+  function linesByContext(tokens, index) {
+    const out = { base: [], dark: [], "reduced-motion": [] };
+    for (const t of tokens) for (const o of tokenDeclarations(t, index)) out[o.context].push(...o.lines);
+    return out;
+  }
+  var wrap = (body) => `${BLOCK_START}
+${body}
+${BLOCK_END}`;
+  function componentCss(set, component) {
+    const index = indexTokens(set);
+    const tokens = set.tokens.filter((t) => t.layer === "component" && t.component === component);
+    const lines = linesByContext(tokens, index);
+    const parts = [rule(`.${component}`, lines.base)];
+    if (lines.dark.length) parts.push(rule(`.dark .${component}`, lines.dark));
+    return wrap(parts.join("\n"));
+  }
+
   // src/lib/tokens/dtcg.ts
   var EXTENSION_KEY = "uk.ac.ual.tokens";
   var LAYERS = ["primitive", "semantic", "component"];
-  var KINDS = ["color", "spacing", "sizing", "typography", "radius", "border", "shadow"];
+  var KINDS = ["color", "spacing", "sizing", "typography", "radius", "border", "shadow", "motion"];
   var isToken = (v) => typeof v === "object" && v !== null && "$value" in v;
+  function dtcgType(t) {
+    const composite = isComposite(defaultValue(t));
+    switch (t.kind) {
+      case "color":
+        return "color";
+      case "shadow":
+        return "shadow";
+      case "border":
+        return composite ? "border" : "dimension";
+      case "motion":
+        return t.name.startsWith("ease") ? "cubicBezier" : "duration";
+      case "typography":
+        if (composite) return "typography";
+        if (t.name.startsWith("font-family")) return "fontFamily";
+        if (t.name.startsWith("font-weight")) return "fontWeight";
+        if (t.name.startsWith("line-height")) return "number";
+        return "dimension";
+      default:
+        return "dimension";
+    }
+  }
   function parseSimple(v) {
     if (typeof v === "string") {
       const m = /^\{([^{}]+)\}$/.exec(v.trim());
@@ -374,44 +1576,207 @@
             name,
             layer,
             kind,
-            values: { light: parseValue(raw.$value) },
+            values: { [defaultMode({ layer, kind })]: parseValue(raw.$value) },
             status: (_d = ext.status) != null ? _d : "active"
           };
           if (layer === "component") token.component = groupKey;
-          if (((_e = ext.modes) == null ? void 0 : _e.dark) !== void 0) token.values.dark = parseValue(ext.modes.dark);
+          for (const m of modesOf(token).slice(1)) {
+            const v = (_e = ext.modes) == null ? void 0 : _e[m.key];
+            if (v !== void 0) token.values[m.key] = parseValue(v);
+          }
           if (raw.$description) token.description = raw.$description;
+          if (ext.figma) token.figma = ext.figma;
           tokens.push(token);
         }
       }
     }
     return { tokens };
   }
+  var groupOf = (t) => {
+    var _a;
+    return t.layer === "component" ? (_a = t.component) != null ? _a : "unassigned" : t.kind;
+  };
+  function serialiseDtcg(set, description) {
+    var _a;
+    const pathOf = new Map(set.tokens.map((t) => [t.name, `${t.layer}.${groupOf(t)}.${t.name}`]));
+    const simple = (v) => {
+      var _a2;
+      if (isReference(v)) return `{${(_a2 = pathOf.get(v.ref)) != null ? _a2 : v.ref}}`;
+      return v;
+    };
+    const value = (v) => {
+      if (isComposite(v)) return Object.fromEntries(Object.entries(v).map(([k, p]) => [k, simple(p)]));
+      return simple(v);
+    };
+    const out = {};
+    if (description) out.$description = description;
+    for (const layer of LAYERS) {
+      const layerTokens = set.tokens.filter((t) => t.layer === layer);
+      if (!layerTokens.length) continue;
+      const layerGroup = {};
+      for (const t of layerTokens) {
+        const g = groupOf(t);
+        (_a = layerGroup[g]) != null ? _a : layerGroup[g] = {};
+        const entry = { $type: dtcgType(t), $value: value(defaultValue(t)) };
+        if (t.description) entry.$description = t.description;
+        const ext = { kind: t.kind, status: t.status };
+        const others = modesOf(t).slice(1).filter((m) => t.values[m.key] !== void 0);
+        if (others.length) ext.modes = Object.fromEntries(others.map((m) => [m.key, value(t.values[m.key])]));
+        if (t.figma) ext.figma = t.figma;
+        entry.$extensions = { [EXTENSION_KEY]: ext };
+        layerGroup[g][t.name] = entry;
+      }
+      out[layer] = layerGroup;
+    }
+    return out;
+  }
+
+  // src/lib/figma/scan-view.ts
+  var title4 = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+  function swatchOf(source, mode) {
+    var _a;
+    const c = colourIn(source, mode);
+    if (!c) return null;
+    const hex = rgbaToHex(c);
+    let label = hex;
+    if (source.kind === "semantic" || source.kind === "component") label = (_a = source[mode].primitive) != null ? _a : hex;
+    if (source.kind === "primitive") label = source.token;
+    if (source.kind === "raw") label = source.value.primitive ? `${hex} (${source.value.primitive})` : hex;
+    return { hex, label };
+  }
+  function layerView(l) {
+    return {
+      variant: l.paint.variant,
+      state: l.paint.state,
+      layer: l.paint.layerName,
+      category: l.category,
+      paint: l.paint.paint === "fills" ? "Fill" : "Stroke",
+      kind: l.source.kind,
+      label: sourceLabel(l.source),
+      light: swatchOf(l.source, "light"),
+      dark: swatchOf(l.source, "dark"),
+      sameInBoth: l.sameInBoth
+    };
+  }
+  function primitiveSwatches(vars) {
+    const index = variablesToTokenSet(vars);
+    const byName = new Map(index.tokens.map((t) => [t.name, t]));
+    const hexOf = (name, seen2 = []) => {
+      const t = byName.get(name);
+      const v = t == null ? void 0 : t.values.value;
+      if (typeof v === "string") return v;
+      if (v && typeof v === "object" && "ref" in v && typeof v.ref === "string" && !seen2.includes(v.ref)) return hexOf(v.ref, [...seen2, name]);
+      return null;
+    };
+    const seen = /* @__PURE__ */ new Set();
+    return localFirst(vars).filter((v) => v.layer === "primitive" && !seen.has(v.token) && seen.add(v.token)).map((v) => {
+      var _a;
+      return { label: v.token, hex: (_a = hexOf(v.token)) != null ? _a : "" };
+    }).filter((s) => s.hex).sort((a, b) => a.label.localeCompare(b.label, "en", { numeric: true }));
+  }
+  function scanView(result, vars) {
+    return {
+      status: result.status,
+      title: result.title,
+      component: result.component,
+      variants: result.variants,
+      layers: result.layers.map(layerView),
+      unknown: result.unknown.map(layerView),
+      changes: result.changes.map((c) => ({ before: layerView(c.layer), token: c.token, reused: c.reused })),
+      tokens: result.tokens.map((t) => ({
+        name: t.name,
+        figmaName: t.figmaName,
+        figmaPath: t.figmaPath,
+        group: title4(t.category),
+        published: t.published,
+        source: t.source,
+        light: t.light,
+        dark: t.dark,
+        needsDark: t.needsDark,
+        needsLight: t.needsLight
+      })),
+      issues: result.issues,
+      primitives: primitiveSwatches(vars)
+    };
+  }
+  function donePreview(result, vars, choices = {}) {
+    const tokens = draftsToTokens(withChoices(result.tokens, choices)).map((t) => __spreadProps(__spreadValues({}, t), {
+      description: `Made by the component scan in Figma.`
+    }));
+    const context = variablesToTokenSet(vars);
+    const primitives = context.tokens.filter((t) => t.layer === "primitive");
+    const css = componentCss({ tokens: [...primitives, ...tokens] }, result.component);
+    return { tokens, json: serialiseDtcg({ tokens }, `Component tokens for ${result.title}, made by the component scan in Figma.`), css };
+  }
 
   // figma-plugin/src/code.ts
   var SETTINGS = "token-library-settings";
+  var PENDING = "token-library-scan-pending";
   var api = () => figma.variables;
   var lastPlan = null;
   var lastNames = DEFAULT_COLLECTION_NAMES;
-  figma.showUI(__html__, { width: 480, height: 640, themeColors: true, title: "Token Library" });
+  figma.showUI(__html__, { width: 480, height: 680, themeColors: true, title: "Token Library" });
+  var scanApi = () => figma.variables;
+  var scan = null;
+  function selectedSet() {
+    const sel = figma.currentPage.selection;
+    if (sel.length !== 1) return null;
+    let n = sel[0];
+    while (n && n.type !== "COMPONENT_SET") n = n.parent;
+    return n != null ? n : null;
+  }
+  function countColouredLayers(set) {
+    let count = 0;
+    const walk = (n) => {
+      var _a;
+      if (n.visible === false) return;
+      const solid = (l) => Array.isArray(l) && l.some((p) => p.visible !== false && p.type === "SOLID");
+      if (n.type !== "COMPONENT" && (solid(n.fills) || solid(n.strokes))) count += 1;
+      for (const c of (_a = n.children) != null ? _a : []) walk(c);
+    };
+    walk(set);
+    return count;
+  }
+  function postSelection() {
+    const set = selectedSet();
+    if (!set) {
+      const sel = figma.currentPage.selection;
+      figma.ui.postMessage({
+        type: "scan-selection",
+        selection: null,
+        message: sel.length > 1 ? "Select only 1 component set." : sel.length === 1 ? "This is not a component set. Select a component set, for example Control." : "Select a component set on the canvas."
+      });
+      return;
+    }
+    const variants = set.children.filter((c) => c.type === "COMPONENT").length;
+    figma.ui.postMessage({ type: "scan-selection", selection: { id: set.id, name: set.name, variants, layers: countColouredLayers(set) } });
+  }
+  figma.on("selectionchange", () => {
+    const set = selectedSet();
+    if (set && scan && set.id !== scan.set.id) scan = null;
+    postSelection();
+  });
   figma.ui.onmessage = async (msg) => {
-    var _a, _b;
+    var _a, _b, _c, _d, _e;
     try {
       if (msg.type === "init") {
         const settings = (_a = await figma.clientStorage.getAsync(SETTINGS)) != null ? _a : {};
-        figma.ui.postMessage({ type: "settings", settings, fileName: figma.root.name });
+        const pending = (_b = await figma.clientStorage.getAsync(PENDING)) != null ? _b : null;
+        figma.ui.postMessage({ type: "settings", settings, fileName: figma.root.name, pending });
+        postSelection();
       }
       if (msg.type === "save-settings") {
         await figma.clientStorage.setAsync(SETTINGS, msg.settings);
       }
       if (msg.type === "plan") {
-        lastNames = __spreadValues(__spreadValues({}, DEFAULT_COLLECTION_NAMES), (_b = msg.names) != null ? _b : {});
+        lastNames = DEFAULT_COLLECTION_NAMES;
         const set = parseDtcg(msg.tokens);
         const { specs, skipped } = buildSpecs(set, { includeDrafts: !!msg.includeDrafts });
         lastPlan = planSync(specs, await readExisting(api(), lastNames), skipped);
         figma.ui.postMessage({
           type: "plan",
           plan: {
-            add: lastPlan.add.map((s) => ({ token: s.token, name: s.name, collection: s.collection })),
+            add: lastPlan.add.map((s) => ({ token: s.token, name: s.name, collection: lastNames[s.collection] })),
             change: lastPlan.change.map((c) => ({ token: c.spec.token, name: c.spec.name, differences: c.differences })),
             remove: lastPlan.remove.map((e) => {
               var _a2;
@@ -429,9 +1794,43 @@
         figma.ui.postMessage({ type: "applied", result, fileName: figma.root.name });
         figma.notify(`Token Library: ${result.added.length} added, ${result.changed.length} changed, ${result.removed.length} removed.`);
       }
+      if (msg.type === "scan-selection") postSelection();
+      if (msg.type === "scan-run") {
+        const set = selectedSet();
+        if (!set) throw new Error("Select a component set on the canvas.");
+        const input = await readComponentSet(scanApi(), set, { names: lastNames });
+        const result = scanComponent(input);
+        scan = { set, input, result };
+        figma.ui.postMessage({ type: "scan-result", view: scanView(result, input.variables) });
+      }
+      if (msg.type === "scan-check") {
+        if (!scan) throw new Error("Scan the component again.");
+        const choices = (_c = msg.choices) != null ? _c : {};
+        const checked = checkDrafts(scan.result, scan.input.variables, choices);
+        const summary = summarise(scan.result, scan.input.variables, lastNames["colour-tokens"]);
+        figma.ui.postMessage({ type: "scan-checked", ok: checked.ok, issues: checked.issues, summary });
+      }
+      if (msg.type === "scan-apply") {
+        if (!scan) throw new Error("Scan the component again.");
+        const choices = (_d = msg.choices) != null ? _d : {};
+        const checked = checkDrafts(scan.result, scan.input.variables, choices);
+        if (!checked.ok) throw new Error("Some tokens still have problems. Go back to Review.");
+        const drafts = withChoices(scan.result.tokens, choices);
+        const result = await applyScan(scanApi(), scan.set, scan.result, drafts, scan.input.variables, {
+          names: lastNames,
+          onStep: (step, done, total) => figma.ui.postMessage({ type: "scan-progress", step, done, total })
+        });
+        figma.commitUndo();
+        const preview = donePreview(scan.result, scan.input.variables, choices);
+        figma.ui.postMessage({ type: "scan-applied", result, preview, component: scan.result.component, title: scan.result.title, fileName: figma.root.name });
+        figma.notify(`Token Library: ${result.created.length + result.updated.length} variables for ${scan.result.title}, ${result.layers} layers bound.`);
+        scan = null;
+      }
+      if (msg.type === "scan-save-pending") await figma.clientStorage.setAsync(PENDING, (_e = msg.pending) != null ? _e : null);
       if (msg.type === "close") figma.closePlugin();
     } catch (e) {
-      figma.ui.postMessage({ type: "error", message: e instanceof Error ? e.message : String(e) });
+      const message = e instanceof Error ? e.message : String(e);
+      figma.ui.postMessage({ type: typeof (msg == null ? void 0 : msg.type) === "string" && msg.type.startsWith("scan-") ? "scan-error" : "error", message });
     }
   };
 })();

@@ -220,7 +220,8 @@ function checkComponentName(token: Token): Issue[] {
 
 function checkNonColourName(token: Token): Issue[] {
   const n = token.name;
-  const prefixes = NON_COLOUR_PREFIXES[token.kind as Exclude<Token["kind"], "color">];
+  const layer = token.layer === "primitive" ? "primitive" : "semantic";
+  const prefixes = NON_COLOUR_PREFIXES[layer][token.kind as Exclude<Token["kind"], "color">];
   const ok = prefixes.some((p) => n === p || n.startsWith(`${p}-`));
   if (!ok) {
     return [

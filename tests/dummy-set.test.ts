@@ -22,14 +22,23 @@ describe("dummy token set", () => {
   });
 
   it("covers every token type", () => {
-    const kinds: Kind[] = ["color", "spacing", "sizing", "typography", "radius", "border", "shadow"];
+    const kinds: Kind[] = ["color", "spacing", "sizing", "typography", "radius", "border", "shadow", "motion"];
     for (const k of kinds) expect(set.tokens.some((t) => t.kind === k), k).toBe(true);
   });
 
-  it("covers references, composites and both modes", () => {
+  it("covers references, composites and every column set", () => {
     expect(set.tokens.some((t) => isReference(t.values.light))).toBe(true);
+    expect(set.tokens.some((t) => isReference(t.values.value))).toBe(true); // a primitive pointing to a primitive
     expect(set.tokens.some((t) => t.values.dark !== undefined)).toBe(true);
-    expect(set.tokens.some((t) => t.kind === "typography" && typeof t.values.light === "object" && !isReference(t.values.light))).toBe(true);
+    expect(set.tokens.some((t) => t.values.min !== undefined && t.values.max !== undefined)).toBe(true);
+    expect(set.tokens.some((t) => typeof t.values.light === "object" && !isReference(t.values.light))).toBe(true);
+  });
+
+  it("follows the groups of the Figma file", () => {
+    for (const n of ["spacing-min-s", "spacing-max-negative-s", "grid-min-gutter", "font-size-max-step-0", "duration-fast", "space-s-m", "space-s-l", "paragraph-spacing-step-0"]) {
+      expect(find(n), n).toBeDefined();
+    }
+    expect(find("spacing-max-3xs")?.figma).toBe("spacing/max/3xs");
   });
 
   it("covers components with roles and without", () => {
@@ -39,8 +48,8 @@ describe("dummy token set", () => {
 
   it("holds the design system values the drift cases test against", () => {
     expect(drift.cases).toHaveLength(6);
-    expect(find("red-700")?.values.light).toBe("#A80000"); // 01
-    expect(find("orange-700-aa")?.values.light).toBe("#D33704"); // 02
+    expect(find("red-700")?.values.value).toBe("#A80000"); // 01
+    expect(find("orange-700-aa")?.values.value).toBe("#D33704"); // 02
     for (const n of ["line-inverse", "line-disabled", "line-danger"]) expect(find(n)).toBeDefined(); // 03
     expect(find("line-default")?.layer).toBe("semantic"); // 04
     expect(find("hover")).toBeUndefined(); // 05

@@ -3,7 +3,7 @@ import log from "@/data/dummy/history.json";
 import { simulateDeveloperDrift } from "@/src/lib/git/drift";
 import { seedFiles } from "@/src/lib/git/sync";
 import { applyDecisions, findDiscrepancies, parseTokenCss, pullFiles, restoreChangelog, type HistoryEntry } from "@/src/lib/tokens";
-import { dummy } from "./helpers";
+import { dummy, withMotion } from "./helpers";
 
 const codeFiles = (drift: boolean) => {
   const { code } = seedFiles(dummy(), log as HistoryEntry[]);
@@ -14,7 +14,7 @@ const pick = (files: Record<string, string>) => Object.fromEntries(pullFiles(dum
 describe("parseTokenCss", () => {
   it("reads light, dark and component scopes, ignoring developer styles", () => {
     const decls = parseTokenCss("components/button/button.css", codeFiles(false)["components/button/button.css"]);
-    expect(decls.find((d) => d.name === "--button-surface-primary-hover" && d.mode === "dark")).toMatchObject({ value: "var(--color-orange-400)", scope: "button" });
+    expect(decls.find((d) => d.name === "--button-surface-primary-hover" && d.context === "dark")).toMatchObject({ value: "var(--color-orange-400)", scope: "button" });
     expect(decls.some((d) => d.name === "display")).toBe(false);
   });
 });
@@ -27,7 +27,7 @@ describe("findDiscrepancies", () => {
   it("finds every drift case from the PRD", () => {
     const found = findDiscrepancies(dummy(), pick(codeFiles(true)));
     const byId = Object.fromEntries(found.map((d) => [d.id, d]));
-    expect(byId["red-700"]).toMatchObject({ kind: "changed", differences: [{ mode: "light", tool: "#A80000", code: "#FF3737" }] }); // 01
+    expect(byId["red-700"]).toMatchObject({ kind: "changed", differences: [{ mode: "value", tool: "#A80000", code: "#FF3737" }] }); // 01
     expect(byId["orange-700-aa"].kind).toBe("missing"); // 02
     for (const n of ["line-inverse", "line-disabled", "line-danger"]) expect(byId[n].kind).toBe("missing"); // 03
     expect(byId["line-default"]).toMatchObject({ kind: "renamed", codeName: "--line-default", expectedCodeName: "--color-line-default" }); // 04
@@ -35,6 +35,21 @@ describe("findDiscrepancies", () => {
     expect(extras).toEqual(["active", "hover"]); // 05
     expect(byId["button-surface-primary-hover"]).toMatchObject({ kind: "flattened", differences: [{ mode: "light", tool: "var(--color-orange-700-aa)", code: "#D33704" }] });
     expect(found).toHaveLength(9);
+  });
+
+  it("reads reduced motion and fluid values back, and blocks accepting a changed clamp()", () => {
+    const { code } = seedFiles(withMotion(), log as HistoryEntry[]);
+    const files = Object.fromEntries(pullFiles(withMotion()).map((p) => [p, code[p] ?? null]));
+    expect(findDiscrepancies(withMotion(), files)).toEqual([]);
+    const parent = files["styles/colors.css"]!
+      .replace("--duration-quick: var(--duration-none);", "--duration-quick: 10ms;")
+      .replace(/--space-s: clamp\([^;]*\);/, "--space-s: 1rem;");
+    const found = findDiscrepancies(withMotion(), { ...files, "styles/colors.css": parent });
+    const byId = Object.fromEntries(found.map((d) => [d.id, d]));
+    expect(byId["duration-quick"]).toMatchObject({ kind: "flattened", differences: [{ mode: "reduced-motion", tool: "var(--duration-none)", code: "10ms" }] });
+    expect(byId["space-s"]).toMatchObject({ kind: "changed", differences: [{ mode: "fluid", code: "1rem" }] });
+    expect(byId["space-s"].acceptBlockedReason).toContain("min and max");
+    expect(found).toHaveLength(2);
   });
 
   it("reviews only active tokens", () => {
@@ -53,7 +68,7 @@ describe("findDiscrepancies", () => {
 
   it("a draft token that is not in the code yet is not listed as missing", () => {
     const set = dummy();
-    set.tokens.push({ name: "spacing-6", layer: "primitive", kind: "spacing", status: "draft", values: { light: "20px" } } as (typeof set.tokens)[number]);
+    set.tokens.push({ name: "spacing-6", layer: "primitive", kind: "spacing", status: "draft", values: { value: "20px" } } as (typeof set.tokens)[number]);
     const files = pick(codeFiles(false));
     expect(findDiscrepancies(set, files)).toEqual([]);
     set.tokens[set.tokens.length - 1].status = "active";
@@ -66,8 +81,8 @@ describe("applyDecisions", () => {
 
   it("accepting a changed value updates the tool and the baseline", () => {
     const res = applyDecisions(dummy(), found(), [{ id: "red-700", decision: "accept", reason: "Developers chose this red." }]);
-    expect(res.set.tokens.find((t) => t.name === "red-700")!.values.light).toBe("#FF3737");
-    expect(res.baseline["red-700"]!.values.light).toBe("#FF3737");
+    expect(res.set.tokens.find((t) => t.name === "red-700")!.values.value).toBe("#FF3737");
+    expect(res.baseline["red-700"]!.values.value).toBe("#FF3737");
     expect(res.history[0]).toMatchObject({ token: "red-700", action: "accepted", reason: "Developers chose this red." });
   });
 
@@ -98,9 +113,9 @@ describe("applyDecisions", () => {
 
   it("declining records the decision and feeds the restore pull request", () => {
     const res = applyDecisions(dummy(), found(), [{ id: "red-700", decision: "decline", reason: "Brand red is #A80000." }]);
-    expect(res.set.tokens.find((t) => t.name === "red-700")!.values.light).toBe("#A80000");
+    expect(res.set.tokens.find((t) => t.name === "red-700")!.values.value).toBe("#A80000");
     expect(res.history[0]).toMatchObject({ action: "declined", token: "red-700" });
     const md = restoreChangelog(res.declined, "jane");
-    expect(md).toContain("| Changed in code | red-700 | Light: #FF3737 | Light: #A80000 | Brand red is #A80000. | styles/colors.css |");
+    expect(md).toContain("| Changed in code | red-700 | Value: #FF3737 | Value: #A80000 | Brand red is #A80000. | styles/colors.css |");
   });
 });

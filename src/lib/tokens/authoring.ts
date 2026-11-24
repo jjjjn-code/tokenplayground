@@ -4,7 +4,7 @@
  * a token together with everything that points to it.
  */
 import { parseComponentTokenName } from "./naming";
-import { COMPONENT_CATEGORIES, NON_COLOUR_PREFIXES, SEMANTIC_CATEGORIES } from "./rules";
+import { COMPONENT_CATEGORIES, namePrefixes, SEMANTIC_CATEGORIES } from "./rules";
 import { isComposite, isReference, type Issue, type Kind, type Layer, type Token, type TokenSet, type TokenValue } from "./types";
 
 export interface ComponentVocabulary {
@@ -40,7 +40,7 @@ export function namingGuide(set: TokenSet, layer: Layer, kind: Kind, component?:
       ? "Pattern: [colour]-[step], for example orange-800. Leave out the --color- prefix."
       : `Pattern: [category]-[variant], for example surface-brand. Categories: ${SEMANTIC_CATEGORIES.join(", ")}.`;
   }
-  const prefixes = NON_COLOUR_PREFIXES[kind as Exclude<Kind, "color">];
+  const prefixes = namePrefixes(layer, kind);
   return `Provisional pattern: start with ${prefixes.map((p) => `${p}-`).join(" or ")}, for example ${prefixes[0]}-small.`;
 }
 
@@ -119,10 +119,9 @@ export function renameToken(set: TokenSet, from: string, to: string): { set: Tok
   const repointed: string[] = [];
   const tokens = set.tokens.map((t) => {
     let next = t.name === from ? { ...t, name: to } : t;
-    const light = renameIn(next.values.light, from, to);
-    const dark = next.values.dark === undefined ? undefined : renameIn(next.values.dark, from, to);
-    if (JSON.stringify(light) !== JSON.stringify(next.values.light) || JSON.stringify(dark) !== JSON.stringify(next.values.dark)) {
-      next = { ...next, values: { light, ...(dark !== undefined ? { dark } : {}) } };
+    const values = Object.fromEntries(Object.entries(next.values).map(([m, v]) => [m, renameIn(v, from, to)]));
+    if (JSON.stringify(values) !== JSON.stringify(next.values)) {
+      next = { ...next, values };
       repointed.push(next.name);
     }
     return next;

@@ -22,6 +22,58 @@
   details.group { border-top: 1px solid var(--figma-color-border, #e6e6e6); padding-top: 6px; }
   ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
   .hint { color: var(--figma-color-text-secondary, #6b6b6b); margin: 0; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--figma-color-border, #e6e6e6); }
+  .tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 8px 10px; background: none; color: var(--figma-color-text-secondary, #6b6b6b); }
+  .tabs button[aria-selected=true] { color: inherit; border-bottom-color: var(--figma-color-border-brand-strong, #0d99ff); }
+  [hidden] { display: none !important; }
+  section { display: grid; gap: 12px; }
+  h2 { font-size: 13px; margin: 0; }
+  h3 { font-size: 12px; margin: 8px 0 0; }
+  button:disabled { opacity: .45; cursor: default; }
+  .stepper { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 0; padding: 0; color: var(--figma-color-text-tertiary, #b3b3b3); font-size: 11px; }
+  .stepper .past { color: var(--figma-color-text-secondary, #6b6b6b); }
+  .stepper .current { color: var(--figma-color-text, #1e1e1e); font-weight: 600; }
+  .steps { display: grid; gap: 10px; margin-top: 10px; }
+  .card, .callout { border: 1px solid var(--figma-color-border, #e6e6e6); border-radius: 6px; padding: 10px; display: grid; gap: 4px; }
+  .callout.error { border-color: var(--figma-color-border-danger, #f24822); }
+  .callout p { margin: 0; }
+  .between { justify-content: space-between; }
+  .actions { margin-top: 4px; }
+  .layer { border: 1px solid var(--figma-color-border, #e6e6e6); border-radius: 6px; padding: 8px; display: grid; gap: 4px; }
+  .layer.needs { border-color: var(--figma-color-border-warning, #ffc21a); }
+  .muted { color: var(--figma-color-text-secondary, #6b6b6b); }
+  .strong { font-weight: 600; }
+  .badge { font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 4px; background: var(--figma-color-bg-secondary, #f5f5f5); white-space: nowrap; }
+  .badge.kind-primitive, .badge.kind-raw { background: var(--figma-color-bg-warning-tertiary, #fff1c2); color: #6b4e00; }
+  .badge.kind-semantic { background: var(--figma-color-bg-success-tertiary, #cff7d3); color: #0b5d2a; }
+  .badge.kind-missing { background: var(--figma-color-bg-danger-tertiary, #ffe2e0); color: #9b1c0b; }
+  .flag { font-size: 11px; color: #8a6400; }
+  .pair { display: inline-flex; gap: 10px; }
+  .mode { display: inline-flex; align-items: center; gap: 4px; }
+  .mode-label { font-size: 11px; color: var(--figma-color-text-secondary, #6b6b6b); }
+  .swatch { position: relative; display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; overflow: hidden; border: 1px solid var(--figma-color-border, #e6e6e6); vertical-align: middle; font-size: 10px; flex: none;
+    background: repeating-conic-gradient(#d9d9d9 0 25%, #fff 0 50%) 0 0 / 8px 8px; }
+  .swatch .fill { position: absolute; inset: 0; }
+  .swatch.empty { background: none; border-style: dashed; color: var(--figma-color-text-secondary, #6b6b6b); }
+  .cell { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .issue .who { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; }
+  .picker { display: flex; align-items: center; gap: 6px; font-weight: 400; }
+  select { font: inherit; padding: 4px 6px; border: 1px solid var(--figma-color-border, #e6e6e6); border-radius: 5px; background: var(--figma-color-bg, #fff); color: inherit; max-width: 150px; }
+  .issues { gap: 4px; }
+  .issue { display: flex; gap: 6px; align-items: baseline; }
+  .issue.error .badge { background: var(--figma-color-bg-danger-tertiary, #ffe2e0); color: #9b1c0b; }
+  .issue.warning .badge { background: var(--figma-color-bg-warning-tertiary, #fff1c2); color: #6b4e00; }
+  .lead { margin: 0; font-size: 13px; }
+  ul.plain { list-style: disc; padding-left: 18px; gap: 4px; }
+  .ticks { gap: 8px; }
+  .tick { display: flex; gap: 8px; align-items: flex-start; }
+  .tick .mark { width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 11px; flex: none; background: var(--figma-color-bg-secondary, #f5f5f5); }
+  .tick.done .mark { background: var(--figma-color-bg-success, #14ae5c); color: #fff; }
+  .tick.failed .mark { background: var(--figma-color-bg-danger, #f24822); color: #fff; }
+  .tick > div { display: grid; gap: 6px; }
+  table.tokens { border-collapse: collapse; width: 100%; font-size: 11px; }
+  table.tokens th, table.tokens td { text-align: left; padding: 4px 6px 4px 0; border-bottom: 1px solid var(--figma-color-border, #e6e6e6); vertical-align: middle; }
+  pre.css { margin: 0; padding: 8px; border-radius: 6px; background: var(--figma-color-bg-secondary, #f5f5f5); font: 11px/1.45 ui-monospace, "SF Mono", Menlo, monospace; overflow-x: auto; white-space: pre; }
 </style>
 </head>
 <body>
@@ -36,19 +88,23 @@
       <label>Sync key <input type="password" id="key" autocomplete="off" placeholder="Paste the key from Token Library"></label>
       <p class="hint">In Token Library, open Sync to Figma and push Make a sync key.</p>
       <label>Token Library address <input type="text" id="url" autocomplete="off"></label>
-      <label>Primitives collection <input type="text" id="n-primitives" autocomplete="off"></label>
-      <label>Semantic collection <input type="text" id="n-semantic" autocomplete="off"></label>
-      <label>Components collection <input type="text" id="n-components" autocomplete="off"></label>
       <label class="row" style="display:flex;font-weight:400"><input type="checkbox" id="drafts"> Include draft tokens</label>
       <div class="row"><button id="save" type="button">Save settings</button></div>
     </div>
   </details>
-  <div class="row">
-    <button class="primary" id="check" type="button">Check for changes</button>
-    <button class="primary" id="sync" type="button" hidden>Sync</button>
+  <div class="tabs" role="tablist">
+    <button type="button" role="tab" id="tab-sync" aria-controls="panel-sync" aria-selected="true">Sync from tool</button>
+    <button type="button" role="tab" id="tab-scan" aria-controls="panel-scan" aria-selected="false">Scan component</button>
   </div>
-  <p class="status" id="status" role="status">Push Check for changes to compare Token Library with this file.</p>
-  <div id="result"></div>
+  <section id="panel-sync" role="tabpanel" aria-labelledby="tab-sync">
+    <div class="row">
+      <button class="primary" id="check" type="button">Check for changes</button>
+      <button class="primary" id="sync" type="button" hidden>Sync</button>
+    </div>
+    <p class="status" id="status" role="status">Push Check for changes to compare Token Library with this file.</p>
+    <div id="result"></div>
+  </section>
+  <section id="panel-scan" role="tabpanel" aria-labelledby="tab-scan" hidden></section>
 </main>
 <script>"use strict";
 (() => {
@@ -72,19 +128,541 @@
   };
   var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 
+  // figma-plugin/src/scan-ui.ts
+  var STEPS = [
+    { key: "select", label: "Select" },
+    { key: "scan", label: "Scan" },
+    { key: "changes", label: "Changes" },
+    { key: "review", label: "Review" },
+    { key: "confirm", label: "Confirm" },
+    { key: "done", label: "Done" }
+  ];
+  var el = (tag, cls = "", text = "") => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text) n.textContent = text;
+    return n;
+  };
+  var button = (text, onClick, primary = false, disabled = false) => {
+    const b = el("button", primary ? "primary" : "", text);
+    b.type = "button";
+    b.disabled = disabled;
+    b.onclick = onClick;
+    return b;
+  };
+  var plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+  function swatch(s, title) {
+    const box = el("span", "swatch");
+    if (!s) {
+      box.classList.add("empty");
+      box.title = title != null ? title : "Not chosen";
+      box.textContent = "?";
+      return box;
+    }
+    const fill = el("span", "fill");
+    fill.style.background = s.hex;
+    box.appendChild(fill);
+    box.title = title != null ? title : `${s.label} ${s.hex}`;
+    return box;
+  }
+  function pair(light, dark) {
+    const wrap = el("span", "pair");
+    for (const [mode, s] of [
+      ["Light", light],
+      ["Dark", dark]
+    ]) {
+      const part = el("span", "mode");
+      part.appendChild(swatch(s, s ? `${mode}: ${s.label} ${s.hex}` : `${mode}: not chosen`));
+      part.appendChild(el("span", "mode-label", `${mode[0]} ${s ? s.label : "?"}`));
+      wrap.appendChild(part);
+    }
+    return wrap;
+  }
+  var KIND_LABEL = {
+    semantic: "Semantic",
+    primitive: "Primitive",
+    component: "Component token",
+    raw: "Raw value",
+    missing: "Cannot read"
+  };
+  function issueList(issues) {
+    const ul = el("ul", "issues");
+    const order = { error: 0, warning: 1, info: 2 };
+    for (const i of [...issues].sort((a, b) => order[a.severity] - order[b.severity])) {
+      const li = el("li", `issue ${i.severity}`);
+      li.appendChild(el("span", "badge", i.severity === "error" ? "Must fix" : i.severity === "warning" ? "Check" : "Note"));
+      const text = el("span");
+      if (i.token && !i.message.includes(i.token)) {
+        text.appendChild(el("span", "who", i.token));
+        text.appendChild(document.createTextNode(": "));
+      }
+      text.appendChild(document.createTextNode(i.message));
+      li.appendChild(text);
+      ul.appendChild(li);
+    }
+    return ul;
+  }
+  function createScanUi(opts) {
+    const { root, post: post2 } = opts;
+    let step = "select";
+    let selection = null;
+    let selectionMessage = "Select a component set on the canvas.";
+    let view = null;
+    let choices = {};
+    let checked = null;
+    let done = null;
+    let pending = null;
+    let busy = "";
+    let error = "";
+    const hexOf = (name) => {
+      if (!name || !view) return null;
+      const p = view.primitives.find((x) => x.label === name);
+      return p ? p : null;
+    };
+    const valueOf = (t, mode) => {
+      var _a, _b;
+      return (_b = (_a = choices[t.name]) == null ? void 0 : _a[mode]) != null ? _b : t[mode];
+    };
+    const go = (s) => {
+      step = s;
+      error = "";
+      render2();
+      root.scrollTop = 0;
+    };
+    function stepper() {
+      const ol = el("ol", "stepper");
+      const at = STEPS.findIndex((s) => s.key === step);
+      STEPS.forEach((s, i) => {
+        const li = el("li", i === at ? "current" : i < at ? "past" : "", `${i + 1} ${s.label}`);
+        if (i === at) li.setAttribute("aria-current", "step");
+        ol.appendChild(li);
+      });
+      return ol;
+    }
+    function actions(...buttons) {
+      const row = el("div", "row actions");
+      buttons.forEach((b) => row.appendChild(b));
+      return row;
+    }
+    function status(text, tone = "") {
+      const p = el("p", `status ${tone}`, text);
+      p.setAttribute("role", "status");
+      return p;
+    }
+    function renderSelect(out) {
+      if (pending) {
+        const box = el("div", "callout error");
+        box.appendChild(el("strong", "", `The ${pending.title} tokens are in Figma, but not in Token Library.`));
+        box.appendChild(el("p", "", `${plural(pending.count, "token")} from "${pending.fileName}" did not get to Token Library. Send them again, or download them as JSON.`));
+        box.appendChild(actions(button("Send again", () => void sendPending(), true), button("Download JSON", () => download(pending.json, `${pending.component}-tokens.json`))));
+        out.appendChild(box);
+      }
+      out.appendChild(el("p", "hint", "Select a finished component set with a State variant property, for example State=Hover. The scan reads the layers called surface, line, content and icon in every variant."));
+      if (!selection) {
+        out.appendChild(status(selectionMessage));
+        return;
+      }
+      const card = el("div", "card");
+      card.appendChild(el("strong", "", selection.name));
+      card.appendChild(el("span", "sub", `${plural(selection.variants, "variant")} \xB7 ${plural(selection.layers, "coloured layer")}`));
+      out.appendChild(card);
+      out.appendChild(actions(button(busy ? "Scanning\u2026" : "Scan", () => run(), true, !!busy)));
+    }
+    function run() {
+      busy = "scan";
+      error = "";
+      choices = {};
+      checked = null;
+      render2();
+      post2({ type: "scan-run" });
+    }
+    function layerRow(l) {
+      var _a;
+      const li = el("li", "layer");
+      const head = el("div", "row between");
+      head.appendChild(el("span", "mono", `${l.layer} \xB7 ${l.paint}`));
+      head.appendChild(el("span", `badge kind-${l.kind}`, (_a = KIND_LABEL[l.kind]) != null ? _a : l.kind));
+      li.appendChild(head);
+      const body = el("div", "row between");
+      body.appendChild(el("span", "mono", l.label));
+      body.appendChild(pair(l.light, l.dark));
+      li.appendChild(body);
+      if (l.sameInBoth) li.appendChild(el("span", "flag", "Shows the same in both themes"));
+      return li;
+    }
+    function byVariant(items, variantOf) {
+      var _a;
+      const groups = /* @__PURE__ */ new Map();
+      for (const i of items) groups.set(variantOf(i), [...(_a = groups.get(variantOf(i))) != null ? _a : [], i]);
+      return groups;
+    }
+    function renderScan(out) {
+      if (!view) return;
+      const v = view;
+      out.appendChild(el("h2", "", v.title));
+      out.appendChild(el("span", "sub", `${plural(v.variants, "variant")} \xB7 ${plural(v.layers.length, "named layer")}${v.unknown.length ? ` \xB7 ${v.unknown.length} not recognised` : ""}`));
+      if (v.status === "fine") out.appendChild(status(`${v.title} uses Base semantic tokens in every part. It does not need its own tokens.`, "ok"));
+      if (v.status === "own-tokens") out.appendChild(status(`${v.title} already uses its own tokens in every part. Nothing to change.`, "ok"));
+      if (v.status === "blocked") out.appendChild(status(`The scan cannot continue. Fix the problems below in Figma, then scan again.`, "error"));
+      if (v.status === "draft") {
+        const n = v.layers.filter((l) => l.kind === "primitive" || l.kind === "raw").length;
+        out.appendChild(
+          status(`${plural(n, "part uses", "parts use")} a primitive or a raw value. A component uses Base semantic tokens or a full set of its own tokens, so ${v.title} gets ${plural(v.tokens.length, "component token")}.`)
+        );
+      }
+      if (v.issues.length) out.appendChild(issueList(v.issues));
+      for (const [variant, ls] of byVariant([...v.layers, ...v.unknown], (l) => l.variant)) {
+        const d = el("details", "group");
+        d.open = true;
+        d.appendChild(el("summary", "", variant));
+        const ul = el("ul");
+        ls.forEach((l) => ul.appendChild(layerRow(l)));
+        d.appendChild(ul);
+        out.appendChild(d);
+      }
+      const next = v.status === "draft" ? [button("See the changes", () => go("changes"), true)] : [];
+      out.appendChild(actions(button("Back", () => go("select")), button("Scan again", () => run()), ...next));
+    }
+    function changeRow(c) {
+      const t = view.tokens.find((x) => x.name === c.token);
+      const li = el("li", "layer");
+      const head = el("div", "row between");
+      head.appendChild(el("span", "mono", `${c.before.layer} \xB7 ${c.before.paint}`));
+      if (c.reused) head.appendChild(el("span", "badge", "Uses the default token"));
+      li.appendChild(head);
+      const before = el("div", "row between");
+      before.appendChild(el("span", "mono muted", `Now: ${c.before.label}`));
+      before.appendChild(pair(c.before.light, c.before.dark));
+      li.appendChild(before);
+      const after = el("div", "row between");
+      after.appendChild(el("span", "mono", `New: ${c.token}`));
+      after.appendChild(pair(hexOf(t ? valueOf(t, "light") : null), hexOf(t ? valueOf(t, "dark") : null)));
+      li.appendChild(after);
+      return li;
+    }
+    function renderChanges(out) {
+      if (!view) return;
+      out.appendChild(el("h2", "", "Changes to the layers"));
+      out.appendChild(el("p", "hint", "Each layer, before and after. A ? means that you choose the value in Review."));
+      for (const [variant, cs] of byVariant(view.changes, (c) => c.before.variant)) {
+        const d = el("details", "group");
+        d.open = true;
+        d.appendChild(el("summary", "", variant));
+        const ul = el("ul");
+        cs.forEach((c) => ul.appendChild(changeRow(c)));
+        d.appendChild(ul);
+        out.appendChild(d);
+      }
+      out.appendChild(actions(button("Back", () => go("scan")), button("Review the tokens", () => {
+        go("review");
+        check2();
+      }, true)));
+    }
+    function picker(t, mode) {
+      const label = el("label", "picker");
+      const value = valueOf(t, mode);
+      label.appendChild(swatch(hexOf(value)));
+      const sel = document.createElement("select");
+      sel.setAttribute("aria-label", `${mode === "light" ? "Light" : "Dark"} value for ${t.name}`);
+      if (!value) {
+        const o = document.createElement("option");
+        o.value = "";
+        o.textContent = `Choose ${mode}`;
+        sel.appendChild(o);
+      }
+      for (const p of view.primitives) {
+        const o = document.createElement("option");
+        o.value = p.label;
+        o.textContent = p.label;
+        if (p.label === value) o.selected = true;
+        sel.appendChild(o);
+      }
+      sel.onchange = () => {
+        choices = __spreadProps(__spreadValues({}, choices), { [t.name]: __spreadProps(__spreadValues({}, choices[t.name]), { [mode]: sel.value || void 0 }) });
+        check2();
+        render2();
+      };
+      label.appendChild(el("span", "mode-label", mode === "light" ? "Light" : "Dark"));
+      label.appendChild(sel);
+      return label;
+    }
+    function renderReview(out) {
+      var _a;
+      if (!view) return;
+      out.appendChild(el("h2", "", "Review the tokens"));
+      const flagged = view.tokens.filter((t) => t.needsDark && !valueOf(t, "dark") || t.needsLight && !valueOf(t, "light"));
+      out.appendChild(
+        el("p", "hint", flagged.length ? `Choose the missing values for ${plural(flagged.length, "token")}. These parts use a primitive, so the plugin cannot know their dark value.` : "Every token has a light and a dark value.")
+      );
+      const groups = /* @__PURE__ */ new Map();
+      for (const t of view.tokens) groups.set(t.group, [...(_a = groups.get(t.group)) != null ? _a : [], t]);
+      for (const [group, ts] of groups) {
+        const d = el("details", "group");
+        d.open = true;
+        d.appendChild(el("summary", "", `Interactive / ${view.title} / ${group}`));
+        const ul = el("ul");
+        for (const t of ts) {
+          const li = el("li", "layer" + (t.needsDark && !valueOf(t, "dark") || t.needsLight && !valueOf(t, "light") ? " needs" : ""));
+          const head = el("div", "row between");
+          head.appendChild(el("span", "mono strong", t.figmaName));
+          head.appendChild(el("span", `badge ${t.published ? "kind-semantic" : ""}`, t.published ? "Published" : "Hidden from publishing"));
+          li.appendChild(head);
+          li.appendChild(el("span", "mono muted", t.name));
+          li.appendChild(el("span", "sub", t.source));
+          const row = el("div", "row");
+          row.appendChild(picker(t, "light"));
+          row.appendChild(picker(t, "dark"));
+          li.appendChild(row);
+          ul.appendChild(li);
+        }
+        d.appendChild(ul);
+        out.appendChild(d);
+      }
+      if (checked) {
+        out.appendChild(el("h3", "", "Checks"));
+        out.appendChild(checked.issues.length ? issueList(checked.issues) : status("No problems found.", "ok"));
+      }
+      out.appendChild(actions(button("Back", () => go("changes")), button("Continue", () => go("confirm"), true, !(checked == null ? void 0 : checked.ok))));
+    }
+    function check2() {
+      checked = null;
+      post2({ type: "scan-check", choices });
+    }
+    function renderConfirm(out) {
+      if (!view || !checked) return;
+      const s = checked.summary;
+      out.appendChild(el("h2", "", "Confirm"));
+      out.appendChild(el("p", "lead", s.sentence));
+      const ul = el("ul", "plain");
+      const items = [
+        s.create ? `Create ${plural(s.create, "variable")} in Colour tokens, group Interactive / ${view.title}.` : "",
+        s.update ? `Update ${plural(s.update, "variable")} that are already in this file.` : "",
+        `Hide ${s.hidden} from publishing. Only the -default tokens are published.`,
+        `Bind ${plural(s.layers, "layer")} in ${plural(s.variants, "variant")} to the new variables.`,
+        `Send ${plural(s.tokens, "token")} to Token Library. They are not sent to code until someone uses Send to code.`
+      ].filter(Boolean);
+      items.forEach((i) => ul.appendChild(el("li", "", i)));
+      out.appendChild(ul);
+      out.appendChild(el("p", "hint", "The plugin cannot publish the library. When it is finished, publish from the Assets panel."));
+      out.appendChild(actions(button("Back", () => go("review")), button(busy ? "Working\u2026" : "Create and sync", () => apply(), true, !!busy)));
+    }
+    function apply() {
+      busy = "apply";
+      done = null;
+      render2();
+      post2({ type: "scan-apply", choices });
+    }
+    function tick(state, text, extra) {
+      const li = el("li", `tick ${state}`);
+      li.appendChild(el("span", "mark", state === "done" ? "\u2713" : state === "failed" ? "!" : state === "working" ? "\u2026" : "\xB7"));
+      const body = el("div");
+      body.appendChild(el("span", "", text));
+      if (extra) body.appendChild(extra);
+      li.appendChild(body);
+      return li;
+    }
+    function renderDone(out) {
+      var _a, _b;
+      if (!done) return;
+      const d = done;
+      out.appendChild(el("h2", "", `${d.title}: done`));
+      const ul = el("ul", "ticks");
+      ul.appendChild(tick(d.variables, `${d.created ? `Created ${plural(d.created, "variable")}` : ""}${d.created && d.updated ? ", " : ""}${d.updated ? `updated ${plural(d.updated, "variable")}` : ""} in Colour tokens / Interactive / ${d.title}`));
+      ul.appendChild(tick(d.binding, `Bound ${plural(d.layers, "layer")} to the new variables`));
+      let extra;
+      if (d.sending === "failed") {
+        extra = el("div", "callout error");
+        extra.appendChild(el("p", "", `${(_a = d.sendError) != null ? _a : "Token Library did not receive the tokens."} The changes in Figma stay. Send again, or download the tokens as JSON.`));
+        extra.appendChild(actions(button("Send again", () => void send(), true), button("Download JSON", () => download(d.json, `${d.component}-tokens.json`))));
+      }
+      ul.appendChild(tick(d.sending, d.sending === "done" ? `Sent ${plural(d.tokens.length, "token")} to Token Library` : d.sending === "failed" ? "Not sent to Token Library" : `Sending ${plural(d.tokens.length, "token")} to Token Library`, extra));
+      out.appendChild(ul);
+      out.appendChild(el("h3", "", "In Token Library"));
+      const table = el("table", "tokens");
+      const head = el("tr");
+      ["Token", "Light", "Dark", "Status"].forEach((h) => head.appendChild(el("th", "", h)));
+      table.appendChild(head);
+      for (const t of d.tokens) {
+        const tr = el("tr");
+        tr.appendChild(el("td", "mono", t.name));
+        for (const m of ["light", "dark"]) {
+          const td = el("td");
+          const name = (_b = t.values[m]) == null ? void 0 : _b.ref;
+          const cell = el("span", "cell");
+          cell.appendChild(swatch(hexOf(name)));
+          cell.appendChild(el("span", "mono", name != null ? name : ""));
+          td.appendChild(cell);
+          tr.appendChild(td);
+        }
+        tr.appendChild(el("td", "sub", "Not sent to code"));
+        table.appendChild(tr);
+      }
+      out.appendChild(table);
+      out.appendChild(el("h3", "", "CSS that Send to code will write"));
+      out.appendChild(el("pre", "css", d.css));
+      out.appendChild(status("Next: publish the library from the Assets panel, so other files get the new variables.", "ok"));
+      out.appendChild(actions(button("Scan another component", () => {
+        view = null;
+        done = null;
+        go("select");
+        post2({ type: "scan-selection" });
+      }, true)));
+    }
+    async function postTokens(p) {
+      var _a;
+      const s = opts.settings();
+      if (!s.key) {
+        opts.openSettings();
+        return "Add your sync key in Settings.";
+      }
+      try {
+        const res = await fetch(`${s.url}/api/figma/scan`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${s.key}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ fileName: p.fileName, component: p.component, title: p.title, tokens: p.json })
+        });
+        const body = await res.json().catch(() => ({}));
+        if (body.newKey) opts.onNewKey(body.newKey);
+        if (!res.ok) return (_a = body.message) != null ? _a : `Token Library sent an error (${res.status}).`;
+        return null;
+      } catch (e) {
+        const m = e instanceof Error ? e.message : String(e);
+        return m.includes("Failed to fetch") ? "Token Library cannot be reached. Make sure that the address in Settings is correct." : m;
+      }
+    }
+    function savePending(p) {
+      pending = p;
+      post2({ type: "scan-save-pending", pending: p });
+    }
+    async function send() {
+      if (!done) return;
+      const p = { fileName: done.fileName, component: done.component, title: done.title, json: done.json, count: done.tokens.length };
+      savePending(p);
+      done.sending = "working";
+      done.sendError = void 0;
+      render2();
+      const err = await postTokens(p);
+      if (!done) return;
+      if (err) {
+        done.sending = "failed";
+        done.sendError = err;
+      } else {
+        done.sending = "done";
+        savePending(null);
+      }
+      render2();
+    }
+    async function sendPending() {
+      if (!pending) return;
+      busy = "send";
+      render2();
+      const err = await postTokens(pending);
+      busy = "";
+      if (err) error = err;
+      else savePending(null);
+      render2();
+    }
+    function download(json, name) {
+      const blob = new Blob([JSON.stringify(json, null, 2) + "\n"], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1e3);
+    }
+    function render2() {
+      root.replaceChildren();
+      root.appendChild(stepper());
+      const out = el("div", "steps");
+      if (step === "select") renderSelect(out);
+      if (step === "scan") renderScan(out);
+      if (step === "changes") renderChanges(out);
+      if (step === "review") renderReview(out);
+      if (step === "confirm") renderConfirm(out);
+      if (step === "done") renderDone(out);
+      if (error) out.appendChild(status(error, "error"));
+      root.appendChild(out);
+    }
+    function onMessage(msg) {
+      var _a;
+      switch (msg.type) {
+        case "scan-selection": {
+          const next = msg.selection;
+          selectionMessage = (_a = msg.message) != null ? _a : selectionMessage;
+          if (step === "select") {
+            selection = next;
+            render2();
+          } else if (step !== "done" && next && next.id !== (selection == null ? void 0 : selection.id)) {
+            selection = next;
+            view = null;
+            go("select");
+          }
+          return true;
+        }
+        case "scan-result":
+          busy = "";
+          view = msg.view;
+          go("scan");
+          return true;
+        case "scan-checked":
+          checked = { ok: msg.ok, issues: msg.issues, summary: msg.summary };
+          if (step === "review") render2();
+          return true;
+        case "scan-progress":
+          return true;
+        case "scan-applied": {
+          busy = "";
+          done = {
+            title: msg.title,
+            component: msg.component,
+            fileName: msg.fileName,
+            created: msg.result.created.length,
+            updated: msg.result.updated.length,
+            layers: msg.result.layers,
+            tokens: msg.preview.tokens,
+            css: msg.preview.css,
+            json: msg.preview.json,
+            variables: "done",
+            binding: "done",
+            sending: "waiting"
+          };
+          go("done");
+          void send();
+          return true;
+        }
+        case "scan-error":
+          busy = "";
+          error = msg.message;
+          render2();
+          return true;
+        default:
+          return false;
+      }
+    }
+    return {
+      onMessage,
+      render: render2,
+      setPending(p) {
+        pending = p;
+        render2();
+      }
+    };
+  }
+
   // figma-plugin/src/ui.ts
   var DEFAULTS = {
     url: "https://tokenplayground-drab.vercel.app",
     key: "",
-    includeDrafts: false,
-    names: { primitives: "Primitives", semantic: "Semantic", components: "Components" }
+    includeDrafts: false
   };
   var settings = DEFAULTS;
   var fileName = "this file";
   var plan = null;
   var $ = (id) => document.getElementById(id);
   var post = (msg) => parent.postMessage({ pluginMessage: msg }, "*");
-  var el = (tag, cls = "", text = "") => {
+  var el2 = (tag, cls = "", text = "") => {
     const n = document.createElement(tag);
     if (cls) n.className = cls;
     if (text) n.textContent = text;
@@ -99,21 +677,13 @@
     return {
       url: $("url").value.trim().replace(/\/+$/, "") || DEFAULTS.url,
       key: $("key").value.trim(),
-      includeDrafts: $("drafts").checked,
-      names: {
-        primitives: $("n-primitives").value.trim() || DEFAULTS.names.primitives,
-        semantic: $("n-semantic").value.trim() || DEFAULTS.names.semantic,
-        components: $("n-components").value.trim() || DEFAULTS.names.components
-      }
+      includeDrafts: $("drafts").checked
     };
   }
   function fillForm() {
     $("url").value = settings.url;
     $("key").value = settings.key;
     $("drafts").checked = settings.includeDrafts;
-    $("n-primitives").value = settings.names.primitives;
-    $("n-semantic").value = settings.names.semantic;
-    $("n-components").value = settings.names.components;
     $("settings").open = !settings.key;
   }
   function saveSettings() {
@@ -140,17 +710,17 @@
         post({ type: "save-settings", settings });
       }
       setStatus("Comparing with the variables in this file\u2026");
-      post({ type: "plan", tokens: body.tokens, includeDrafts: settings.includeDrafts, names: settings.names });
+      post({ type: "plan", tokens: body.tokens, includeDrafts: settings.includeDrafts });
     } catch (e) {
       const m = e instanceof Error ? e.message : String(e);
       setStatus(m.includes("Failed to fetch") ? "Token Library cannot be reached. Make sure that the address is correct." : m, "error");
     }
   }
   function section(title, count, items, open = true) {
-    const d = el("details", "group");
+    const d = el2("details", "group");
     d.open = open && count > 0 && count <= 40;
-    d.appendChild(el("summary", "", `${title} (${count})`));
-    const list = el("ul");
+    d.appendChild(el2("summary", "", `${title} (${count})`));
+    const list = el2("ul");
     items.forEach((i) => list.appendChild(i));
     d.appendChild(list);
     return d;
@@ -165,16 +735,16 @@
     }
     const total = plan.add.length + plan.change.length + plan.remove.length;
     const item = (main, sub) => {
-      const li = el("li");
-      li.appendChild(el("span", "mono", main));
-      if (sub) li.appendChild(el("span", "sub", sub));
+      const li = el2("li");
+      li.appendChild(el2("span", "mono", main));
+      if (sub) li.appendChild(el2("span", "sub", sub));
       return li;
     };
     out.appendChild(section("Add", plan.add.length, plan.add.map((a) => item(a.name, a.collection))));
     out.appendChild(section("Change", plan.change.length, plan.change.map((c) => item(c.name, c.differences.join(" \xB7 ")))));
     out.appendChild(section("Remove", plan.remove.length, plan.remove.map((r) => item(r.name, "Made by an earlier sync. The token is no longer in Token Library."))));
     out.appendChild(section("Not synced", plan.skipped.length, plan.skipped.map((s) => item(s.token, s.reason)), false));
-    out.appendChild(el("p", "sub", `${plan.unchanged} ${plan.unchanged === 1 ? "variable is" : "variables are"} up to date.`));
+    out.appendChild(el2("p", "sub", `${plan.unchanged} ${plan.unchanged === 1 ? "variable is" : "variables are"} up to date.`));
     btn.hidden = total === 0;
     btn.textContent = `Sync ${total} ${total === 1 ? "change" : "changes"}`;
     setStatus(total ? "Examine the changes, then push Sync." : "Everything in this file is up to date.", total ? "" : "ok");
@@ -193,15 +763,43 @@
       return false;
     }
   }
+  var scanUi = createScanUi({
+    root: $("panel-scan"),
+    post,
+    settings: () => ({ url: settings.url, key: settings.key }),
+    openSettings: () => {
+      $("settings").open = true;
+    },
+    onNewKey: (key) => {
+      settings = __spreadProps(__spreadValues({}, settings), { key });
+      fillForm();
+      post({ type: "save-settings", settings });
+    }
+  });
+  var TABS = ["sync", "scan"];
+  function showTab(tab) {
+    for (const t of TABS) {
+      $(`tab-${t}`).setAttribute("aria-selected", String(t === tab));
+      $(`panel-${t}`).hidden = t !== tab;
+    }
+    if (tab === "scan") {
+      scanUi.render();
+      post({ type: "scan-selection" });
+    }
+  }
+  for (const t of TABS) $(`tab-${t}`).onclick = () => showTab(t);
   window.onmessage = async (event) => {
-    var _a, _b;
+    var _a, _b, _c, _d, _e, _f;
     const msg = event.data.pluginMessage;
     if (!msg) return;
+    if (scanUi.onMessage(msg)) return;
     if (msg.type === "settings") {
-      settings = __spreadProps(__spreadValues(__spreadValues({}, DEFAULTS), msg.settings), { names: __spreadValues(__spreadValues({}, DEFAULTS.names), (_b = (_a = msg.settings) == null ? void 0 : _a.names) != null ? _b : {}) });
+      settings = __spreadProps(__spreadValues({}, DEFAULTS), { url: (_b = (_a = msg.settings) == null ? void 0 : _a.url) != null ? _b : DEFAULTS.url, key: (_d = (_c = msg.settings) == null ? void 0 : _c.key) != null ? _d : "", includeDrafts: !!((_e = msg.settings) == null ? void 0 : _e.includeDrafts) });
       fileName = msg.fileName;
       $("file").textContent = fileName;
       fillForm();
+      scanUi.setPending((_f = msg.pending) != null ? _f : null);
+      if (msg.pending) showTab("scan");
     }
     if (msg.type === "plan") {
       plan = msg.plan;

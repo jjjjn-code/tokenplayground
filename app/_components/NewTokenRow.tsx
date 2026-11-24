@@ -12,7 +12,9 @@ import {
   namingGuide,
   normaliseTokenInput,
   LAYER_RANK,
-  NON_COLOUR_PREFIXES,
+  namePrefixes,
+  isReference,
+  modesOf,
   type Kind,
   type Layer,
   type SimpleValue,
@@ -27,7 +29,7 @@ import { NoveltyNotice } from "./RenameTitle";
 function placeholderFor(layer: Layer, kind: Kind, component?: string): string {
   if (layer === "component") return `${component}-category-role-state`;
   if (kind === "color") return layer === "primitive" ? "colour-step, for example orange-800" : "category-variant, for example surface-brand";
-  return `${NON_COLOUR_PREFIXES[kind as Exclude<Kind, "color">][0]}-name`;
+  return `${namePrefixes(layer, kind)[0]}-name`;
 }
 
 /**
@@ -40,6 +42,7 @@ export function NewTokenRow({
   component,
   set,
   index,
+  valueCols = 2,
   onCreate,
   onCancel,
 }: {
@@ -48,19 +51,35 @@ export function NewTokenRow({
   component?: string;
   set: TokenSet;
   index: TokenIndex;
+  /** How many value columns the sheet has, so a 1-value token fills them. */
+  valueCols?: number;
   onCreate: (t: Token) => void;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(component ? `${component}-` : "");
-  const [light, setLight] = useState<SimpleValue | "">("");
-  const [dark, setDark] = useState<SimpleValue | "">("");
-  const [darkTouched, setDarkTouched] = useState(false);
+  const modes = modesOf({ layer, kind });
+  const [values, setValues] = useState<Record<string, SimpleValue | "">>({});
+  // Later columns follow the first one until you change them.
+  const [touched, setTouched] = useState<Set<string>>(new Set());
   // Messages wait until the person finishes: never on load, never while typing.
   // "name": after leaving the name field or pushing Enter. "all": after pushing Create.
   const [reveal, setReveal] = useState<"none" | "name" | "all">("none");
   const nameRef = useRef<HTMLInputElement>(null);
   const rowRef = useRef<HTMLTableRowElement>(null);
-  const hasDark = layer !== "primitive";
+  /**
+   * What a later column shows before you change it. For min and max, a min
+   * token such as spacing-min-s suggests its max partner, spacing-max-s.
+   */
+  const followed = (mode: string): SimpleValue | "" => {
+    const first = values[modes[0].key] ?? "";
+    if (mode === "max" && isReference(first) && first.ref.includes("-min-")) {
+      const partner = first.ref.replace("-min-", "-max-");
+      if (index.has(partner)) return { ref: partner };
+    }
+    return first;
+  };
+  const valueOf = (mode: string, i: number): SimpleValue | "" =>
+    i === 0 || touched.has(mode) ? values[mode] ?? "" : followed(mode);
 
   useEffect(() => {
     nameRef.current?.focus();
@@ -73,7 +92,7 @@ export function NewTokenRow({
     layer,
     kind,
     ...(component ? { component } : {}),
-    values: { light, ...(hasDark ? { dark: darkTouched ? dark : light } : {}) },
+    values: Object.fromEntries(modes.map((m, i) => [m.key, valueOf(m.key, i)])),
     status: "active",
   };
 
@@ -86,7 +105,13 @@ export function NewTokenRow({
   const canCreate = ok && nameTyped && !novelty?.blocking;
   const guide = namingGuide(set, layer, kind, component);
 
-  const candidates = set.tokens.filter((t) => LAYER_RANK[t.layer] < LAYER_RANK[layer] && t.kind === kind && t.status !== "deprecated");
+  const sizeKinds: Kind[] = ["spacing", "sizing", "typography"];
+  const candidates = set.tokens.filter(
+    (t) =>
+      (layer === "primitive" ? t.layer === "primitive" : LAYER_RANK[t.layer] < LAYER_RANK[layer]) &&
+      (t.kind === kind || (sizeKinds.includes(t.kind) && sizeKinds.includes(kind))) &&
+      t.status !== "deprecated",
+  );
 
   const create = () => {
     if (canCreate) onCreate(draft);
@@ -95,7 +120,7 @@ export function NewTokenRow({
   const showName = reveal !== "none" && nameTyped;
   const valueError = issues.find((i) => i.severity === "error" && !i.code.startsWith("name"));
 
-  const focusLight = () => rowRef.current?.querySelector<HTMLButtonElement>('[data-new="light"] button')?.focus();
+  const focusLight = () => rowRef.current?.querySelector<HTMLButtonElement>('[data-new="first"] button')?.focus();
 
   return (
     <tr ref={rowRef} className="bg-row-selected/60" onKeyDown={(e) => e.key === "Escape" && onCancel()}>
@@ -160,37 +185,23 @@ export function NewTokenRow({
           </div>
         </div>
       </td>
-      <td className="px-1.5 pt-1.5 align-top" data-new="light">
-        <ValuePicker
-          label={layer === "primitive" ? "Value" : "Light value"}
-          value={light}
-          onChange={(v) => setLight(v)}
-          candidates={candidates}
-          index={index}
-          mode="light"
-          allowRaw={layer !== "component"}
-          allowRef={layer !== "primitive"}
-        />
-      </td>
-      <td className="px-1.5 pt-1.5 align-top">
-        {hasDark ? (
+      {modes.map((m, i) => (
+        <td key={m.key} className="px-1.5 pt-1.5 align-top" colSpan={modes.length === 1 ? valueCols : 1} {...(i === 0 ? { "data-new": "first" } : {})}>
           <ValuePicker
-            label="Dark value"
-            value={darkTouched ? dark : light}
+            label={modes.length === 1 ? "Value" : `${m.label} value`}
+            value={valueOf(m.key, i)}
             onChange={(v) => {
-              setDark(v);
-              setDarkTouched(true);
+              setValues((x) => ({ ...x, [m.key]: v }));
+              if (i > 0) setTouched((t) => new Set(t).add(m.key));
             }}
             candidates={candidates}
             index={index}
-            mode="dark"
+            mode={m.key}
             allowRaw={layer !== "component"}
             allowRef
           />
-        ) : (
-          <div className="cell-btn text-muted-foreground/60">—</div>
-        )}
-      </td>
+        </td>
+      ))}
       <td className="align-top">
         <div className="cell-btn h-auto"><StatusBadge status="active" /></div>
       </td>

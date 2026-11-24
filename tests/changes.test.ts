@@ -11,7 +11,7 @@ describe("diffSets", () => {
     const after = structuredClone(base);
     after.tokens = after.tokens.filter((t) => t.name !== "tag-line-default");
     const red = after.tokens.find((t) => t.name === "red-700")!;
-    red.values.light = "#B00000";
+    red.values.value = "#B00000";
     after.tokens.push(colour("button-surface-primary-selected", "component", { ref: "orange-700" }, { component: "button" }));
     const changes = diffSets(base, after);
     expect(changes.map((c) => [c.type, c.name, c.file])).toEqual([
@@ -47,7 +47,7 @@ describe("changelog", () => {
   it("follows the PRD format", () => {
     const base = dummy();
     const after = structuredClone(base);
-    after.tokens.find((t) => t.name === "red-700")!.values.light = "#B00000";
+    after.tokens.find((t) => t.name === "red-700")!.values.value = "#B00000";
     after.tokens.push(colour("button-surface-primary-selected", "component", { ref: "orange-700-aa" }, { component: "button", values: { light: { ref: "orange-700-aa" }, dark: { ref: "orange-400" } } }));
     const md = changelogMarkdown({ title: "button hover states", summary: "new selected state.", author: "jane", changes: diffSets(base, after) });
     expect(md).toContain("## Token update: button hover states");
@@ -70,19 +70,19 @@ describe("mergeEdits after a conflict", () => {
   const base = { tokens: [colour("white", "primitive", "#FFFFFF"), colour("black", "primitive", "#000000"), colour("red-700", "primitive", "#A80000")] };
 
   it("keeps their changes and your changes when they touch different tokens", () => {
-    const mine = { tokens: base.tokens.map((t) => (t.name === "white" ? edit(t, { values: { light: "#FEFEFE" } }) : t)) };
-    const theirs = { tokens: [...base.tokens.map((t) => (t.name === "black" ? edit(t, { values: { light: "#010101" } }) : t)), colour("blue-400", "primitive", "#0000FF")] };
+    const mine = { tokens: base.tokens.map((t) => (t.name === "white" ? edit(t, { values: { value: "#FEFEFE" } }) : t)) };
+    const theirs = { tokens: [...base.tokens.map((t) => (t.name === "black" ? edit(t, { values: { value: "#010101" } }) : t)), colour("blue-400", "primitive", "#0000FF")] };
     const { merged, conflicts } = mergeEdits(base, mine, theirs);
     expect(conflicts).toEqual([]);
-    expect(merged.tokens.map((t) => `${t.name}:${t.values.light}`)).toEqual(["white:#FEFEFE", "black:#010101", "red-700:#A80000", "blue-400:#0000FF"]);
+    expect(merged.tokens.map((t) => `${t.name}:${t.values.value}`)).toEqual(["white:#FEFEFE", "black:#010101", "red-700:#A80000", "blue-400:#0000FF"]);
   });
 
   it("reports tokens you both changed and keeps yours", () => {
-    const mine = { tokens: base.tokens.map((t) => (t.name === "red-700" ? edit(t, { values: { light: "#B00000" } }) : t)) };
-    const theirs = { tokens: base.tokens.map((t) => (t.name === "red-700" ? edit(t, { values: { light: "#C00000" } }) : t)) };
+    const mine = { tokens: base.tokens.map((t) => (t.name === "red-700" ? edit(t, { values: { value: "#B00000" } }) : t)) };
+    const theirs = { tokens: base.tokens.map((t) => (t.name === "red-700" ? edit(t, { values: { value: "#C00000" } }) : t)) };
     const { merged, conflicts } = mergeEdits(base, mine, theirs);
     expect(conflicts).toEqual(["red-700"]);
-    expect(merged.tokens.find((t) => t.name === "red-700")!.values.light).toBe("#B00000");
+    expect(merged.tokens.find((t) => t.name === "red-700")!.values.value).toBe("#B00000");
   });
 
   it("keeps your new tokens", () => {

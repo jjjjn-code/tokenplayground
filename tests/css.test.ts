@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BLOCK_END, BLOCK_START, componentCss, cssFiles, parentCss, replaceManagedBlock } from "@/src/lib/tokens";
-import { colour, dummy } from "./helpers";
+import { colour, dummy, withMotion } from "./helpers";
 
 describe("CSS output", () => {
   const set = dummy();
@@ -25,8 +25,34 @@ describe("CSS output", () => {
     const css = parentCss(set);
     expect(css).toContain("--border-default: var(--border-width-1) solid var(--color-neutral-700);");
     expect(css).toContain("--shadow-elevated: 0px 2px 8px 0px var(--color-black);");
-    expect(css).toContain("--text-body: var(--font-size-16);");
-    expect(css).toContain("--text-body--line-height: var(--line-height-145);");
+  });
+
+  it("writes sizes in px and font weights as plain numbers", () => {
+    const css = parentCss(set);
+    expect(css).toContain("--spacing-min-s: 16px;");
+    expect(css).toContain("--font-size-max-step-0: 19px;");
+    expect(css).toContain("--font-weight-bold: 700;");
+    expect(css).toContain("--spacing-base: var(--spacing-max-l);");
+  });
+
+  it("writes fluid tokens as 1 clamp() between the min and max sizes, naming both", () => {
+    const css = parentCss(set);
+    expect(css).toContain("--space-s: clamp(1rem, 0.9375rem + 0.25vw, 1.1875rem); /* min: spacing-min-s, max: spacing-max-s */");
+    expect(css).toContain("--space-s-l: clamp(1rem, 0.5417rem + 1.8333vw, 2.375rem);");
+    // Negative sizes keep the smaller number first, as clamp() needs.
+    expect(css).toContain("--space-negative-s: clamp(-1.1875rem, -0.9375rem - 0.25vw, -1rem);");
+  });
+
+  it("writes motion primitives once, with no reduced motion block", () => {
+    const css = parentCss(set);
+    expect(css).toContain("--duration-fast: 150ms;");
+    expect(css).not.toContain("@media");
+  });
+
+  it("writes semantic reduced motion values in a media query", () => {
+    const css = parentCss(withMotion());
+    expect(css).toContain("--duration-quick: var(--duration-fast);");
+    expect(css).toContain("@media (prefers-reduced-motion: reduce) {\n  :root {\n    --duration-quick: var(--duration-none);\n  }\n}");
   });
 
   it("scopes component tokens to the component class, matching the repo contract", () => {

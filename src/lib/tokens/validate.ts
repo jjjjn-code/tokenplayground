@@ -4,13 +4,17 @@
  * it returns blocks the save.
  */
 import { checkName, parseComponentTokenName } from "./naming";
-import { indexTokens, referencesIn, referencesOf, resolveToken, type TokenIndex } from "./references";
+import { toPx } from "./fluid";
+import { columnSetOf, indexTokens, modesOf, referencesIn, referencesOf, resolveToken, type TokenIndex } from "./references";
 import { LAYER_RANK, LAYERS_BY_KIND } from "./rules";
 import { isComposite, isReference, type Issue, type Token, type TokenSet, type TokenValue } from "./types";
 
 const HEX = /^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/;
 
 const kindWord = (k: string) => (k === "color" ? "colour" : k);
+
+/** Size types may refer to each other, for example paragraph spacing that uses a spacing size. */
+const SIZE_KINDS: string[] = ["spacing", "sizing", "typography"];
 
 export function validateTokenSet(set: TokenSet): Issue[] {
   const index = indexTokens(set);
@@ -41,20 +45,31 @@ export function checkToken(t: Token, index: TokenIndex): Issue[] {
   const info = (code: string, message: string) => out.push({ severity: "info", code, message, token: t.name });
 
   if (!LAYERS_BY_KIND[t.kind].includes(t.layer)) {
-    err("layer.kind", "Only colour tokens can be component tokens. Make this a primitive or a semantic token.");
+    err(
+      "layer.kind",
+      "Only colour tokens can be component tokens. Make this a primitive or a semantic token.",
+    );
   }
   if (t.layer !== "component" && t.component) {
     err("layer.component", `A ${t.layer} token cannot be part of a component. Remove the component.`);
   }
 
-  // Modes
-  if (t.layer === "primitive" && t.values.dark !== undefined) {
-    err("mode.primitive", "Remove the dark value. A primitive has 1 value for all modes.");
+  // Modes: the token's column set says which values it has.
+  const set = columnSetOf(t);
+  const modes = modesOf(t);
+  const label = (key: string) => modes.find((m) => m.key === key)?.label.toLowerCase() ?? key;
+  const extra = Object.keys(t.values).filter((k) => !modes.some((m) => m.key === k));
+  if (extra.length) {
+    if (set === "value") err("mode.primitive", `Remove the ${extra.join(" and ")} value. A primitive has 1 value for all modes.`);
+    else err("mode.extra", `Remove the ${extra.join(" and ")} value. This token has ${modes.map((m) => m.label.toLowerCase()).join(" and ")} values.`);
   }
-  if (t.kind === "color" && t.layer !== "primitive" && t.values.dark === undefined) {
-    err("mode.missing", "The dark value is empty. Select a dark value.");
+  // Light-only borders and shadows use the light value in dark mode. Every other set needs all its values.
+  const optional = set === "theme" && t.kind !== "color";
+  const missing = optional ? [] : modes.filter((m) => t.values[m.key] === undefined);
+  if (missing.length) {
+    err("mode.missing", `The ${missing.map((m) => m.label.toLowerCase()).join(" and ")} value is empty. Select a ${missing[0].label.toLowerCase()} value.`);
   }
-  if (t.kind === "color" && t.layer !== "primitive" && t.values.dark !== undefined) {
+  if (set === "theme" && t.kind === "color" && t.values.dark !== undefined) {
     // Compare final colours, so a token pointing to a semantic token that
     // changes between modes is not flagged.
     const l = resolveToken(index, t.name, "light");
@@ -66,22 +81,34 @@ export function checkToken(t: Token, index: TokenIndex): Issue[] {
 
   // Values and references
   const isEmpty = (v: TokenValue | undefined) => v === "" || (v !== undefined && isComposite(v) && Object.values(v).some((p) => p === ""));
-  const emptyModes = (["light", "dark"] as const).filter((m) => isEmpty(t.values[m]));
+  const emptyModes = modes.filter((m) => isEmpty(t.values[m.key])).map((m) => m.key);
   if (emptyModes.length) {
-    if (t.layer === "primitive" || t.values.dark === undefined) err("value.empty", "The value is empty. Select a token or type a value.");
-    else if (emptyModes.length === 2) err("value.empty", "The light and dark values are empty. Select a light value and a dark value.");
-    else err("value.empty", `The ${emptyModes[0]} value is empty. Select a ${emptyModes[0]} value.`);
+    const present = modes.filter((m) => t.values[m.key] !== undefined);
+    if (present.length <= 1) err("value.empty", "The value is empty. Select a token or type a value.");
+    else if (emptyModes.length === present.length) {
+      err("value.empty", `The ${present.map((m) => m.label.toLowerCase()).join(" and ")} values are empty. ${present.map((m) => `Select a ${m.label.toLowerCase()} value`).join(" and ")}.`.replace(/ and Select/, " and select"));
+    } else err("value.empty", `The ${label(emptyModes[0])} value is empty. Select a ${label(emptyModes[0])} value.`);
   }
-  for (const v of [t.values.light, t.values.dark]) {
+  for (const v of Object.values(t.values)) {
     if (v === undefined || isEmpty(v)) continue;
-    if (t.layer === "primitive" && referencesIn(v).length) {
-      err("ref.primitive", "A primitive cannot refer to a token. Type a raw value. Example: #A80000.");
-    }
     if (t.layer !== "primitive" && hasRawSimpleValue(v)) {
       warn("ref.raw", "This token has a raw value. Semantic and component tokens must refer to a token. Select a token.");
     }
     if (t.kind === "color" && typeof v === "string" && !HEX.test(v)) {
       err("value.colour", `"${v}" is not a colour. Type a hex value. Example: #FF5000.`);
+    }
+    if (set === "fluid" && isComposite(v)) {
+      err("value.fluid", "A fluid token has 1 size for min and 1 size for max. Select a size token.");
+    }
+  }
+  if (set === "fluid" && !emptyModes.length && !missing.length) {
+    // Each end must come out as a size, so the tool can write the clamp().
+    for (const m of modes) {
+      const r = resolveToken(index, t.name, m.key);
+      if (!r.error && toPx(r.value) === null) {
+        err("value.fluid", `The ${m.label.toLowerCase()} value is ${String(r.value)}, which is not a size. Select a size token. Example: ${t.kind === "typography" ? "font-size-min-step-0" : "spacing-min-s"}.`);
+        break;
+      }
     }
   }
 
@@ -91,11 +118,14 @@ export function checkToken(t: Token, index: TokenIndex): Issue[] {
       err("ref.missing", `The token "${ref}" does not exist. Select a different token.`);
       continue;
     }
-    if (LAYER_RANK[target.layer] >= LAYER_RANK[t.layer]) {
+    // Primitives may point to other primitives (for example a base size that
+    // follows 1 step of the scale); other layers only point downwards.
+    const sameLayerOk = t.layer === "primitive" && target.layer === "primitive";
+    if (!sameLayerOk && LAYER_RANK[target.layer] >= LAYER_RANK[t.layer]) {
       err("ref.layer", `A ${t.layer} token cannot refer to a ${target.layer} token. Select a token from a lower layer: ${t.layer === "component" ? "primitive or semantic" : "primitive"}.`);
     }
-    const simple = [t.values.light, t.values.dark].some((v) => isReference(v) && v.ref === ref);
-    if (simple && target.kind !== t.kind) {
+    const simple = Object.values(t.values).some((v) => isReference(v) && v.ref === ref);
+    if (simple && target.kind !== t.kind && !(SIZE_KINDS.includes(t.kind) && SIZE_KINDS.includes(target.kind))) {
       err("ref.kind", `A ${kindWord(t.kind)} token cannot refer to a ${kindWord(target.kind)} token. Select a ${kindWord(t.kind)} token.`);
     }
     if (t.layer === "component" && target.layer === "semantic" && t.kind === "color") {
@@ -110,7 +140,7 @@ export function checkToken(t: Token, index: TokenIndex): Issue[] {
     }
   }
 
-  for (const mode of ["light", "dark"] as const) {
+  for (const { key: mode } of modes) {
     const r = resolveToken(index, t.name, mode);
     if (r.error?.kind === "cycle") {
       err("ref.cycle", `The references make a loop: ${r.error.chain.join(" > ")}. Change 1 of the references.`);
