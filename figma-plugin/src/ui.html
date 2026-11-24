@@ -74,6 +74,67 @@
   table.tokens { border-collapse: collapse; width: 100%; font-size: 11px; }
   table.tokens th, table.tokens td { text-align: left; padding: 4px 6px 4px 0; border-bottom: 1px solid var(--figma-color-border, #e6e6e6); vertical-align: middle; }
   pre.css { margin: 0; padding: 8px; border-radius: 6px; background: var(--figma-color-bg-secondary, #f5f5f5); font: 11px/1.45 ui-monospace, "SF Mono", Menlo, monospace; overflow-x: auto; white-space: pre; }
+  /* Component scan, 3 screens (24 Nov 2026) */
+  .scan-head { display: flex; justify-content: flex-end; }
+  .pills { list-style: none; display: flex; gap: 6px; margin: 0; padding: 0; }
+  .pills li { padding: 3px 10px; border-radius: 99px; background: var(--figma-color-bg-secondary, #f5f5f5); color: var(--figma-color-text-secondary, #6b6b6b); font-weight: 500; }
+  .pills li.on { background: var(--figma-color-bg-inverse, #1e1e1e); color: var(--figma-color-text-oninverse, #fff); }
+  .pills li.done { background: var(--figma-color-bg-success-tertiary, #cff7d3); color: #0b5d2a; }
+  .scan-body { display: grid; gap: 14px; margin-top: 10px; }
+  .scan-foot { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--figma-color-border, #e6e6e6); padding-top: 12px; }
+  .empty-state { border: 1px dashed var(--figma-color-border, #e6e6e6); border-radius: 8px; padding: 18px; display: grid; gap: 6px; }
+  .pair-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 12px; align-items: center; }
+  .side { border: 1px solid var(--figma-color-border, #e6e6e6); border-radius: 8px; padding: 10px; display: grid; gap: 8px; min-width: 0; }
+  .stage { border-radius: 6px; padding: 10px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; min-height: 90px; align-items: center; }
+  .stage.light { background: #ffffff; border: 1px solid #ececec; }
+  .stage.dark { background: #1a1a1a; }
+  .stage.dark .hint, .stage.dark .vlabel { color: #bdbdbd; }
+  .vcol { display: grid; justify-items: center; gap: 4px; }
+  .vcol img { height: 48px; width: auto; max-width: 120px; }
+  .vlabel { font-size: 10.5px; color: #6b6b6b; }
+  .noimg { font-size: 10px; color: #9b9b9b; }
+  .field { display: grid; gap: 6px; }
+  .name-row { align-items: flex-end; }
+  .name-row input { width: 240px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { border: 1px solid var(--figma-color-border, #e6e6e6); border-radius: 99px; padding: 2px 10px; font-weight: 500; }
+  .state-grid { display: flex; gap: 10px; flex-wrap: wrap; }
+  .state-pick { display: grid; gap: 6px; justify-items: center; border: 1px solid var(--figma-color-border, #e6e6e6); border-radius: 8px; padding: 8px; background: #fff; }
+  .state-pick img { height: 44px; width: auto; }
+  .status.warn { color: #8a5d00; }
+  .split { display: grid; grid-template-columns: minmax(0, 1fr) 236px; gap: 14px; align-items: start; }
+  .map-wrap { overflow-x: auto; }
+  table.map { border-collapse: separate; border-spacing: 6px; width: 100%; margin: -6px; table-layout: fixed; }
+  table.map th:first-child, table.map td.part { width: 64px; }
+  table.map th { text-align: left; font-size: 11px; color: var(--figma-color-text-secondary, #6b6b6b); font-weight: 600; padding: 0 4px; }
+  table.map td.part { font-weight: 600; vertical-align: top; padding-top: 10px; white-space: nowrap; }
+  table.map td { vertical-align: top; }
+  button.cell { display: flex; flex-direction: column; align-items: stretch; white-space: normal; overflow: hidden; gap: 5px; text-align: left; width: 100%; min-width: 0; font-weight: 400; padding: 8px; border-radius: 6px; }
+  button.cell.reused { background: var(--figma-color-bg-secondary, #f5f5f5); }
+  button.cell.reused .tok { color: var(--figma-color-text-secondary, #6b6b6b); }
+  button.cell.sel { outline: 2px solid var(--figma-color-border-brand-strong, #0d99ff); outline-offset: -1px; }
+  button.cell.needs { border-color: var(--figma-color-border-warning, #ffc21a); }
+  .tok { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 10.5px; font-weight: 600; overflow-wrap: anywhere; }
+  .ld { display: grid; gap: 3px; }
+  .colour { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; min-width: 0; }
+  .colour span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .was { font-size: 10.5px; color: var(--figma-color-text-secondary, #6b6b6b); overflow-wrap: anywhere; }
+  button.cell > * { min-width: 0; }
+  .nocell { font-size: 10.5px; color: var(--figma-color-text-tertiary, #b3b3b3); display: block; padding: 8px; }
+  .detail { border: 1px solid var(--figma-color-border, #e6e6e6); border-radius: 8px; padding: 12px; display: grid; gap: 8px; position: sticky; top: 0; }
+  .detail .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--figma-color-text-secondary, #6b6b6b); }
+  .detail .hint.warn { color: #8a5d00; }
+  .cmp { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr); gap: 6px 8px; align-items: center; }
+  .cmp .h { font-size: 10.5px; color: var(--figma-color-text-secondary, #6b6b6b); }
+  .cmp select { max-width: 100%; }
+  .cmp .colour span:last-child { white-space: normal; overflow-wrap: anywhere; }
+  .layer-part { display: grid; gap: 4px; font-weight: 400; }
+  .layer-part select { max-width: 100%; }
+  .fstep { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 12px; align-items: center; border: 1px solid var(--figma-color-border, #e6e6e6); border-radius: 8px; padding: 12px; }
+  .fstep .n { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-weight: 600; background: var(--figma-color-bg-secondary, #f5f5f5); }
+  .fstep.done .n { background: var(--figma-color-bg-success, #14ae5c); color: #fff; }
+  .fstep .t { display: grid; gap: 2px; }
+  .badge.ok { background: var(--figma-color-bg-success-tertiary, #cff7d3); color: #0b5d2a; }
 </style>
 </head>
 <body>

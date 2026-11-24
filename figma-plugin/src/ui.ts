@@ -157,6 +157,8 @@ function showTab(tab: (typeof TABS)[number]) {
     $(`tab-${t}`).setAttribute("aria-selected", String(t === tab));
     $(`panel-${t}`).hidden = t !== tab;
   }
+  // The scan needs room to show light and dark side by side (24 Nov 2026).
+  post({ type: "resize", width: tab === "scan" ? 920 : 480, height: tab === "scan" ? 720 : 680 });
   if (tab === "scan") {
     scanUi.render();
     post({ type: "scan-selection" });

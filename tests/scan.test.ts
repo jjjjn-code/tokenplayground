@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { applyPlan, readExisting } from "@/src/lib/figma/apply";
 import { buildSpecs, hexToRgba, planSync } from "@/src/lib/figma/plan";
-import { checkDrafts, draftsToTokens, scanComponent, summarise, withChoices, type Choices } from "@/src/lib/figma/scan";
-import { donePreview, scanView } from "@/src/lib/figma/scan-view";
+import { checkDrafts, draftsToTokens, partKey, scanComponent, summarise, withChoices, type Choices } from "@/src/lib/figma/scan";
+import { donePreview, scanView, tokenMap } from "@/src/lib/figma/scan-view";
 import { parseDtcg } from "@/src/lib/tokens";
-import { applyScan, bindScan, publishScan, readComponentSet, whichIsDark, type ComponentSetLike, type NodeLike, type PaintLike } from "@/src/lib/figma/scan-figma";
+import { applyScan, autoCategory, bindScan, guessStates, publishScan, readComponentSet, suggestComponentName, whichIsDark, writeStates, type ComponentSetLike, type NodeLike, type PaintLike } from "@/src/lib/figma/scan-figma";
 import { FakeFigma } from "./fake-figma";
 import { codes, dummy } from "./helpers";
 
@@ -240,15 +240,59 @@ describe("component scan: other cases", () => {
     expect(r.tokens).toEqual([]);
   });
 
-  it("lists a coloured layer with another name as unknown and leaves it alone", async () => {
+  it("works out the part of a layer with another name from what it is, and the designer can change it (24 Nov)", async () => {
     const fig = await file();
     const set = componentSet(fig, "Control", {
-      "State=Default": { surface: { fill: P("neutral-200") }, arrow: { fill: S("content-default") } },
+      "State=Default": { surface: { fill: P("neutral-200") }, arrow: { fill: S("content-default") }, ring: { stroke: S("line-default") } },
     });
-    const r = scanComponent(await readComponentSet(fig, set));
-    expect(r.unknown.map((l) => l.paint.layerName)).toEqual(["arrow"]);
-    expect(codes(r.issues)).toContain("scan.unknown");
-    expect(r.changes.map((c) => c.layer.paint.layerName)).toEqual(["surface"]);
+    const input = await readComponentSet(fig, set);
+    const r = scanComponent(input);
+    expect(r.unknown).toEqual([]);
+    // A frame fill with another name is surface; a stroke is line.
+    expect(r.layers.map((l) => [l.paint.layerName, l.category])).toEqual([["surface", "surface"], ["arrow", "surface"], ["ring", "line"]]);
+    expect(r.issues.map((i) => i.code)).toContain("scan.conflict");
+    // The designer says the arrow is content: the conflict goes.
+    const fixed = scanComponent(input, undefined, { [partKey(r.layers[1].paint)]: "content" });
+    expect(fixed.layers[1].category).toBe("content");
+    expect(fixed.status).toBe("draft");
+  });
+
+  it("reads text and icon shapes as content", () => {
+    expect(autoCategory({ id: "1", name: "Label", type: "TEXT" }, "fills")).toBe("content");
+    expect(autoCategory({ id: "1", name: "Chevron", type: "VECTOR" }, "fills")).toBe("content");
+    expect(autoCategory({ id: "1", name: "Box", type: "RECTANGLE" }, "fills")).toBe("surface");
+    expect(autoCategory({ id: "1", name: "Box", type: "RECTANGLE" }, "strokes")).toBe("line");
+  });
+
+  it("names the component without words such as light, dark and copy", () => {
+    expect(suggestComponentName("Control light")).toBe("Control");
+    expect(suggestComponentName("Icon button / Dark")).toBe("Icon button");
+    expect(suggestComponentName("dark")).toBe("dark");
+  });
+
+  it("lets the designer name states in the plugin when the set has no State property, and writes them to Figma", async () => {
+    const fig = await file();
+    const rows = LIGHT_ROWS.map((r) => ["Default", ...r.slice(1)] as [string, string | null, string, string]);
+    // As in the sandbox file: every variant is Property 1=Default.
+    const set = componentSetFromRows(fig, "Icon button", rows, "Property 1");
+    const blocked = scanComponent(await readComponentSet(fig, set));
+    expect(codes(blocked.issues)).toContain("scan.state");
+    const states = guessStates(set);
+    expect(Object.values(states)).toEqual(["Default", "Hover", "Pressed", "Disabled"]);
+    const r = scanComponent(await readComponentSet(fig, set, { states }), undefined);
+    expect(r.status).toBe("draft");
+    expect(r.tokens.map((t) => t.name)).toContain("iconbutton-surface-hover");
+    expect(writeStates(set, null, states)).toBe(4);
+    expect(set.children.map((c) => c.name)).toEqual(["State=Default", "State=Hover", "State=Pressed", "State=Disabled"]);
+  });
+
+  it("stops when 2 variants are given the same state", async () => {
+    const fig = await file();
+    const set = componentSetFromRows(fig, "Icon button", LIGHT_ROWS, "Property 1");
+    const ids = set.children.map((c) => c.id);
+    const r = scanComponent(await readComponentSet(fig, set, { states: { [ids[0]]: "Default", [ids[1]]: "Hover", [ids[2]]: "Hover", [ids[3]]: "Disabled" } }));
+    expect(codes(r.issues)).toContain("scan.same-state");
+    expect(r.status).toBe("blocked");
   });
 
   it("matches a raw value to the primitive with the same colour, and asks for both values when none matches", async () => {
@@ -340,6 +384,20 @@ describe("component scan: what the plugin shows", () => {
     expect(done.css).toContain("--control-surface-hover: var(--color-neutral-600);");
   });
 });
+
+/** A set shaped like the real control, with every variant under 1 property (as in the sandbox file before states are named). */
+function componentSetFromRows(fig: FakeFigma, name: string, rows: [string, string | null, string, string][], prop = "State"): ComponentSetLike {
+  const children = rows.map(([state, fill, stroke, arrow]) => ({
+    id: `N:${++n}`,
+    name: `${prop}=${state}`,
+    type: "COMPONENT",
+    variantProperties: { [prop]: state },
+    fills: fill ? [paint(fig, fill)] : [],
+    strokes: [paint(fig, stroke)],
+    children: [{ id: `N:${++n}`, name: "Icon", type: "INSTANCE", fills: [], children: [{ id: `N:${++n}`, name: "icon", type: "VECTOR", fills: [paint(fig, arrow)] }] }],
+  })) as NodeLike[];
+  return { id: `N:${++n}`, name, type: "COMPONENT_SET", children, componentPropertyDefinitions: { [prop]: { type: "VARIANT", variantOptions: [...new Set(rows.map((r) => r[0]))] } } } as ComponentSetLike;
+}
 
 /** The real control: state, frame fill, frame stroke, arrow. */
 const LIGHT_ROWS: [string, string | null, string, string][] = [
@@ -476,6 +534,20 @@ describe("component scan: the structure of the real control (UAL UI Sandbox, 23 
       expect(scanComponent(await readComponentSet(fig, set, { dark })).status).toBe("own-tokens");
     });
 
+    it("builds the token map: parts against states, with light and dark before and after", async () => {
+      const fig = await file();
+      const input = await readComponentSet(fig, realControl(fig), { dark: realControl(fig, "Control dark", DARK_ROWS) });
+      const map = tokenMap(scanComponent(input), input.variables);
+      expect(map.states).toEqual(["default", "hover", "pressed", "disabled"]);
+      expect(map.rows.map((r) => r.label)).toEqual(["Surface", "Line", "Content"]);
+      const hover = map.rows[0].cells[1]!;
+      expect(hover).toMatchObject({ token: "control-surface-hover", reused: false, published: false });
+      expect([hover.light?.label, hover.dark?.label, hover.beforeLight.label, hover.beforeDark.label]).toEqual(["neutral-200", "neutral-600", "neutral-200", "neutral-600"]);
+      expect(map.rows[1].cells[1]).toMatchObject({ token: "control-line-default", reused: true });
+      // Disabled has no frame fill, so its surface box is empty.
+      expect(map.rows[0].cells[3]).toBeNull();
+    });
+
     it("refuses to apply before the variables are published", async () => {
       const fig = await file();
       const set = realControl(fig);
@@ -512,6 +584,9 @@ describe("component scan: the structure of the real control (UAL UI Sandbox, 23 
       const c = { id: "3", name: "Control copy", type: "COMPONENT_SET", explicitVariableModes: { C: "M-dark" } };
       expect(whichIsDark([c, a], ["M-dark"])).toBe(0);
       expect(whichIsDark([a, { ...a, id: "4" }])).toBeNull();
+      // The Appearance set in Figma wins over the name.
+      const named = { id: "5", name: "Control dark", type: "COMPONENT_SET", explicitVariableModes: { C: "M-light" } };
+      expect(whichIsDark([named, c], ["M-dark"], { lightModeIds: ["M-light"] })).toBe(1);
     });
 
     it("handles the sandbox file's layout: a frame holding the set in light mode, and plain frames with a text note", async () => {

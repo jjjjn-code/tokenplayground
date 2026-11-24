@@ -892,6 +892,7 @@
 
   // src/lib/figma/scan.ts
   var localFirst = (vars) => [...vars.filter((v) => !v.remote), ...vars.filter((v) => v.remote)];
+  var partKey = (p) => `${p.layerName}|${p.paint}`;
   var CATEGORIES = COMPONENT_CATEGORIES;
   var CATEGORY_ORDER = ["surface", "line", "content", "icon"];
   var TRANSPARENT_ALPHA = 1e-3;
@@ -1052,7 +1053,7 @@
         return "missing";
     }
   }
-  function scanComponent(input, group = DEFAULT_FIGMA_GROUP) {
+  function scanComponent(input, group = DEFAULT_FIGMA_GROUP, chosenParts = {}) {
     var _a, _b, _c;
     const component = normaliseComponentName(input.componentName).slug;
     const byId = new Map(input.variables.map((v) => [v.id, v]));
@@ -1074,12 +1075,13 @@
       }
     }
     const all = input.paints.filter((paint) => !forbidden.has(paint.state)).map((paint) => {
-      var _a2;
+      var _a2, _b2, _c2, _d;
       const source = sourceOf(paint.binding, component, input.variables, byId);
       const darkSource = paint.dark ? sourceOf(paint.dark.binding, component, input.variables, byId) : void 0;
       const noMatch = paint.dark === null;
       const fixed = !darkSource && (source.kind === "primitive" || source.kind === "raw") && !isTransparent(source.value.color);
-      return { paint, category: (_a2 = paint.category) != null ? _a2 : categoryOfLayer(paint.layerName), source, darkSource, noMatch, sameInBoth: fixed };
+      const category = (_d = (_c2 = (_b2 = (_a2 = chosenParts[partKey(paint)]) != null ? _a2 : paint.category) != null ? _b2 : categoryOfLayer(paint.layerName)) != null ? _c2 : paint.autoCategory) != null ? _d : null;
+      return { paint, category, source, darkSource, noMatch, sameInBoth: fixed };
     });
     const layers = all.filter((l) => l.category);
     const unknown = all.filter((l) => !l.category);
@@ -1357,6 +1359,55 @@
     return out;
   }
   var isSymbol = (x) => typeof x === "symbol";
+  var SHAPES = /* @__PURE__ */ new Set(["VECTOR", "BOOLEAN_OPERATION", "STAR", "POLYGON", "LINE"]);
+  function autoCategory(n, field) {
+    if (field === "strokes" && n.type !== "TEXT" && !SHAPES.has(n.type)) return "line";
+    if (n.type === "TEXT" || SHAPES.has(n.type)) return "content";
+    return "surface";
+  }
+  var STOP_WORDS = /\b(light|dark|copy|mode|theme)\b/gi;
+  function suggestComponentName(name) {
+    const cleaned = name.replace(STOP_WORDS, " ").replace(/[\s/_-]+/g, " ").trim();
+    return cleaned || name.trim();
+  }
+  function guessStates(set) {
+    var _a;
+    const kids = set.children.filter((c) => c.type === "COMPONENT");
+    const known = ["Default", "Hover", "Pressed", "Disabled", "Selected", "Loading", "On", "Off"];
+    const out = {};
+    const used = /* @__PURE__ */ new Set();
+    for (const k of kids) {
+      const value = Object.values((_a = k.variantProperties) != null ? _a : {}).map((v) => known.find((s) => s.toLowerCase() === slug(v)));
+      const hit = value.find((v) => v && !used.has(v));
+      if (hit) {
+        out[k.id] = hit;
+        used.add(hit);
+      }
+    }
+    for (const k of kids) {
+      if (out[k.id]) continue;
+      const next = known.find((s) => !used.has(s));
+      if (next) {
+        out[k.id] = next;
+        used.add(next);
+      }
+    }
+    return out;
+  }
+  function writeStates(set, dark, states) {
+    const kids = set.children.filter((c) => c.type === "COMPONENT");
+    let n = 0;
+    kids.forEach((k, i) => {
+      const s = states[k.id];
+      if (!s) return;
+      const label = s.charAt(0).toUpperCase() + s.slice(1);
+      const d = dark && dark.type === "COMPONENT_SET" ? darkVariantFor(dark, k, i, kids.length) : null;
+      k.name = `State=${label}`;
+      if (d) d.name = `State=${label}`;
+      n += 1;
+    });
+    return n;
+  }
   function whichIsDark(nodes, darkModeIds = [], opts = {}) {
     var _a, _b, _c, _d;
     const decide = (flags) => flags[0] !== flags[1] ? flags[0] ? 0 : 1 : void 0;
@@ -1364,10 +1415,10 @@
       var _a2;
       return Object.values((_a2 = n.explicitVariableModes) != null ? _a2 : {});
     };
-    return (_d = (_c = (_b = (_a = decide(nodes.map((n) => /\bdark\b/i.test(n.name)))) != null ? _a : opts.hasSet ? decide(opts.hasSet.map((x) => !x)) : void 0) != null ? _b : decide(nodes.map((n) => modes(n).some((m) => darkModeIds.includes(m))))) != null ? _c : decide(nodes.map((n) => !modes(n).some((m) => {
+    return (_d = (_c = (_b = (_a = decide(nodes.map((n) => modes(n).some((m) => darkModeIds.includes(m))))) != null ? _a : decide(nodes.map((n) => !modes(n).some((m) => {
       var _a2;
       return ((_a2 = opts.lightModeIds) != null ? _a2 : []).includes(m);
-    })))) != null ? _d : null;
+    })))) != null ? _b : decide(nodes.map((n) => /\bdark\b/i.test(n.name)))) != null ? _c : opts.hasSet ? decide(opts.hasSet.map((x) => !x)) : void 0) != null ? _d : null;
   }
   var darkVariantsOf = (dark) => {
     var _a;
@@ -1389,15 +1440,18 @@
     return k && k.type === n.type ? k : null;
   }
   async function readComponentSet(api2, set, opts = {}) {
-    var _a, _b, _c, _d, _e, _f, _g;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
     const darkRoot = (_a = opts.dark) != null ? _a : null;
+    const named = (_b = opts.states) != null ? _b : {};
     const issues = [];
-    const defs = Object.entries((_b = set.componentPropertyDefinitions) != null ? _b : {}).filter(([, d]) => d.type === "VARIANT");
-    const stateProp = (_c = defs.find(([n]) => n.trim().toLowerCase() === "state")) == null ? void 0 : _c[0];
-    if (!stateProp) {
+    const defs = Object.entries((_c = set.componentPropertyDefinitions) != null ? _c : {}).filter(([, d]) => d.type === "VARIANT");
+    const stateProp = (_d = defs.find(([n]) => n.trim().toLowerCase() === "state")) == null ? void 0 : _d[0];
+    const lightKids = set.children.filter((c) => c.type === "COMPONENT");
+    const namedInPlugin = !stateProp && lightKids.length > 0 && lightKids.every((c) => named[c.id]);
+    if (!stateProp && !namedInPlugin) {
       issues.push(issue3("error", "scan.state", `${set.name} has no State property. Add a variant property called State, with values such as Default, Hover, Pressed and Disabled.`));
     }
-    const roleProps = defs.filter(([n, d]) => {
+    const roleProps = namedInPlugin ? [] : defs.filter(([n, d]) => {
       var _a2, _b2;
       return n !== stateProp && ((_b2 = (_a2 = d.variantOptions) == null ? void 0 : _a2.length) != null ? _b2 : 0) > 1;
     }).map(([n]) => n);
@@ -1415,13 +1469,14 @@
       }
     }
     for (const [vi, node] of lightVariants.entries()) {
-      const props = (_d = node.variantProperties) != null ? _d : {};
-      const state = stateProp ? slug((_e = props[stateProp]) != null ? _e : "") : "";
-      const role = roleProp ? slug((_f = props[roleProp]) != null ? _f : "") || void 0 : void 0;
-      if (stateProp && !state) issues.push(issue3("error", "scan.state-value", `The variant ${node.name} has no State value. Give it a State value.`));
+      const props = (_e = node.variantProperties) != null ? _e : {};
+      const state = namedInPlugin ? slug(named[node.id]) : stateProp ? slug((_f = props[stateProp]) != null ? _f : "") : "";
+      const role = roleProp ? slug((_g = props[roleProp]) != null ? _g : "") || void 0 : void 0;
+      if ((stateProp || namedInPlugin) && !state) issues.push(issue3("error", "scan.state-value", `The variant ${node.name} has no State value. Give it a State value.`));
       variants.push({ id: node.id, name: node.name, state, role });
       const darkVariant = darkRoot ? darkVariantFor(darkRoot, node, vi, lightVariants.length) : null;
       const read = (n, d, layerName, category) => {
+        const auto = (field) => autoCategory(n, field);
         if (n.isMask) return;
         for (const field of ["fills", "strokes"]) {
           const list2 = n[field];
@@ -1449,7 +1504,8 @@
               index,
               binding: bound ? { kind: "variable", id: bound } : { kind: "raw", color: __spreadProps(__spreadValues({}, p.color), { a: (_c2 = p.opacity) != null ? _c2 : 1 }) },
               dark: darkPair,
-              category: category(field)
+              category: category(field),
+              autoCategory: auto(field)
             });
           });
         }
@@ -1463,11 +1519,16 @@
         kids.forEach((c, i) => walk(c, darkChild(d, c, i, kids.length), inside));
       };
       read(node, darkVariant, "variant frame", (field) => field === "fills" ? "surface" : "line");
-      const top = (_g = node.children) != null ? _g : [];
+      const top = (_h = node.children) != null ? _h : [];
       top.forEach((c, i) => walk(c, darkChild(darkVariant, c, i, top.length), null));
     }
-    if (stateProp && !variants.some((v) => v.state === "default")) {
+    if ((stateProp || namedInPlugin) && !variants.some((v) => v.state === "default")) {
       issues.push(issue3("error", "scan.no-default", `${set.name} has no variant with State=Default. Add a default variant.`));
+    }
+    const seen = /* @__PURE__ */ new Map();
+    for (const v of variants) if (v.state) seen.set(`${(_i = v.role) != null ? _i : ""}|${v.state}`, ((_k = seen.get(`${(_j = v.role) != null ? _j : ""}|${v.state}`)) != null ? _k : 0) + 1);
+    for (const [k, count] of seen) {
+      if (count > 1) issues.push(issue3("error", "scan.same-state", `${count} variants have the state ${k.split("|")[1]}${k.split("|")[0] ? ` for the role ${k.split("|")[0]}` : ""}. Give each variant its own state.`));
     }
     const names = namesOf(opts);
     const local = await api2.getLocalVariableCollectionsAsync();
@@ -1865,6 +1926,50 @@ ${BLOCK_END}`;
     const css = componentCss({ tokens: [...primitives, ...tokens] }, result.component);
     return { tokens, json: serialiseDtcg({ tokens }, `Component tokens for ${result.title}, made by the component scan in Figma.`), css };
   }
+  var STATE_ORDER = ["default", "hover", "pressed", "disabled", "selected", "loading", "on", "off"];
+  var rankOf = (s) => STATE_ORDER.indexOf(s) === -1 ? STATE_ORDER.length : STATE_ORDER.indexOf(s);
+  var CAT_ORDER = ["surface", "line", "content", "icon"];
+  function tokenMap(result, vars, choices = {}) {
+    var _a, _b, _c, _d;
+    const prims = primitiveSwatches(vars);
+    const sw = (name) => {
+      var _a2;
+      return name ? (_a2 = prims.find((p) => p.label === name)) != null ? _a2 : null : null;
+    };
+    const tokens = new Map(withChoices(result.tokens, choices).map((t) => [t.name, t]));
+    const states = [...new Set(result.changes.map((c) => c.layer.paint.state))].sort((a, b) => rankOf(a) - rankOf(b) || a.localeCompare(b));
+    const rows = /* @__PURE__ */ new Map();
+    for (const c of result.changes) {
+      const p = c.layer.paint;
+      const category = c.layer.category;
+      const key = [category, p.role].filter(Boolean).join("|");
+      const row = (_a = rows.get(key)) != null ? _a : { key, category, role: p.role, label: [title4(category), p.role ? `(${p.role})` : ""].filter(Boolean).join(" "), cells: states.map(() => null) };
+      const i = states.indexOf(p.state);
+      const t = tokens.get(c.token);
+      const before = layerView(c.layer);
+      const cell = (_c = row.cells[i]) != null ? _c : {
+        state: p.state,
+        token: c.token,
+        reused: c.reused,
+        published: !!(t == null ? void 0 : t.published),
+        light: sw(t == null ? void 0 : t.light),
+        dark: sw(t == null ? void 0 : t.dark),
+        beforeLight: { label: before.label, swatch: before.light },
+        beforeDark: { label: (_b = before.darkLabel) != null ? _b : before.label, swatch: before.dark },
+        needsLight: !!t && t.needsLight && !t.light,
+        needsDark: !!t && t.needsDark && !t.dark,
+        layers: []
+      };
+      cell.layers.push({ nodeId: p.nodeId, darkNodeId: (_d = p.dark) == null ? void 0 : _d.nodeId, name: p.layerName, paint: p.paint === "fills" ? "Fill" : "Stroke", key: `${p.layerName}|${p.paint}`, category });
+      row.cells[i] = cell;
+      rows.set(key, row);
+    }
+    const ordered = [...rows.values()].sort((a, b) => {
+      var _a2, _b2;
+      return ((_a2 = a.role) != null ? _a2 : "").localeCompare((_b2 = b.role) != null ? _b2 : "") || CAT_ORDER.indexOf(a.category) - CAT_ORDER.indexOf(b.category);
+    });
+    return { states, rows: ordered };
+  }
 
   // figma-plugin/src/code.ts
   var SETTINGS = "token-library-settings";
@@ -1874,7 +1979,10 @@ ${BLOCK_END}`;
   var lastNames = DEFAULT_COLLECTION_NAMES;
   figma.showUI(__html__, { width: 480, height: 680, themeColors: true, title: "Token Library" });
   var scanApi = () => figma.variables;
+  var SWAPS = "token-library-dark-copies";
   var scan = null;
+  var options = { pair: "", parts: {} };
+  var locked = false;
   function setOf(node) {
     let n = node;
     while (n && n.type !== "COMPONENT_SET") n = n.parent;
@@ -1894,67 +2002,126 @@ ${BLOCK_END}`;
     }
     return null;
   }
+  var lastPair = null;
   async function picked() {
-    var _a, _b;
+    var _a, _b, _c;
     const sel = figma.currentPage.selection;
-    if (!sel.length) return { set: null, dark: null, message: "Select the component set and its dark copy on the canvas." };
+    if (!sel.length) return { set: null, dark: null, message: "Select your light and dark component sets on the canvas." };
     const tops = [];
     for (const n of sel) {
       const top = (_a = setOf(n)) != null ? _a : n;
       if (!tops.includes(top)) tops.push(top);
     }
-    if (tops.length > 2) return { set: null, dark: null, message: "Select only the component set and its dark copy." };
+    if (tops.length > 2) return { set: null, dark: null, message: "Select only 2 things: the light component set and the dark one." };
     if (tops.length === 1) {
+      lastPair = null;
       const set2 = setFor(tops[0]);
-      return set2 ? { set: set2, dark: null } : { set: null, dark: null, message: "This is not a component set. Select a component set, for example Control, and its dark copy." };
+      return set2 ? { set: set2, dark: null } : { set: null, dark: null, message: "This is not a component set. Select your light and dark component sets." };
     }
-    const sets = [setFor(tops[0]), setFor(tops[1])];
-    const ids = await modeIds();
-    const i = whichIsDark([tops[0], tops[1]], ids.dark, { lightModeIds: ids.light, hasSet: [!!sets[0], !!sets[1]] });
-    if (i === null) return { set: null, dark: null, message: `The plugin cannot tell which copy is the dark one. Add "dark" to the dark copy's name, for example "Control dark".` };
-    const set = sets[1 - i];
-    if (!set) return { set: null, dark: null, message: `${tops[1 - i].name} has no component set. Select the component set and its dark copy.` };
-    return { set, dark: (_b = setFor(tops[i])) != null ? _b : tops[i] };
+    const swaps = (_b = await figma.clientStorage.getAsync(SWAPS)) != null ? _b : {};
+    const pairKey = [tops[0].id, tops[1].id].sort().join("|");
+    let i;
+    let guessed = false;
+    if (swaps[pairKey]) i = tops[0].id === swaps[pairKey] ? 0 : 1;
+    else {
+      const ids = await modeIds();
+      const sets = [setFor(tops[0]), setFor(tops[1])];
+      i = whichIsDark([tops[0], tops[1]], ids.dark, { lightModeIds: ids.light, hasSet: [!!sets[0], !!sets[1]] });
+      if (i === null) {
+        i = 1;
+        guessed = true;
+      }
+    }
+    lastPair = { key: pairKey, tops: [tops[0].id, tops[1].id], darkTop: tops[i].id };
+    const set = setFor(tops[1 - i]);
+    if (!set) return { set: null, dark: null, message: `${tops[1 - i].name} is not a component set. The light one must be a component set with your variants.` };
+    return { set, dark: (_c = setFor(tops[i])) != null ? _c : tops[i], guessed };
   }
-  function countColouredLayers(set) {
-    let count = 0;
-    const walk = (n) => {
-      var _a;
-      if (n.visible === false) return;
-      const solid = (l) => Array.isArray(l) && l.some((p) => p.visible !== false && p.type === "SOLID");
-      if (n.type !== "COMPONENT" && (solid(n.fills) || solid(n.strokes))) count += 1;
-      for (const c of (_a = n.children) != null ? _a : []) walk(c);
+  async function pictures(nodes) {
+    const out = [];
+    for (const n of nodes) {
+      let bytes = null;
+      try {
+        bytes = await n.exportAsync({ format: "PNG", constraint: { type: "HEIGHT", value: 96 } });
+      } catch (e) {
+        bytes = null;
+      }
+      out.push({ id: n.id, bytes });
+    }
+    return out;
+  }
+  var variantsOf = (n) => {
+    var _a;
+    return ((_a = n == null ? void 0 : n.children) != null ? _a : []).filter((c) => n.type === "COMPONENT_SET" ? c.type === "COMPONENT" : c.type !== "TEXT");
+  };
+  async function rescan(withPictures = true) {
+    var _a, _b, _c, _d;
+    let set;
+    let dark;
+    let guessed = false;
+    if (locked && scan) {
+      set = await figma.getNodeByIdAsync(scan.set.id);
+      dark = scan.dark ? await figma.getNodeByIdAsync(scan.dark.id) : null;
+      if (!set) throw new Error("The component set is gone. Go back to Check and select it again.");
+    } else {
+      const p = await picked();
+      if (!p.set) {
+        scan = null;
+        figma.ui.postMessage({ type: "scan-view", check: null, message: p.message });
+        return;
+      }
+      set = p.set;
+      dark = p.dark;
+      guessed = !!p.guessed;
+    }
+    const pair = `${set.id}|${(_a = dark == null ? void 0 : dark.id) != null ? _a : ""}`;
+    if (options.pair !== pair) options = { pair, parts: {} };
+    const defs = Object.entries((_b = set.componentPropertyDefinitions) != null ? _b : {}).filter(([, d]) => d.type === "VARIANT");
+    const hasState = defs.some(([n]) => n.trim().toLowerCase() === "state");
+    const states = hasState ? void 0 : __spreadValues(__spreadValues({}, guessStates(set)), (_c = options.states) != null ? _c : {});
+    const input = await readComponentSet(scanApi(), set, { names: lastNames, dark, states });
+    const name = (_d = options.name) != null ? _d : suggestComponentName(set.name);
+    input.componentName = name;
+    const result = scanComponent(input, void 0, options.parts);
+    const choices = scan && scan.set.id === set.id ? scan.choices : {};
+    scan = { set, dark, input, result, choices, namedStates: !hasState };
+    const lightVariants = variantsOf(set);
+    const check = {
+      light: { id: set.id, name: set.name, variants: lightVariants.map((v) => ({ id: v.id, name: v.name })) },
+      dark: dark ? { id: dark.id, name: dark.name, variants: variantsOf(dark).map((v) => ({ id: v.id, name: v.name })) } : null,
+      guessed,
+      name,
+      suggestedName: suggestComponentName(set.name),
+      hasStateProperty: hasState,
+      states: lightVariants.map((v) => {
+        var _a2, _b2;
+        return { id: v.id, name: v.name, state: (_b2 = (_a2 = input.variants.find((x) => x.id === v.id)) == null ? void 0 : _a2.state) != null ? _b2 : "" };
+      })
     };
-    walk(set);
-    return count;
-  }
-  async function postSelection() {
-    const { set, dark, message } = await picked();
-    if (!set) {
-      figma.ui.postMessage({ type: "scan-selection", selection: null, message });
-      return;
-    }
-    const variants = set.children.filter((c) => c.type === "COMPONENT").length;
+    const pics = withPictures ? { light: await pictures(lightVariants), dark: dark ? await pictures(variantsOf(dark)) : [] } : null;
+    const checked = checkDrafts(result, input.variables, choices);
     figma.ui.postMessage({
-      type: "scan-selection",
-      selection: { id: set.id, name: set.name, variants, layers: countColouredLayers(set), dark: dark ? { id: dark.id, name: dark.name } : null }
+      type: "scan-view",
+      check,
+      pictures: pics,
+      view: scanView(result, input.variables),
+      map: tokenMap(result, input.variables, choices),
+      summary: summarise(result, input.variables, lastNames["colour-tokens"]),
+      checked: { ok: checked.ok, issues: checked.issues },
+      locked
     });
   }
   figma.on("selectionchange", () => {
-    void (async () => {
-      const { set } = await picked();
-      if (set && scan && set.id !== scan.set.id) scan = null;
-      await postSelection();
-    })();
+    if (locked) return;
+    void rescan().catch((e) => figma.ui.postMessage({ type: "scan-error", message: e instanceof Error ? e.message : String(e) }));
   });
   figma.ui.onmessage = async (msg) => {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d, _e, _f;
     try {
       if (msg.type === "init") {
         const settings = (_a = await figma.clientStorage.getAsync(SETTINGS)) != null ? _a : {};
         const pending = (_b = await figma.clientStorage.getAsync(PENDING)) != null ? _b : null;
         figma.ui.postMessage({ type: "settings", settings, fileName: figma.root.name, pending });
-        postSelection();
       }
       if (msg.type === "save-settings") {
         await figma.clientStorage.setAsync(SETTINGS, msg.settings);
@@ -1985,50 +2152,60 @@ ${BLOCK_END}`;
         figma.ui.postMessage({ type: "applied", result, fileName: figma.root.name });
         figma.notify(`Token Library: ${result.added.length} added, ${result.changed.length} changed, ${result.removed.length} removed.`);
       }
-      if (msg.type === "scan-selection") await postSelection();
-      if (msg.type === "scan-run") {
-        const { set, dark, message } = await picked();
-        if (!set) throw new Error(message != null ? message : "Select a component set on the canvas.");
-        const input = await readComponentSet(scanApi(), set, { names: lastNames, dark });
-        const result = scanComponent(input);
-        scan = { set, dark, input, result };
-        figma.ui.postMessage({ type: "scan-result", view: scanView(result, input.variables) });
+      if (msg.type === "resize") figma.ui.resize(msg.width, msg.height);
+      if (msg.type === "scan-selection") await rescan();
+      if (msg.type === "scan-lock") {
+        locked = !!msg.locked;
+        if (!locked) await rescan();
       }
-      if (msg.type === "scan-check") {
-        if (!scan) throw new Error("Scan the component again.");
-        const choices = (_c = msg.choices) != null ? _c : {};
-        const checked = checkDrafts(scan.result, scan.input.variables, choices);
-        const summary = summarise(scan.result, scan.input.variables, lastNames["colour-tokens"]);
-        figma.ui.postMessage({ type: "scan-checked", ok: checked.ok, issues: checked.issues, summary });
+      if (msg.type === "scan-options") {
+        options = __spreadValues(__spreadValues(__spreadValues(__spreadValues({}, options), msg.name !== void 0 ? { name: msg.name || void 0 } : {}), msg.states ? { states: msg.states } : {}), msg.parts ? { parts: __spreadValues(__spreadValues({}, options.parts), msg.parts) } : {});
+        await rescan(false);
+      }
+      if (msg.type === "scan-swap") {
+        if (!lastPair) throw new Error("Select both the light and the dark component sets first.");
+        const swaps = (_c = await figma.clientStorage.getAsync(SWAPS)) != null ? _c : {};
+        swaps[lastPair.key] = lastPair.tops.find((id) => id !== lastPair.darkTop);
+        await figma.clientStorage.setAsync(SWAPS, swaps);
+        options = { pair: "", parts: {} };
+        await rescan();
+      }
+      if (msg.type === "scan-choices") {
+        if (!scan) throw new Error("Select your component sets again.");
+        scan.choices = (_d = msg.choices) != null ? _d : {};
+        await rescan(false);
+      }
+      if (msg.type === "scan-show") {
+        const nodes = [];
+        for (const id of (_e = msg.nodeIds) != null ? _e : []) {
+          const n = await figma.getNodeByIdAsync(id);
+          if (n) nodes.push(n);
+        }
+        if (nodes.length) {
+          figma.currentPage.selection = nodes;
+          figma.viewport.scrollAndZoomIntoView(nodes);
+        }
       }
       if (msg.type === "scan-publish") {
-        if (!scan) throw new Error("Scan the component again.");
-        const choices = (_d = msg.choices) != null ? _d : {};
-        const checked = checkDrafts(scan.result, scan.input.variables, choices);
-        if (!checked.ok) throw new Error("Some tokens still have problems. Go back to Accept names.");
-        const drafts = withChoices(scan.result.tokens, choices);
-        const result = await publishScan(scanApi(), drafts, scan.input.variables, {
-          names: lastNames,
-          onStep: (step, done, total) => figma.ui.postMessage({ type: "scan-progress", step, done, total })
-        });
+        if (!scan) throw new Error("Select your component sets again.");
+        const checked = checkDrafts(scan.result, scan.input.variables, scan.choices);
+        if (!checked.ok) throw new Error("Some tokens still have problems. Go back to the token map.");
+        const drafts = withChoices(scan.result.tokens, scan.choices);
+        const result = await publishScan(scanApi(), drafts, scan.input.variables, { names: lastNames });
         figma.commitUndo();
-        scan.choices = choices;
         figma.ui.postMessage({ type: "scan-published", result });
         figma.notify(`Token Library: ${result.created.length + result.updated.length} variables saved for ${scan.result.title}.`);
       }
       if (msg.type === "scan-bind") {
-        if (!scan || !scan.choices) throw new Error("Use Save and publish first.");
-        const result = await bindScan(scanApi(), scan.set, scan.result, {
-          names: lastNames,
-          dark: scan.dark,
-          onStep: (step, done, total) => figma.ui.postMessage({ type: "scan-progress", step, done, total })
-        });
+        if (!scan) throw new Error("Select your component sets again.");
+        const result = await bindScan(scanApi(), scan.set, scan.result, { names: lastNames, dark: scan.dark });
+        const named = scan.namedStates ? writeStates(scan.set, scan.dark, Object.fromEntries(scan.input.variants.map((v) => [v.id, v.state]))) : 0;
         figma.commitUndo();
         const preview = donePreview(scan.result, scan.input.variables, scan.choices);
-        figma.ui.postMessage({ type: "scan-bound", result, preview, component: scan.result.component, title: scan.result.title, fileName: figma.root.name });
-        figma.notify(`Token Library: ${result.layers + result.darkLayers} layers bound in ${scan.result.title}.`);
+        figma.ui.postMessage({ type: "scan-bound", result: __spreadProps(__spreadValues({}, result), { statesNamed: named }), preview, component: scan.result.component, title: scan.result.title, fileName: figma.root.name });
+        figma.notify(`Token Library: ${result.layers + result.darkLayers} colours swapped for tokens in ${scan.result.title}.`);
       }
-      if (msg.type === "scan-save-pending") await figma.clientStorage.setAsync(PENDING, (_e = msg.pending) != null ? _e : null);
+      if (msg.type === "scan-save-pending") await figma.clientStorage.setAsync(PENDING, (_f = msg.pending) != null ? _f : null);
       if (msg.type === "close") figma.closePlugin();
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);

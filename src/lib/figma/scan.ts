@@ -66,7 +66,12 @@ export interface ScannedPaint {
    * instance such as an icon (content).
    */
   category?: string;
+  /** The part guessed from what the layer is (a stroke, text, a shape, a fill), used when nothing else gives one. */
+  autoCategory?: string;
 }
+
+/** The key the designer's choice of part is stored under: the same layer and paint in every variant. */
+export const partKey = (p: { layerName: string; paint: "fills" | "strokes" }) => `${p.layerName}|${p.paint}`;
 
 export interface ScanInput {
   /** The component set's name in Figma, for example `Control`. */
@@ -383,8 +388,12 @@ function signature(layer: ScannedLayer): string {
   }
 }
 
-/** Scan a component set and draft its tokens when it needs them. */
-export function scanComponent(input: ScanInput, group = DEFAULT_FIGMA_GROUP): ScanResult {
+/**
+ * Scan a component set and draft its tokens when it needs them. `parts`
+ * holds the designer's choice of part (surface, line, content, icon) by
+ * `partKey`, which wins over every guess.
+ */
+export function scanComponent(input: ScanInput, group = DEFAULT_FIGMA_GROUP, chosenParts: Record<string, string> = {}): ScanResult {
   const component = normaliseComponentName(input.componentName).slug;
   const byId = new Map(input.variables.map((v) => [v.id, v]));
   const issues: Issue[] = [...input.issues];
@@ -416,7 +425,8 @@ export function scanComponent(input: ScanInput, group = DEFAULT_FIGMA_GROUP): Sc
       const noMatch = paint.dark === null;
       // Transparent looks the same in every theme, so it is not flagged. A dark copy gives the dark value.
       const fixed = !darkSource && (source.kind === "primitive" || source.kind === "raw") && !isTransparent(source.value.color);
-      return { paint, category: paint.category ?? categoryOfLayer(paint.layerName), source, darkSource, noMatch, sameInBoth: fixed };
+      const category = chosenParts[partKey(paint)] ?? paint.category ?? categoryOfLayer(paint.layerName) ?? paint.autoCategory ?? null;
+      return { paint, category, source, darkSource, noMatch, sameInBoth: fixed };
     });
   const layers = all.filter((l) => l.category);
   const unknown = all.filter((l) => !l.category);

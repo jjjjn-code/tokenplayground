@@ -1,12 +1,19 @@
 /**
- * Token Library Figma plugin: the Scan component tab (F12). 8 steps:
- * Select, Scan, Changes, Accept names, Save and publish, Apply to layers,
- * Send and Done (split on 24 Nov 2026, so each can be checked). The Figma side
- * (code.ts) reads and writes the file; this window shows the steps and
- * sends the new tokens to Token Library.
+ * Token Library Figma plugin: the Scan component tab (F12), simplified on
+ * 24 Nov 2026 to 3 screens in a wider window:
+ *
+ * 1. Check: which set is light and which is dark (with Swap), the
+ *    component name, and each variant's state.
+ * 2. Token map: parts against states, each box with its light and dark
+ *    colours before and after. Click a box for its layers and details.
+ * 3. Finish: create the variables, apply them to the layers, send to
+ *    Token Library, each with its own button.
+ *
+ * The Figma side (code.ts) reads and writes the file; this window shows
+ * the screens and sends the new tokens to Token Library.
  */
 import type { ScanSummary } from "../../src/lib/figma/scan";
-import type { ChangeView, LayerView, ScanView, Swatch, TokenView } from "../../src/lib/figma/scan-view";
+import type { MapCell, ScanView, Swatch, TokenMap } from "../../src/lib/figma/scan-view";
 import type { Issue } from "../../src/lib/tokens/types";
 
 export interface ScanSettings {
@@ -23,45 +30,38 @@ export interface Pending {
   count: number;
 }
 
-interface Selection {
-  id: string;
+interface CheckInfo {
+  light: { id: string; name: string; variants: { id: string; name: string }[] };
+  dark: { id: string; name: string; variants: { id: string; name: string }[] } | null;
+  guessed: boolean;
   name: string;
-  variants: number;
-  layers: number;
-  /** The dark copy, when one is selected too. */
-  dark: { id: string; name: string } | null;
+  suggestedName: string;
+  hasStateProperty: boolean;
+  states: { id: string; name: string; state: string }[];
 }
 
-type Step = "select" | "scan" | "changes" | "names" | "publish" | "apply" | "send" | "done";
+type Step = "check" | "map" | "finish";
 type Choices = Record<string, { light?: string; dark?: string }>;
-type Tick = "waiting" | "working" | "done" | "failed";
 
-interface DoneState {
+interface Finish {
+  published: { created: number; updated: number } | null;
+  bound: { layers: number; darkLayers: number; statesNamed: number } | null;
   title: string;
   component: string;
   fileName: string;
-  created: number;
-  updated: number;
-  layers: number;
-  darkLayers: number;
   tokens: { name: string; values: Record<string, { ref: string }> }[];
   css: string;
   json: Record<string, unknown>;
-  variables: Tick;
-  binding: Tick;
-  sending: Tick;
+  sending: "waiting" | "working" | "done" | "failed";
   sendError?: string;
 }
 
-const STEPS: { key: Step; label: string }[] = [
-  { key: "select", label: "Select" },
-  { key: "scan", label: "Scan" },
-  { key: "changes", label: "Changes" },
-  { key: "names", label: "Names" },
-  { key: "publish", label: "Publish" },
-  { key: "apply", label: "Apply" },
-  { key: "send", label: "Send" },
-  { key: "done", label: "Done" },
+const STATES = ["Default", "Hover", "Pressed", "Disabled", "Selected", "Loading", "On", "Off"];
+const PARTS = [
+  { value: "surface", label: "Surface (backgrounds)" },
+  { value: "line", label: "Line (borders)" },
+  { value: "content", label: "Content (text and icons)" },
+  { value: "icon", label: "Icon (separate from text)" },
 ];
 
 const el = (tag: string, cls = "", text = "") => {
@@ -80,45 +80,41 @@ const button = (text: string, onClick: () => void, primary = false, disabled = f
 };
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const title = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 /** A colour square. Transparent colours show a checked pattern behind them. */
-function swatch(s: Swatch | null | undefined, title?: string): HTMLElement {
+function swatch(s: Swatch | null | undefined, label?: string): HTMLElement {
   const box = el("span", "swatch");
   if (!s) {
     box.classList.add("empty");
-    box.title = title ?? "Not chosen";
     box.textContent = "?";
+    box.title = label ?? "Not chosen";
     return box;
   }
   const fill = el("span", "fill");
   fill.style.background = s.hex;
   box.appendChild(fill);
-  box.title = title ?? `${s.label} ${s.hex}`;
+  box.title = label ?? `${s.label} ${s.hex}`;
   return box;
 }
 
-/** A pair of swatches for light and dark, with the labels. */
-function pair(light: Swatch | null | undefined, dark: Swatch | null | undefined): HTMLElement {
-  const wrap = el("span", "pair");
-  for (const [mode, s] of [
-    ["Light", light],
-    ["Dark", dark],
-  ] as const) {
-    const part = el("span", "mode");
-    part.appendChild(swatch(s, s ? `${mode}: ${s.label} ${s.hex}` : `${mode}: not chosen`));
-    part.appendChild(el("span", "mode-label", `${mode[0]} ${s ? s.label : "?"}`));
-    wrap.appendChild(part);
-  }
-  return wrap;
+/** A token name that may wrap after each hyphen, so long names fit in the map. */
+function tokenName(name: string): HTMLElement {
+  const span = el("span", "tok");
+  name.split("-").forEach((part, i, all) => {
+    span.appendChild(document.createTextNode(part + (i < all.length - 1 ? "-" : "")));
+    if (i < all.length - 1) span.appendChild(document.createElement("wbr"));
+  });
+  return span;
 }
 
-const KIND_LABEL: Record<string, string> = {
-  semantic: "Semantic",
-  primitive: "Primitive",
-  component: "Component token",
-  raw: "Raw value",
-  missing: "Cannot read",
-};
+/** A swatch with its name, for 1 theme. */
+function colour(s: Swatch | null | undefined, text?: string): HTMLElement {
+  const wrap = el("span", "colour");
+  wrap.appendChild(swatch(s));
+  wrap.appendChild(el("span", "", text ?? s?.label ?? "Choose"));
+  return wrap;
+}
 
 function issueList(issues: Issue[]): HTMLElement {
   const ul = el("ul", "issues");
@@ -126,13 +122,7 @@ function issueList(issues: Issue[]): HTMLElement {
   for (const i of [...issues].sort((a, b) => order[a.severity] - order[b.severity])) {
     const li = el("li", `issue ${i.severity}`);
     li.appendChild(el("span", "badge", i.severity === "error" ? "Must fix" : i.severity === "warning" ? "Check" : "Note"));
-    const text = el("span");
-    if (i.token && !i.message.includes(i.token)) {
-      text.appendChild(el("span", "who", i.token));
-      text.appendChild(document.createTextNode(": "));
-    }
-    text.appendChild(document.createTextNode(i.message));
-    li.appendChild(text);
+    li.appendChild(el("span", "", i.message));
     ul.appendChild(li);
   }
   return ul;
@@ -140,364 +130,354 @@ function issueList(issues: Issue[]): HTMLElement {
 
 export function createScanUi(opts: { root: HTMLElement; post: (msg: unknown) => void; settings: () => ScanSettings; openSettings: () => void; onNewKey: (key: string) => void }) {
   const { root, post } = opts;
-  let step: Step = "select";
-  let selection: Selection | null = null;
-  let selectionMessage = "Select a component set on the canvas.";
+  let step: Step = "check";
+  let check: CheckInfo | null = null;
+  let message = "Select your light and dark component sets on the canvas.";
+  let pictures = new Map<string, string>();
   let view: ScanView | null = null;
+  let map: TokenMap | null = null;
+  let summary: ScanSummary | null = null;
+  let checked: { ok: boolean; issues: Issue[] } | null = null;
   let choices: Choices = {};
-  let checked: { ok: boolean; issues: Issue[]; summary: ScanSummary } | null = null;
-  let done: DoneState | null = null;
-  let published: { created: number; updated: number } | null = null;
+  let selected: { row: number; col: number } | null = null;
+  let finish: Finish | null = null;
   let pending: Pending | null = null;
   let busy = "";
   let error = "";
 
-  const hexOf = (name: string | null | undefined): Swatch | null => {
-    if (!name || !view) return null;
-    const p = view.primitives.find((x) => x.label === name);
-    return p ? p : null;
-  };
-  const valueOf = (t: TokenView, mode: "light" | "dark") => choices[t.name]?.[mode] ?? t[mode];
-
   const go = (s: Step) => {
     step = s;
     error = "";
+    post({ type: "scan-lock", locked: s !== "check" });
     render();
     root.scrollTop = 0;
   };
 
-  function stepper(): HTMLElement {
-    const ol = el("ol", "stepper");
-    const at = STEPS.findIndex((s) => s.key === step);
-    STEPS.forEach((s, i) => {
-      const li = el("li", i === at ? "current" : i < at ? "past" : "", `${i + 1} ${s.label}`);
+  function header(): HTMLElement {
+    const bar = el("div", "scan-head");
+    const steps = el("ol", "pills");
+    const list: [Step, string][] = [["check", "1 Check"], ["map", "2 Token map"], ["finish", "3 Finish"]];
+    const at = list.findIndex(([k]) => k === step);
+    list.forEach(([, label], i) => {
+      const li = el("li", i === at ? "on" : i < at ? "done" : "", i < at ? `✓ ${label.slice(2)}` : label);
       if (i === at) li.setAttribute("aria-current", "step");
-      ol.appendChild(li);
+      steps.appendChild(li);
     });
-    return ol;
+    bar.appendChild(steps);
+    return bar;
   }
 
-  function actions(...buttons: HTMLElement[]) {
-    const row = el("div", "row actions");
-    buttons.forEach((b) => row.appendChild(b));
-    return row;
+  function footer(left: HTMLElement[], right: HTMLElement[]): HTMLElement {
+    const f = el("div", "scan-foot");
+    const l = el("div", "row");
+    left.forEach((b) => l.appendChild(b));
+    const r = el("div", "row");
+    right.forEach((b) => r.appendChild(b));
+    f.appendChild(l);
+    f.appendChild(r);
+    return f;
   }
 
-  function status(text: string, tone: "" | "error" | "ok" = "") {
+  function status(text: string, tone: "" | "error" | "ok" | "warn" = "") {
     const p = el("p", `status ${tone}`, text);
     p.setAttribute("role", "status");
     return p;
   }
 
-  // 1. Select
-  function renderSelect(out: HTMLElement) {
+  // 1. Check
+  function side(kind: "light" | "dark", info: CheckInfo["light"] | null): HTMLElement {
+    const box = el("div", `side ${kind}`);
+    const head = el("div", "row between");
+    head.appendChild(el("strong", "", kind === "light" ? "☀ Light" : "☾ Dark"));
+    if (info) head.appendChild(el("span", "badge", info.name));
+    box.appendChild(head);
+    const stage = el("div", `stage ${kind}`);
+    if (!info) {
+      stage.appendChild(el("p", "hint", "No dark set selected. Shift-click the dark copy on the canvas to add it. Without it, you choose each dark colour by hand."));
+    } else {
+      info.variants.forEach((v, i) => {
+        const col = el("div", "vcol");
+        const src = pictures.get(v.id);
+        if (src) {
+          const img = document.createElement("img");
+          img.src = src;
+          img.alt = v.name;
+          col.appendChild(img);
+        } else col.appendChild(el("span", "noimg", "No picture"));
+        const st = check?.states[i]?.state;
+        col.appendChild(el("span", "vlabel", st ? title(st) : v.name));
+        stage.appendChild(col);
+      });
+    }
+    box.appendChild(stage);
+    return box;
+  }
+
+  function renderCheck(out: HTMLElement) {
     if (pending) {
       const box = el("div", "callout error");
       box.appendChild(el("strong", "", `The ${pending.title} tokens are in Figma, but not in Token Library.`));
-      box.appendChild(el("p", "", `${plural(pending.count, "token")} from "${pending.fileName}" did not get to Token Library. Send them again, or download them as JSON.`));
-      box.appendChild(actions(button("Send again", () => void sendPending(), true), button("Download JSON", () => download(pending!.json, `${pending!.component}-tokens.json`))));
+      box.appendChild(el("p", "", `${plural(pending.count, "token")} from "${pending.fileName}" did not get to Token Library.`));
+      box.appendChild(el("div", "row")).append(button("Send again", () => void sendPending(), true), button("Download JSON", () => download(pending!.json, `${pending!.component}-tokens.json`)));
       out.appendChild(box);
     }
-    out.appendChild(
-      el("p", "hint", 'Select a finished component set with a State variant property, for example State=Hover, and shift-click its dark copy. The dark copy is a duplicate with only the colours changed, with "dark" in its name. The scan reads the layers called surface, line, content and icon in every variant.'),
-    );
-    if (!selection) {
-      out.appendChild(status(selectionMessage));
+    if (!check) {
+      const box = el("div", "empty-state");
+      box.appendChild(el("strong", "", message));
+      box.appendChild(el("p", "hint", "Select the light component set and its dark copy together (shift-click). The dark copy is a duplicate with only the colours changed. To tell them apart, the plugin reads the Appearance you set in Figma, then the names. You can swap them on the next screen."));
+      out.appendChild(box);
       return;
     }
-    const card = el("div", "card");
-    card.appendChild(el("strong", "", selection.name));
-    card.appendChild(el("span", "sub", `${plural(selection.variants, "variant")} · ${plural(selection.layers, "coloured layer")}`));
-    card.appendChild(el("span", "sub", selection.dark ? `Dark copy: ${selection.dark.name}` : "No dark copy selected. You will choose dark values by hand for parts that use a primitive."));
-    out.appendChild(card);
-    out.appendChild(actions(button(busy ? "Scanning…" : "Scan", () => run(), true, !!busy)));
-  }
+    const c = check;
+    const pair = el("div", "pair-grid");
+    pair.appendChild(side("light", c.light));
+    pair.appendChild(button("⇄ Swap", () => post({ type: "scan-swap" }), false, !c.dark));
+    pair.appendChild(side("dark", c.dark));
+    out.appendChild(pair);
+    if (c.guessed) out.appendChild(status("The plugin could not tell which one is dark. Check the pictures and press Swap if they are the wrong way round. Tip: set the dark one's Appearance to dark in Figma.", "warn"));
 
-  function run() {
-    busy = "scan";
-    error = "";
-    choices = {};
-    checked = null;
-    published = null;
-    render();
-    post({ type: "scan-run" });
-  }
+    const nameRow = el("div", "row name-row");
+    const label = el("label", "field");
+    label.appendChild(el("span", "hint", "Component name"));
+    const input = document.createElement("input");
+    input.type = "text";
+    input.id = "scan-name";
+    input.value = c.name;
+    input.onchange = () => post({ type: "scan-options", name: input.value.trim() });
+    label.appendChild(input);
+    nameRow.appendChild(label);
+    nameRow.appendChild(el("span", "hint", `Tokens will be called ${view?.component || "name"}-surface-default, ${view?.component || "name"}-content-hover and so on.`));
+    out.appendChild(nameRow);
 
-  // 2. Scan
-  function layerRow(l: LayerView) {
-    const li = el("li", "layer");
-    const head = el("div", "row between");
-    head.appendChild(el("span", "mono", `${l.layer} · ${l.paint}`));
-    head.appendChild(el("span", `badge kind-${l.kind}`, KIND_LABEL[l.kind] ?? l.kind));
-    li.appendChild(head);
-    const body = el("div", "row between");
-    body.appendChild(el("span", "mono", l.label));
-    body.appendChild(pair(l.light, l.dark));
-    li.appendChild(body);
-    if (l.darkLabel) li.appendChild(el("span", "sub mono", `Dark copy: ${l.darkLabel}`));
-    if (l.noMatch) li.appendChild(el("span", "flag", "No matching layer in the dark copy"));
-    if (l.sameInBoth) li.appendChild(el("span", "flag", "Shows the same in both themes"));
-    return li;
-  }
-
-  function byVariant<T>(items: T[], variantOf: (t: T) => string) {
-    const groups = new Map<string, T[]>();
-    for (const i of items) groups.set(variantOf(i), [...(groups.get(variantOf(i)) ?? []), i]);
-    return groups;
-  }
-
-  function renderScan(out: HTMLElement) {
-    if (!view) return;
-    const v = view;
-    out.appendChild(el("h2", "", v.title));
-    out.appendChild(el("span", "sub", `${plural(v.variants, "variant")} · ${plural(v.layers.length, "named layer")}${v.unknown.length ? ` · ${v.unknown.length} not recognised` : ""}${v.darkName ? ` · dark from ${v.darkName}` : ""}`));
-    if (v.status === "fine") out.appendChild(status(`${v.title} uses Base semantic tokens in every part. It does not need its own tokens.`, "ok"));
-    if (v.status === "own-tokens") out.appendChild(status(`${v.title} already uses its own tokens in every part. Nothing to change.`, "ok"));
-    if (v.status === "blocked") out.appendChild(status(`The scan cannot continue. Fix the problems below in Figma, then scan again.`, "error"));
-    if (v.status === "draft") {
-      const n = v.layers.filter((l) => l.kind === "primitive" || l.kind === "raw").length;
-      out.appendChild(
-        status(`${plural(n, "part uses", "parts use")} a primitive or a raw value. A component uses Base semantic tokens or a full set of its own tokens, so ${v.title} gets ${plural(v.tokens.length, "component token")}.`),
-      );
+    const st = el("div", "field");
+    if (c.hasStateProperty) {
+      st.appendChild(el("span", "hint", "States, from the State property"));
+      const chips = el("div", "chips");
+      for (const s of c.states) chips.appendChild(el("span", "chip", s.state ? title(s.state) : "No state"));
+      st.appendChild(chips);
+    } else {
+      st.appendChild(el("span", "hint", "Your set has no State property yet. Choose each variant's state. The plugin adds the State property for you when it applies the tokens."));
+      const grid = el("div", "state-grid");
+      for (const s of c.states) {
+        const cell = el("label", "state-pick");
+        const src = pictures.get(s.id);
+        if (src) {
+          const img = document.createElement("img");
+          img.src = src;
+          img.alt = s.name;
+          cell.appendChild(img);
+        }
+        const sel = document.createElement("select");
+        sel.setAttribute("aria-label", `State of ${s.name}`);
+        for (const opt of STATES) {
+          const o = document.createElement("option");
+          o.value = opt;
+          o.textContent = opt;
+          if (opt.toLowerCase() === s.state) o.selected = true;
+          sel.appendChild(o);
+        }
+        sel.onchange = () => {
+          const states = Object.fromEntries(c.states.map((x) => [x.id, x.id === s.id ? sel.value : title(x.state)]));
+          post({ type: "scan-options", states });
+        };
+        cell.appendChild(sel);
+        grid.appendChild(cell);
+      }
+      st.appendChild(grid);
     }
-    if (v.issues.length) out.appendChild(issueList(v.issues));
-    for (const [variant, ls] of byVariant([...v.layers, ...v.unknown], (l) => l.variant)) {
-      const d = el("details", "group") as HTMLDetailsElement;
-      d.open = true;
-      d.appendChild(el("summary", "", variant));
-      const ul = el("ul");
-      ls.forEach((l) => ul.appendChild(layerRow(l)));
-      d.appendChild(ul);
-      out.appendChild(d);
+    out.appendChild(st);
+
+    if (view) {
+      const v = view;
+      if (v.status === "fine") out.appendChild(status(`${v.title} uses Base semantic tokens in every part, in light and dark. It does not need its own tokens.`, "ok"));
+      if (v.status === "own-tokens") out.appendChild(status(`${v.title} already uses its own tokens everywhere. Nothing to change.`, "ok"));
+      if (v.status === "draft") out.appendChild(status(`Some parts use primitives, so ${v.title} gets a full set of ${plural(v.tokens.length, "token")}. See them on the token map.`));
+      const problems = v.issues.filter((i) => i.severity === "error" || ["scan.new-state", "scan.no-match", "scan.dark-variants", "scan.focus"].includes(i.code));
+      if (problems.length) out.appendChild(issueList(problems));
     }
-    const next = v.status === "draft" ? [button("See the changes", () => go("changes"), true)] : [];
-    out.appendChild(actions(button("Back", () => go("select")), button("Scan again", () => run()), ...next));
+    out.appendChild(footer([], [button("See the token map", () => go("map"), true, view?.status !== "draft")]));
   }
 
-  // 3. Changes
-  function changeRow(c: ChangeView) {
-    const t = view!.tokens.find((x) => x.name === c.token);
-    const li = el("li", "layer");
-    const head = el("div", "row between");
-    head.appendChild(el("span", "mono", `${c.before.layer} · ${c.before.paint}`));
-    if (c.reused) head.appendChild(el("span", "badge", "Uses the default token"));
-    li.appendChild(head);
-    const before = el("div", "row between");
-    before.appendChild(el("span", "mono muted", `Now: ${c.before.label}`));
-    before.appendChild(pair(c.before.light, c.before.dark));
-    li.appendChild(before);
-    const after = el("div", "row between");
-    after.appendChild(el("span", "mono", `New: ${c.token}`));
-    after.appendChild(pair(hexOf(t ? valueOf(t, "light") : null), hexOf(t ? valueOf(t, "dark") : null)));
-    li.appendChild(after);
-    return li;
+  // 2. Token map
+  function cellBox(cell: MapCell, r: number, i: number): HTMLElement {
+    const b = el("button", `cell${cell.reused ? " reused" : ""}${selected?.row === r && selected?.col === i ? " sel" : ""}${cell.needsDark || cell.needsLight ? " needs" : ""}`) as HTMLButtonElement;
+    b.type = "button";
+    b.onclick = () => {
+      selected = { row: r, col: i };
+      render();
+    };
+    b.appendChild(tokenName(cell.token));
+    const ld = el("span", "ld");
+    ld.appendChild(colour(cell.light, cell.light ? `☀ ${cell.light.label}` : "☀ Choose"));
+    ld.appendChild(colour(cell.dark, cell.dark ? `☾ ${cell.dark.label}` : "☾ Choose"));
+    b.appendChild(ld);
+    b.appendChild(el("span", "was", cell.reused ? "Same as Default" : `Before: ${cell.beforeLight.label === cell.beforeDark.label ? cell.beforeLight.label : `${cell.beforeLight.label} / ${cell.beforeDark.label}`}`));
+    return b;
   }
 
-  function renderChanges(out: HTMLElement) {
-    if (!view) return;
-    out.appendChild(el("h2", "", "Changes to the layers"));
-    out.appendChild(el("p", "hint", "Each layer, before and after. A ? means that you choose the value in Accept names."));
-    for (const [variant, cs] of byVariant(view.changes, (c) => c.before.variant)) {
-      const d = el("details", "group") as HTMLDetailsElement;
-      d.open = true;
-      d.appendChild(el("summary", "", variant));
-      const ul = el("ul");
-      cs.forEach((c) => ul.appendChild(changeRow(c)));
-      d.appendChild(ul);
-      out.appendChild(d);
-    }
-    out.appendChild(actions(button("Back", () => go("scan")), button("See the names", () => { go("names"); check(); }, true)));
-  }
-
-  // 4. Review
-  function picker(t: TokenView, mode: "light" | "dark") {
-    const label = el("label", "picker");
-    const value = valueOf(t, mode);
-    label.appendChild(swatch(hexOf(value)));
+  function picker(token: string, mode: "light" | "dark", current: Swatch | null): HTMLElement {
     const sel = document.createElement("select");
-    sel.setAttribute("aria-label", `${mode === "light" ? "Light" : "Dark"} value for ${t.name}`);
-    if (!value) {
+    sel.setAttribute("aria-label", `${mode === "light" ? "Light" : "Dark"} colour for ${token}`);
+    if (!current) {
       const o = document.createElement("option");
       o.value = "";
-      o.textContent = `Choose ${mode}`;
+      o.textContent = "Choose";
       sel.appendChild(o);
     }
-    for (const p of view!.primitives) {
+    for (const p of view?.primitives ?? []) {
       const o = document.createElement("option");
       o.value = p.label;
       o.textContent = p.label;
-      if (p.label === value) o.selected = true;
+      if (p.label === current?.label) o.selected = true;
       sel.appendChild(o);
     }
     sel.onchange = () => {
-      choices = { ...choices, [t.name]: { ...choices[t.name], [mode]: sel.value || undefined } };
-      check();
-      render();
+      choices = { ...choices, [token]: { ...choices[token], [mode]: sel.value || undefined } };
+      post({ type: "scan-choices", choices });
     };
-    label.appendChild(el("span", "mode-label", mode === "light" ? "Light" : "Dark"));
-    label.appendChild(sel);
-    return label;
+    return sel;
   }
 
-  function renderNames(out: HTMLElement) {
-    if (!view) return;
-    out.appendChild(el("h2", "", "Accept names"));
-    const flagged = view.tokens.filter((t) => (t.needsDark && !valueOf(t, "dark")) || (t.needsLight && !valueOf(t, "light")));
-    const why = view.darkName ? "These parts have no matching layer in the dark copy, or a colour that no primitive has." : "These parts use a primitive and no dark copy was selected, so the plugin cannot know their dark value.";
-    out.appendChild(
-      el("p", "hint", flagged.length ? `Choose the missing values for ${plural(flagged.length, "token")}. ${why}` : "Check each name and value. Nothing is created in Figma until you accept the names."),
-    );
-    const groups = new Map<string, TokenView[]>();
-    for (const t of view.tokens) groups.set(t.group, [...(groups.get(t.group) ?? []), t]);
-    for (const [group, ts] of groups) {
-      const d = el("details", "group") as HTMLDetailsElement;
-      d.open = true;
-      d.appendChild(el("summary", "", `Interactive / ${view.title} / ${group}`));
-      const ul = el("ul");
-      for (const t of ts) {
-        const li = el("li", "layer" + ((t.needsDark && !valueOf(t, "dark")) || (t.needsLight && !valueOf(t, "light")) ? " needs" : ""));
-        const head = el("div", "row between");
-        head.appendChild(el("span", "mono strong", t.figmaName));
-        head.appendChild(el("span", `badge ${t.published ? "kind-semantic" : ""}`, t.published ? "Published" : "Hidden from publishing"));
-        li.appendChild(head);
-        li.appendChild(el("span", "mono muted", t.name));
-        li.appendChild(el("span", "sub", t.source));
-        const row = el("div", "row");
-        row.appendChild(picker(t, "light"));
-        row.appendChild(picker(t, "dark"));
-        li.appendChild(row);
-        ul.appendChild(li);
+  function detail(cell: MapCell | null): HTMLElement {
+    const box = el("aside", "detail");
+    if (!cell) {
+      box.appendChild(el("p", "hint", "Click a box to see its layers on the canvas and change its part."));
+      return box;
+    }
+    box.appendChild(el("span", "k", "Token"));
+    box.appendChild(el("strong", "mono", cell.token));
+    box.appendChild(el("span", "hint", `${title(cell.state)}${cell.reused ? " uses the Default token, because it looks the same" : ""} · ${cell.published ? "published" : "hidden from publishing"}`));
+    const t = el("div", "cmp");
+    t.append(el("span"), el("span", "h", "☀ Light"), el("span", "h", "☾ Dark"));
+    t.append(el("span", "h", "Before"), colour(cell.beforeLight.swatch, cell.beforeLight.label), colour(cell.beforeDark.swatch, cell.beforeDark.label));
+    t.append(el("span", "h", "After"));
+    t.append(cell.needsLight ? picker(cell.token, "light", cell.light) : colour(cell.light));
+    t.append(cell.needsDark ? picker(cell.token, "dark", cell.dark) : colour(cell.dark));
+    box.appendChild(t);
+    if (cell.needsDark) box.appendChild(el("p", "hint warn", "No matching layer in the dark set, so choose the dark colour."));
+    box.appendChild(el("span", "k", `Layers (${cell.layers.length})`));
+    const seen = new Set<string>();
+    for (const l of cell.layers) {
+      if (seen.has(l.key)) continue;
+      seen.add(l.key);
+      const row = el("label", "layer-part");
+      row.appendChild(el("span", "", `${l.name} · ${l.paint}`));
+      const sel = document.createElement("select");
+      sel.setAttribute("aria-label", `Part for ${l.name}`);
+      for (const p of PARTS) {
+        const o = document.createElement("option");
+        o.value = p.value;
+        o.textContent = p.label;
+        if (p.value === l.category) o.selected = true;
+        sel.appendChild(o);
       }
-      d.appendChild(ul);
-      out.appendChild(d);
+      sel.onchange = () => {
+        selected = null;
+        post({ type: "scan-options", parts: { [l.key]: sel.value } });
+      };
+      row.appendChild(sel);
+      box.appendChild(row);
     }
-    if (checked) {
-      out.appendChild(el("h3", "", "Checks"));
-      out.appendChild(checked.issues.length ? issueList(checked.issues) : status("No problems found.", "ok"));
-    }
-    out.appendChild(actions(button("Back", () => go("changes")), button("Accept names", () => go("publish"), true, !checked?.ok)));
+    const show = el("div", "row");
+    show.appendChild(button("Show in light", () => post({ type: "scan-show", nodeIds: cell.layers.map((l) => l.nodeId) })));
+    const darkIds = cell.layers.map((l) => l.darkNodeId).filter((x): x is string => !!x);
+    if (darkIds.length) show.appendChild(button("Show in dark", () => post({ type: "scan-show", nodeIds: darkIds })));
+    box.appendChild(show);
+    return box;
   }
 
-  function check() {
-    checked = null;
-    post({ type: "scan-check", choices });
+  function renderMap(out: HTMLElement) {
+    if (!view || !map) return;
+    const pub = view.tokens.filter((t) => t.published).length;
+    out.appendChild(el("p", "hint", `${plural(view.tokens.length, "token")} for ${view.title}: ${pub} published, ${view.tokens.length - pub} hidden. Rows are parts, columns are states. Grey boxes look the same as Default, so they use the Default token.`));
+    const split = el("div", "split");
+    const wrap = el("div", "map-wrap");
+    const table = el("table", "map");
+    const head = el("tr");
+    head.appendChild(el("th", "", "Part"));
+    map.states.forEach((s) => head.appendChild(el("th", "", title(s))));
+    table.appendChild(head);
+    map.rows.forEach((row, r) => {
+      const tr = el("tr");
+      tr.appendChild(el("td", "part", row.label));
+      row.cells.forEach((cell, i) => {
+        const td = el("td");
+        td.appendChild(cell ? cellBox(cell, r, i) : el("span", "nocell", "Not used"));
+        tr.appendChild(td);
+      });
+      table.appendChild(tr);
+    });
+    wrap.appendChild(table);
+    split.appendChild(wrap);
+    const cell = selected ? map.rows[selected.row]?.cells[selected.col] ?? null : null;
+    split.appendChild(detail(cell));
+    out.appendChild(split);
+    const issues = [...(checked?.issues ?? []), ...view.issues.filter((i) => i.severity === "warning" && !(checked?.issues ?? []).some((c) => c.message === i.message))];
+    if (issues.length) out.appendChild(issueList(issues));
+    out.appendChild(footer([button("Back", () => go("check"))], [button(`Accept ${plural(view.tokens.length, "token")}`, () => startFinish(), true, !checked?.ok)]));
   }
 
-  // 5. Save and publish
-  function renderPublish(out: HTMLElement) {
-    if (!view || !checked) return;
-    const s = checked.summary;
-    out.appendChild(el("h2", "", "Save and publish"));
-    out.appendChild(el("p", "lead", s.sentence));
-    const ul = el("ul", "plain");
-    const items = [
-      s.create ? `Create ${plural(s.create, "variable")} in Colour tokens, group Interactive / ${view.title}.` : "",
-      s.update ? `Update ${plural(s.update, "variable")} that are already in this file.` : "",
-      `Hide ${s.hidden} from publishing. Only the -default tokens are published.`,
-      "No layer changes yet. You apply the variables to the layers in the next step.",
-    ].filter(Boolean);
-    items.forEach((i) => ul.appendChild(el("li", "", i)));
-    out.appendChild(ul);
-    out.appendChild(actions(button("Back", () => go("names")), button(busy ? "Saving…" : "Save and publish", () => publish(), true, !!busy)));
+  function startFinish() {
+    if (!view) return;
+    finish = { published: null, bound: null, title: view.title, component: view.component, fileName: "", tokens: [], css: "", json: {}, sending: "waiting" };
+    go("finish");
   }
 
-  function publish() {
-    busy = "publish";
-    render();
-    post({ type: "scan-publish", choices });
+  // 3. Finish
+  function fstep(n: number, done: boolean, titleText: string, hint: string, action: HTMLElement | null): HTMLElement {
+    const row = el("div", `fstep${done ? " done" : ""}`);
+    row.appendChild(el("span", "n", done ? "✓" : String(n)));
+    const t = el("div", "t");
+    t.appendChild(el("strong", "", titleText));
+    t.appendChild(el("span", "hint", hint));
+    row.appendChild(t);
+    row.appendChild(action ?? el("span", "badge ok", "Done"));
+    return row;
   }
 
-  // 6. Apply to layers
-  function renderApply(out: HTMLElement) {
-    if (!view || !checked) return;
-    out.appendChild(el("h2", "", "Apply to layers"));
-    if (published) out.appendChild(status(`${published.created ? `Created ${plural(published.created, "variable")}` : ""}${published.created && published.updated ? ", " : ""}${published.updated ? `updated ${plural(published.updated, "variable")}` : ""}.`, "ok"));
-    out.appendChild(el("p", "lead", checked.summary.applySentence));
-    out.appendChild(el("p", "hint", "Check where each token goes. You can undo this step in Figma."));
-    for (const [variant, cs] of byVariant(view.changes, (c) => c.before.variant)) {
-      const d = el("details", "group") as HTMLDetailsElement;
-      d.open = false;
-      d.appendChild(el("summary", "", `${variant} · ${plural(cs.length, "layer")}`));
-      const ul = el("ul");
-      cs.forEach((c) => ul.appendChild(changeRow(c)));
-      d.appendChild(ul);
-      out.appendChild(d);
-    }
-    out.appendChild(actions(button(busy ? "Applying…" : "Apply to layers", () => bind(), true, !!busy)));
-  }
-
-  function bind() {
-    busy = "bind";
-    render();
-    post({ type: "scan-bind" });
-  }
-
-  // 7. Send to Token Library
-  function renderSend(out: HTMLElement) {
-    if (!done) return;
-    const d = done;
-    out.appendChild(el("h2", "", "Send to Token Library"));
+  function renderFinish(out: HTMLElement) {
+    if (!finish || !summary) return;
+    const f = finish;
+    const s = summary;
+    const where = `Colour tokens / Interactive / ${f.title}`;
     out.appendChild(
-      el("p", "hint", `${d.title} now uses its new tokens in Figma. Send them to Token Library, where a designer checks them before Send to code. Until then, the plugin remembers that they are not sent.`),
+      fstep(
+        1,
+        !!f.published,
+        f.published ? `Created ${plural(f.published.created, "variable")}${f.published.updated ? `, updated ${f.published.updated}` : ""}` : `Create ${plural(s.tokens, "variable")}`,
+        `In ${where}. ${s.tokens - s.hidden} published, ${s.hidden} hidden. No layer changes yet.`,
+        f.published ? null : button(busy === "publish" ? "Creating…" : "Create", () => { busy = "publish"; render(); post({ type: "scan-publish" }); }, true, !!busy),
+      ),
     );
-    out.appendChild(tokenTable(d));
-    out.appendChild(el("h3", "", "CSS that Send to code will write"));
-    out.appendChild(el("pre", "css", d.css));
-    if (d.sending === "failed") {
+    const applyHint = `Swaps ${plural(s.layers, "colour")} in the light set${s.darkLayers ? ` and ${s.darkLayers} in the dark set` : ""} for the new tokens. Both still look the same.${check && !check.hasStateProperty ? " Also adds the State property to your variants." : ""} You can undo this in Figma.`;
+    out.appendChild(
+      fstep(
+        2,
+        !!f.bound,
+        f.bound ? `Applied to ${plural(f.bound.layers + f.bound.darkLayers, "colour")}` : "Apply them to the layers",
+        applyHint,
+        f.bound ? null : button(busy === "bind" ? "Applying…" : "Apply", () => { busy = "bind"; render(); post({ type: "scan-bind" }); }, !!f.published, !f.published || !!busy),
+      ),
+    );
+    const sendAction =
+      f.sending === "done"
+        ? null
+        : button(f.sending === "working" ? "Sending…" : f.sending === "failed" ? "Send again" : "Send", () => void send(), !!f.bound, !f.bound || f.sending === "working");
+    out.appendChild(fstep(3, f.sending === "done", f.sending === "done" ? `Sent ${plural(f.tokens.length, "token")} to Token Library` : "Send to Token Library", "A designer checks them there before they go to code.", sendAction));
+    if (f.sending === "failed") {
       const box = el("div", "callout error");
-      box.appendChild(el("p", "", `${d.sendError ?? "Token Library did not receive the tokens."} The changes in Figma stay. Send again, or download the tokens as JSON.`));
-      box.appendChild(actions(button("Download JSON", () => download(d.json, `${d.component}-tokens.json`))));
+      box.appendChild(el("p", "", `${f.sendError ?? "Token Library did not receive the tokens."} The changes in Figma stay. Send again, or download the tokens as JSON.`));
+      box.appendChild(button("Download JSON", () => download(f.json, `${f.component}-tokens.json`)));
       out.appendChild(box);
     }
-    out.appendChild(actions(button(d.sending === "working" ? "Sending…" : d.sending === "failed" ? "Send again" : "Send to Token Library", () => void send(), true, d.sending === "working")));
-  }
-
-  // 6. Done
-  function tick(state: Tick, text: string, extra?: HTMLElement) {
-    const li = el("li", `tick ${state}`);
-    li.appendChild(el("span", "mark", state === "done" ? "✓" : state === "failed" ? "!" : state === "working" ? "…" : "·"));
-    const body = el("div");
-    body.appendChild(el("span", "", text));
-    if (extra) body.appendChild(extra);
-    li.appendChild(body);
-    return li;
-  }
-
-  function tokenTable(d: DoneState): HTMLElement {
-    const table = el("table", "tokens");
-    const head = el("tr");
-    ["Token", "Light", "Dark"].forEach((h) => head.appendChild(el("th", "", h)));
-    table.appendChild(head);
-    for (const t of d.tokens) {
-      const tr = el("tr");
-      tr.appendChild(el("td", "mono", t.name));
-      for (const m of ["light", "dark"]) {
-        const td = el("td");
-        const name = t.values[m]?.ref;
-        const cell = el("span", "cell");
-        cell.appendChild(swatch(hexOf(name)));
-        cell.appendChild(el("span", "mono", name ?? ""));
-        td.appendChild(cell);
-        tr.appendChild(td);
-      }
-      table.appendChild(tr);
+    if (f.css) {
+      const d = el("details", "group") as HTMLDetailsElement;
+      d.appendChild(el("summary", "", "CSS that Send to code will write"));
+      d.appendChild(el("pre", "css", f.css));
+      out.appendChild(d);
     }
-    return table;
-  }
-
-  // 8. Done
-  function renderDone(out: HTMLElement) {
-    if (!done) return;
-    const d = done;
-    out.appendChild(el("h2", "", `${d.title}: done`));
-    const ul = el("ul", "ticks");
-    ul.appendChild(tick("done", `${d.created ? `Created ${plural(d.created, "variable")}` : ""}${d.created && d.updated ? ", " : ""}${d.updated ? `updated ${plural(d.updated, "variable")}` : ""} in Colour tokens / Interactive / ${d.title}`));
-    ul.appendChild(tick("done", `Bound ${plural(d.layers, "layer")} to the new variables${d.darkLayers ? `, and ${plural(d.darkLayers, "layer")} in the dark copy` : ""}`));
-    ul.appendChild(tick("done", `Sent ${plural(d.tokens.length, "token")} to Token Library. A designer checks them there before Send to code.`));
-    out.appendChild(ul);
-    if (d.darkLayers) out.appendChild(el("p", "hint", "The dark copy now uses the same tokens in dark mode. You can delete it if you do not need it."));
-    out.appendChild(status("Next: publish the library from the Assets panel, so other files get the new variables.", "ok"));
-    out.appendChild(actions(button("Scan another component", () => { view = null; done = null; published = null; go("select"); post({ type: "scan-selection" }); }, true)));
+    if (f.sending === "done") out.appendChild(status("All done. Next: publish the library from the Assets panel, so other files get the new variables.", "ok"));
+    out.appendChild(footer(f.published ? [] : [button("Back", () => go("map"))], [button("Scan another component", () => { finish = null; selected = null; choices = {}; go("check"); })]));
   }
 
   // Sending to Token Library
@@ -529,23 +509,21 @@ export function createScanUi(opts: { root: HTMLElement; post: (msg: unknown) => 
   }
 
   async function send() {
-    if (!done) return;
-    const p: Pending = { fileName: done.fileName, component: done.component, title: done.title, json: done.json, count: done.tokens.length };
-    savePending(p);
-    done.sending = "working";
-    done.sendError = undefined;
+    if (!finish) return;
+    const p: Pending = { fileName: finish.fileName, component: finish.component, title: finish.title, json: finish.json, count: finish.tokens.length };
+    finish.sending = "working";
+    finish.sendError = undefined;
     render();
     const err = await postTokens(p);
-    if (!done) return;
+    if (!finish) return;
     if (err) {
-      done.sending = "failed";
-      done.sendError = err;
-      render();
+      finish.sending = "failed";
+      finish.sendError = err;
     } else {
-      done.sending = "done";
+      finish.sending = "done";
       savePending(null);
-      go("done");
     }
+    render();
   }
 
   async function sendPending() {
@@ -572,76 +550,64 @@ export function createScanUi(opts: { root: HTMLElement; post: (msg: unknown) => 
 
   function render() {
     root.replaceChildren();
-    root.appendChild(stepper());
-    const out = el("div", "steps");
-    if (step === "select") renderSelect(out);
-    if (step === "scan") renderScan(out);
-    if (step === "changes") renderChanges(out);
-    if (step === "names") renderNames(out);
-    if (step === "publish") renderPublish(out);
-    if (step === "apply") renderApply(out);
-    if (step === "send") renderSend(out);
-    if (step === "done") renderDone(out);
+    root.appendChild(header());
+    const out = el("div", "scan-body");
+    if (step === "check") renderCheck(out);
+    if (step === "map") renderMap(out);
+    if (step === "finish") renderFinish(out);
     if (error) out.appendChild(status(error, "error"));
     root.appendChild(out);
+  }
+
+  function setPictures(p: { light: { id: string; bytes: Uint8Array | null }[]; dark: { id: string; bytes: Uint8Array | null }[] } | null) {
+    if (!p) return;
+    for (const url of pictures.values()) URL.revokeObjectURL(url);
+    pictures = new Map();
+    for (const x of [...p.light, ...p.dark]) {
+      if (x.bytes) pictures.set(x.id, URL.createObjectURL(new Blob([x.bytes as BlobPart], { type: "image/png" })));
+    }
   }
 
   /** Handle a message from the Figma side. Returns true when it was a scan message. */
   function onMessage(msg: any): boolean {
     switch (msg.type) {
-      case "scan-selection": {
-        const next: Selection | null = msg.selection;
-        selectionMessage = msg.message ?? selectionMessage;
-        if (step === "select") {
-          selection = next;
-          render();
-        } else if (["scan", "changes", "names"].includes(step) && next && next.id !== selection?.id) {
-          // Once variables are saved, the steps carry on with the scanned component, whatever is selected.
-          // A different component set starts again. Clicking inside the same set, or on the empty canvas, keeps the scan.
-          selection = next;
-          view = null;
-          go("select");
-        }
-        return true;
-      }
-      case "scan-result":
+      case "scan-view":
         busy = "";
-        view = msg.view;
-        go("scan");
-        return true;
-      case "scan-checked":
-        checked = { ok: msg.ok, issues: msg.issues, summary: msg.summary };
-        if (step === "names") render();
+        check = msg.check;
+        if (!msg.check) {
+          message = msg.message ?? message;
+          view = null;
+          map = null;
+          if (step !== "finish") step = "check";
+        } else {
+          setPictures(msg.pictures ?? null);
+          view = msg.view;
+          map = msg.map;
+          summary = msg.summary;
+          checked = msg.checked;
+        }
+        if (step !== "finish") render();
         return true;
       case "scan-progress":
         return true;
       case "scan-published":
         busy = "";
-        published = { created: msg.result.created.length, updated: msg.result.updated.length };
-        go("apply");
+        if (finish) finish.published = { created: msg.result.created.length, updated: msg.result.updated.length };
+        render();
         return true;
-      case "scan-bound": {
+      case "scan-bound":
         busy = "";
-        done = {
-          title: msg.title,
-          component: msg.component,
-          fileName: msg.fileName,
-          created: published?.created ?? 0,
-          updated: published?.updated ?? 0,
-          layers: msg.result.layers,
-          darkLayers: msg.result.darkLayers,
-          tokens: msg.preview.tokens,
-          css: msg.preview.css,
-          json: msg.preview.json,
-          variables: "done",
-          binding: "done",
-          sending: "waiting",
-        };
-        // The tokens are in Figma but not yet in Token Library: remember them until they are sent.
-        savePending({ fileName: done.fileName, component: done.component, title: done.title, json: done.json, count: done.tokens.length });
-        go("send");
+        if (finish) {
+          finish.bound = msg.result;
+          finish.fileName = msg.fileName;
+          finish.tokens = msg.preview.tokens;
+          finish.css = msg.preview.css;
+          finish.json = msg.preview.json;
+          // The tokens are in Figma but not yet in Token Library: remember them until they are sent.
+          savePending({ fileName: finish.fileName, component: finish.component, title: finish.title, json: finish.json, count: finish.tokens.length });
+        }
+        render();
         return true;
-      }
       case "scan-error":
         busy = "";
         error = msg.message;

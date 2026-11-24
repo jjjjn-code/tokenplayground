@@ -148,12 +148,78 @@ async function readVariables(api: ScanVariablesApi, boundIds: string[], opts: Sc
 
 const isSymbol = (x: unknown): x is symbol => typeof x === "symbol";
 
+const SHAPES = new Set(["VECTOR", "BOOLEAN_OPERATION", "STAR", "POLYGON", "LINE"]);
+
 /**
- * Which of 2 selected layers is the dark copy. In order: the one with
- * "dark" in its name; the one that is not the component set (the dark copy
- * is often plain frames); the one set to dark mode; the one not set to
- * light mode. Null when the plugin cannot tell. Learnt from the first
- * read-only scan of the UAL UI Sandbox file, 24 Nov 2026.
+ * The part a layer most likely is, from what it is (24 Nov 2026), so the
+ * designer does not have to rename layers: a stroke is line, text and
+ * icon shapes are content, any other fill is surface. The designer can
+ * change it in the plugin.
+ */
+export function autoCategory(n: NodeLike, field: "fills" | "strokes"): string {
+  if (field === "strokes" && n.type !== "TEXT" && !SHAPES.has(n.type)) return "line";
+  if (n.type === "TEXT" || SHAPES.has(n.type)) return "content";
+  return "surface";
+}
+
+const STOP_WORDS = /\b(light|dark|copy|mode|theme)\b/gi;
+
+/** The component name from a component set's name, without words such as light, dark and copy. */
+export function suggestComponentName(name: string): string {
+  const cleaned = name.replace(STOP_WORDS, " ").replace(/[\s/_-]+/g, " ").trim();
+  return cleaned || name.trim();
+}
+
+/** A guess at each variant's state, for a set without a State property: known option names first, then the usual order. */
+export function guessStates(set: ComponentSetLike): Record<string, string> {
+  const kids = set.children.filter((c) => c.type === "COMPONENT");
+  const known = ["Default", "Hover", "Pressed", "Disabled", "Selected", "Loading", "On", "Off"];
+  const out: Record<string, string> = {};
+  const used = new Set<string>();
+  for (const k of kids) {
+    const value = Object.values(k.variantProperties ?? {}).map((v) => known.find((s) => s.toLowerCase() === slug(v)));
+    const hit = value.find((v) => v && !used.has(v));
+    if (hit) {
+      out[k.id] = hit;
+      used.add(hit);
+    }
+  }
+  for (const k of kids) {
+    if (out[k.id]) continue;
+    const next = known.find((s) => !used.has(s));
+    if (next) {
+      out[k.id] = next;
+      used.add(next);
+    }
+  }
+  return out;
+}
+
+/**
+ * Write states named in the plugin into Figma: each variant becomes
+ * State=[name], in the component set and in a dark copy that is also a
+ * component set. Run with Apply to layers.
+ */
+export function writeStates(set: ComponentSetLike, dark: NodeLike | null, states: Record<string, string>): number {
+  const kids = set.children.filter((c) => c.type === "COMPONENT");
+  let n = 0;
+  kids.forEach((k, i) => {
+    const s = states[k.id];
+    if (!s) return;
+    const label = s.charAt(0).toUpperCase() + s.slice(1);
+    const d = dark && dark.type === "COMPONENT_SET" ? darkVariantFor(dark, k, i, kids.length) : null;
+    (k as { name: string }).name = `State=${label}`;
+    if (d) (d as { name: string }).name = `State=${label}`;
+    n += 1;
+  });
+  return n;
+}
+
+/**
+ * Which of 2 selected layers is the dark copy. In order (agreed 24 Nov 2026):
+ * the Appearance set in Figma (dark mode, then the one not in light mode);
+ * "dark" in the name; the one that is not the component set. Null when the
+ * plugin cannot tell; the plugin then shows both and a Swap button.
  */
 export function whichIsDark(
   nodes: [NodeLike, NodeLike],
@@ -163,10 +229,10 @@ export function whichIsDark(
   const decide = (flags: boolean[]) => (flags[0] !== flags[1] ? (flags[0] ? 0 : 1) : undefined);
   const modes = (n: NodeLike) => Object.values(n.explicitVariableModes ?? {});
   return (
-    decide(nodes.map((n) => /\bdark\b/i.test(n.name))) ??
-    (opts.hasSet ? decide(opts.hasSet.map((x) => !x)) : undefined) ??
     decide(nodes.map((n) => modes(n).some((m) => darkModeIds.includes(m)))) ??
     decide(nodes.map((n) => !modes(n).some((m) => (opts.lightModeIds ?? []).includes(m)))) ??
+    decide(nodes.map((n) => /\bdark\b/i.test(n.name))) ??
+    (opts.hasSet ? decide(opts.hasSet.map((x) => !x)) : undefined) ??
     null
   );
 }
@@ -197,16 +263,28 @@ function darkChild(d: NodeLike | null, n: NodeLike, index: number, count: number
  * colours changed), each paint is paired with the same paint in the copy,
  * which gives its dark value.
  */
-export async function readComponentSet(api: ScanVariablesApi, set: ComponentSetLike, opts: ScanOptions & { dark?: NodeLike | null } = {}): Promise<ScanInput> {
+export async function readComponentSet(
+  api: ScanVariablesApi,
+  set: ComponentSetLike,
+  opts: ScanOptions & {
+    dark?: NodeLike | null;
+    /** States named in the plugin, by variant id. Used when the set has no State property yet. */
+    states?: Record<string, string>;
+  } = {},
+): Promise<ScanInput> {
   const darkRoot = opts.dark ?? null;
+  const named = opts.states ?? {};
   const issues: Issue[] = [];
   const defs = Object.entries(set.componentPropertyDefinitions ?? {}).filter(([, d]) => d.type === "VARIANT");
   const stateProp = defs.find(([n]) => n.trim().toLowerCase() === "state")?.[0];
-  if (!stateProp) {
+  const lightKids = set.children.filter((c) => c.type === "COMPONENT");
+  const namedInPlugin = !stateProp && lightKids.length > 0 && lightKids.every((c) => named[c.id]);
+  if (!stateProp && !namedInPlugin) {
     issues.push(issue("error", "scan.state", `${set.name} has no State property. Add a variant property called State, with values such as Default, Hover, Pressed and Disabled.`));
   }
   // PROVISIONAL: the role comes from the 1 other variant property with more than 1 value.
-  const roleProps = defs.filter(([n, d]) => n !== stateProp && (d.variantOptions?.length ?? 0) > 1).map(([n]) => n);
+  // States named in the plugin replace the set's properties, so there is no role then.
+  const roleProps = namedInPlugin ? [] : defs.filter(([n, d]) => n !== stateProp && (d.variantOptions?.length ?? 0) > 1).map(([n]) => n);
   if (roleProps.length > 1) {
     issues.push(issue("error", "scan.roles", `${set.name} has ${roleProps.length} variant properties apart from State (${roleProps.join(", ")}). The scan can read 1 property as the role. Keep 1 property apart from State.`));
   }
@@ -223,9 +301,9 @@ export async function readComponentSet(api: ScanVariablesApi, set: ComponentSetL
   }
   for (const [vi, node] of lightVariants.entries()) {
     const props = node.variantProperties ?? {};
-    const state = stateProp ? slug(props[stateProp] ?? "") : "";
+    const state = namedInPlugin ? slug(named[node.id]) : stateProp ? slug(props[stateProp] ?? "") : "";
     const role = roleProp ? slug(props[roleProp] ?? "") || undefined : undefined;
-    if (stateProp && !state) issues.push(issue("error", "scan.state-value", `The variant ${node.name} has no State value. Give it a State value.`));
+    if ((stateProp || namedInPlugin) && !state) issues.push(issue("error", "scan.state-value", `The variant ${node.name} has no State value. Give it a State value.`));
     variants.push({ id: node.id, name: node.name, state, role });
 
     /**
@@ -234,6 +312,7 @@ export async function readComponentSet(api: ScanVariablesApi, set: ComponentSetL
      */
     const darkVariant = darkRoot ? darkVariantFor(darkRoot, node, vi, lightVariants.length) : null;
     const read = (n: NodeLike, d: NodeLike | null, layerName: string, category: (field: "fills" | "strokes") => string | undefined) => {
+      const auto = (field: "fills" | "strokes") => autoCategory(n, field);
       if (n.isMask) return;
       for (const field of ["fills", "strokes"] as const) {
         const list = n[field];
@@ -262,6 +341,7 @@ export async function readComponentSet(api: ScanVariablesApi, set: ComponentSetL
             binding: bound ? { kind: "variable", id: bound } : { kind: "raw", color: { ...p.color!, a: p.opacity ?? 1 } },
             dark: darkPair,
             category: category(field),
+            autoCategory: auto(field),
           });
         });
       }
@@ -277,8 +357,13 @@ export async function readComponentSet(api: ScanVariablesApi, set: ComponentSetL
     const top = node.children ?? [];
     top.forEach((c, i) => walk(c, darkChild(darkVariant, c, i, top.length), null));
   }
-  if (stateProp && !variants.some((v) => v.state === "default")) {
+  if ((stateProp || namedInPlugin) && !variants.some((v) => v.state === "default")) {
     issues.push(issue("error", "scan.no-default", `${set.name} has no variant with State=Default. Add a default variant.`));
+  }
+  const seen = new Map<string, number>();
+  for (const v of variants) if (v.state) seen.set(`${v.role ?? ""}|${v.state}`, (seen.get(`${v.role ?? ""}|${v.state}`) ?? 0) + 1);
+  for (const [k, count] of seen) {
+    if (count > 1) issues.push(issue("error", "scan.same-state", `${count} variants have the state ${k.split("|")[1]}${k.split("|")[0] ? ` for the role ${k.split("|")[0]}` : ""}. Give each variant its own state.`));
   }
   const names = namesOf(opts);
   const local = await api.getLocalVariableCollectionsAsync();
