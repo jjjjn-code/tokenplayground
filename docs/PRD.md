@@ -317,6 +317,7 @@ Reused, not created: the hover line, pressed line, hover content and disabled su
 2. The Scan component tab in the plugin, with all 6 screens.
 3. The endpoint in the tool that receives the drafted tokens, with retry and the JSON fallback.
 4. Test on the Control frame in the UAL UI Sandbox file: read only first, write only after Jane agrees.
+   - Read-only scan, 24 Nov 2026 (Section 1 on the "-> Control" page). Found: the variants are all `Property 1=Default`, with no `State` property, so the scan stops until they are renamed. The dark copy is plain frames with a text note, and neither frame has "dark" in its name. The plugin now leaves text notes out, takes the frame that holds the component set as light, and treats a frame set to light mode as light. With the 4 variants read as Default, Hover, Pressed and Disabled, the scan drafts the 8 tokens in the worked example, with every dark value from the dark copy and none to choose by hand. Nothing was written to the file.
 5. Done 24 Nov 2026 (tested with a fake Figma, not yet in the sandbox file): read dark values from the dark duplicate, flag variant options the rules do not know, and split Create and sync into Save and publish, Apply to layers, and Send to the tool.
 6. Test run on 2 or 3 more real components to find edge cases, such as interactive states not yet in the rules.
 
