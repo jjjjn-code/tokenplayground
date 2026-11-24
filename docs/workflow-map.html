@@ -150,9 +150,9 @@ a { color: var(--code); }
   <section id="prd">
     <span class="eyebrow">Map 2</span>
     <h2>With the tool as the PRD describes it</h2>
-    <p class="lede">The naming help, the pull request and the review of developer changes are real gains. But the designer has to leave Figma in the middle of building the component, copy the colours across by reading them off the canvas, and then come back and apply the synced variables by hand. The manual work has moved, not gone.</p>
+    <p class="lede">The naming help, the pull request and the review of developer changes are real gains. But the designer has to leave Figma in the middle of building the component, copy the colours across by reading them off the canvas, sync the new variables back into Figma and then re-apply them by hand before the pull request goes out. The tool saves making the variables, not applying them. The manual work has moved, not gone.</p>
     <div class="board" data-flow="prd"></div>
-    <div class="board-foot"><span>Names typed by hand: <strong>1 time</strong> (in the tool)</span><span>Colours copied by eye from Figma: <strong>every one</strong></span><span>Re-applying to layers: <strong>still by hand</strong></span></div>
+    <div class="board-foot"><span>Names typed by hand: <strong>1 time</strong> (in the tool)</span><span>Colours copied by eye from Figma: <strong>every one</strong></span><span>Re-applying to layers: <strong>by hand, once</strong>; later syncs need none</span></div>
   </section>
 
   <section id="proposed">
@@ -239,6 +239,8 @@ a { color: var(--code); }
         <p>Plugins cannot press Figma's own library Publish button. The variables exist in the file straight away, but other files only see them after you publish the library, as now.</p></article>
       <article class="check"><header><h3>Clashes while you work</h3><span class="verdict v-rule">Needs a rule</span></header>
         <p>Someone could add a token with the same name in the tool, or edit a variable directly in Figma. The tool should flag a name that already exists when the drafts arrive, and the plugin's sync shows any Figma edit that does not match the tool.</p></article>
+      <article class="check"><header><h3>Do later syncs undo the bindings?</h3><span class="verdict v-ok">No</span></header>
+        <p>When developers tune a value, or a token is renamed, the plugin updates the same Figma variable in place, so every layer bound to it changes on its own. Only 2 cases break a binding: a deprecated token is removed (layers keep the colour but lose the link), or a token changes type, which never happens to a colour.</p></article>
       <article class="check"><header><h3>Quick edits to existing tokens</h3><span class="verdict v-ok">No change</span></header>
         <p>Changing a value, renaming or deprecating stays in the tool, where it is quickest. This plan adds a second way in for new component tokens; it does not replace the tool's creation flow.</p></article>
     </div>
@@ -298,11 +300,12 @@ const FLOWS = {
     { l: "figma", t: "Build and explore", n: "Same messy exploration as today." },
     { l: "tool",  t: "Switch to the tool", n: "Read colours off the canvas and enter them.", tag: "pain", tt: "Leave Figma" },
     { l: "tool",  t: "Name and map", n: "Chips, matrix, light and dark mapping, review checks.", tag: "gain", tt: "Named by the rules" },
+    { l: "figma", t: "Plugin sync down", n: "Open the plugin; the new variables are created in Figma.", tag: "gain", tt: "Automated" },
+    { l: "figma", t: "Re-apply to the component", n: "Swap every layer in both frames to the new tokens.", tag: "pain", tt: "Manual" },
     { l: "code",  t: "Pull request", n: "CSS plus a changelog, opened for you.", tag: "gain", tt: "Automated" },
     { l: "code",  t: "Build, merge, release", n: "Developers may tune values." },
     { l: "tool",  t: "Pull and review", n: "Accept or decline each difference, logged.", tag: "gain", tt: "Drift caught" },
-    { l: "figma", t: "Plugin sync down", n: "Variables created or updated in Figma.", tag: "gain", tt: "Automated" },
-    { l: "figma", t: "Re-apply to the component", n: "Still by hand, in both frames.", tag: "pain", tt: "Manual" }
+    { l: "figma", t: "Plugin sync down again", n: "Same variables updated in place. Bound layers follow, no re-applying.", tag: "gain", tt: "Automated" }
   ], back: [] },
   proposed: { lanes: ["figma", "plugin", "tool", "code"], steps: [
     { l: "figma",  t: "Build and explore", n: "Mix primitives and semantic tokens freely." },
