@@ -1,0 +1,383 @@
+<title>Token Workflow Map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; each flow is a swimlane board (places as rows, steps as columns) that scrolls sideways inside its own frame. */
+:root {
+  --bg: #f6f6f3;
+  --panel: #ffffff;
+  --fg: #1b1c1f;
+  --muted: #5d6068;
+  --line: #d9d9d3;
+  --wire: #9a9ca3;
+  --figma: #7a4fd6;   --figma-bg: #f1ebfd;
+  --plugin: #0f7f78;  --plugin-bg: #e3f4f2;
+  --tool: #c2560e;    --tool-bg: #fdeee2;
+  --code: #2d5fb8;    --code-bg: #e6eefb;
+  --docs: #6b6e76;    --docs-bg: #ececea;
+  --pain: #c4302b;    --pain-bg: #fde9e7;
+  --gain: #1d7d3f;    --gain-bg: #e2f4e8;
+  --ask: #a0700a;     --ask-bg: #fbf1d9;
+  --f-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --f-body: "Inter", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #141518; --panel: #1d1f23; --fg: #ececea; --muted: #a2a5ad; --line: #33363c; --wire: #6c6f77;
+  --figma: #b597ff; --figma-bg: #2a2140; --plugin: #4fd1c5; --plugin-bg: #13302e;
+  --tool: #f39a5a; --tool-bg: #3a2414; --code: #7fa8f0; --code-bg: #1a2a45;
+  --docs: #b4b7be; --docs-bg: #2a2c30; --pain: #ff7b73; --pain-bg: #3d1a18;
+  --gain: #6fd394; --gain-bg: #15321f; --ask: #f0c35a; --ask-bg: #3a2e12; color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #141518; --panel: #1d1f23; --fg: #ececea; --muted: #a2a5ad; --line: #33363c; --wire: #6c6f77;
+  --figma: #b597ff; --figma-bg: #2a2140; --plugin: #4fd1c5; --plugin-bg: #13302e;
+  --tool: #f39a5a; --tool-bg: #3a2414; --code: #7fa8f0; --code-bg: #1a2a45;
+  --docs: #b4b7be; --docs-bg: #2a2c30; --pain: #ff7b73; --pain-bg: #3d1a18;
+  --gain: #6fd394; --gain-bg: #15321f; --ask: #f0c35a; --ask-bg: #3a2e12; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 15px; line-height: 1.6; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-block: 40px 80px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; line-height: 1.2; margin: 0; }
+h1 { font-size: 2.2rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.5rem; font-weight: 600; }
+h3 { font-size: 1.05rem; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+code, .mono { font-family: var(--f-mono); font-size: 0.86em; }
+.eyebrow { font-family: var(--f-mono); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+header.top { display: grid; gap: 12px; padding-bottom: 28px; border-bottom: 1px solid var(--line); }
+header.top .meta { color: var(--muted); font-size: 0.9rem; }
+section { display: grid; gap: 16px; padding-block: 40px 8px; }
+.lede { color: var(--muted); }
+
+.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 0.85rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+/* Swimlane board */
+.board { position: relative; overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.grid { position: relative; display: grid; grid-auto-columns: 184px; column-gap: 30px; row-gap: 0; padding: 0 24px 0 0; width: max-content; }
+.lane-label { grid-column: 1; position: sticky; left: 0; z-index: 3; background: var(--panel); width: 120px;
+  padding: 14px 12px; border-right: 1px solid var(--line); font-family: var(--f-display); font-weight: 600; font-size: 0.9rem;
+  display: flex; align-items: flex-start; gap: 8px; }
+.lane-row { grid-column: 1 / -1; border-top: 1px solid var(--line); }
+.lane-row:first-of-type { border-top: 0; }
+.cell { padding: 14px 0; display: flex; align-items: center; z-index: 2; }
+.card { width: 100%; background: var(--panel); border: 1.5px solid var(--c); border-radius: 8px; padding: 10px 11px; font-size: 0.82rem; line-height: 1.45; position: relative; }
+.card .n { font-family: var(--f-mono); font-size: 0.7rem; color: var(--c); font-weight: 500; }
+.card b { display: block; font-family: var(--f-display); font-weight: 600; font-size: 0.9rem; margin: 2px 0 4px; }
+.card .note { color: var(--muted); }
+.card .tag { display: inline-block; margin-top: 7px; font-size: 0.72rem; font-weight: 600; padding: 1px 7px; border-radius: 99px; }
+.tag.pain { color: var(--pain); background: var(--pain-bg); }
+.tag.gain { color: var(--gain); background: var(--gain-bg); }
+.tag.ask  { color: var(--ask);  background: var(--ask-bg); }
+.wires { position: absolute; inset: 0; pointer-events: none; z-index: 1; overflow: visible; }
+.wires path { fill: none; stroke: var(--wire); stroke-width: 1.5; }
+.wires path.back { stroke-dasharray: 4 4; }
+.wires .head { fill: var(--wire); stroke: none; }
+.board-foot { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 0.85rem; color: var(--muted); }
+.board-foot strong { color: var(--fg); font-weight: 600; }
+
+/* Summary strip */
+.tally { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.tally > div { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 6px; }
+.tally .row { display: flex; justify-content: space-between; gap: 12px; font-size: 0.88rem; }
+.tally .row span:last-child { font-variant-numeric: tabular-nums; font-weight: 600; }
+@media (max-width: 760px) { .tally { grid-template-columns: minmax(0, 1fr); } }
+
+/* Scan mock */
+.mock { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.mock-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); font-size: 0.85rem; }
+.mock-head strong { font-family: var(--f-display); }
+.mock .scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; white-space: nowrap; }
+th { font-weight: 600; color: var(--muted); font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.05em; }
+td.layers { white-space: normal; min-width: 200px; color: var(--muted); }
+.sw { display: inline-flex; align-items: center; gap: 6px; font-family: var(--f-mono); font-size: 0.78rem; }
+.sw i { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--line); display: inline-block; }
+.now-raw { color: var(--pain); }
+.now-sem { color: var(--muted); }
+.proposed { font-family: var(--f-mono); font-size: 0.8rem; color: var(--plugin); font-weight: 500; }
+.mock-foot { padding: 12px 16px; font-size: 0.82rem; color: var(--muted); display: grid; gap: 4px; }
+
+/* Review cards */
+.checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 760px) { .checks { grid-template-columns: minmax(0, 1fr); } }
+.check { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.check header { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.verdict { font-size: 0.72rem; font-weight: 600; padding: 2px 8px; border-radius: 99px; white-space: nowrap; }
+.v-ok { color: var(--gain); background: var(--gain-bg); }
+.v-rule { color: var(--ask); background: var(--ask-bg); }
+.v-new { color: var(--tool); background: var(--tool-bg); }
+.check p { font-size: 0.9rem; color: var(--muted); }
+
+ol.decisions { margin: 0; padding-left: 1.3em; display: grid; gap: 10px; max-width: 75ch; }
+ol.decisions li::marker { font-family: var(--f-mono); color: var(--muted); }
+ul.plain { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; max-width: 75ch; }
+.callout { border-left: 3px solid var(--tool); background: var(--tool-bg); padding: 14px 16px; border-radius: 0 8px 8px 0; display: grid; gap: 6px; max-width: 80ch; }
+a { color: var(--code); }
+:focus-visible { outline: 2px solid var(--code); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <span class="eyebrow">Token Library · workflow review · 24 Nov 2026</span>
+    <h1>How a new component's tokens travel, today and tomorrow</h1>
+    <p class="lede">3 maps of the same job: giving a new component its colour tokens. The first is how we work now. The second is the flow the current PRD describes. The third moves token creation back into Figma, with the plugin doing the naming, creating and re-applying, and the tool acting as the record and the route to code.</p>
+    <div class="legend" aria-label="Legend">
+      <span><i class="dot" style="background:var(--figma)"></i>Figma canvas</span>
+      <span><i class="dot" style="background:var(--plugin)"></i>Figma plugin</span>
+      <span><i class="dot" style="background:var(--tool)"></i>Token tool</span>
+      <span><i class="dot" style="background:var(--code)"></i>Code repo and release</span>
+      <span><i class="dot" style="background:var(--docs)"></i>Docs and hand-off</span>
+      <span><i class="tag pain" style="font-size:.72rem;padding:1px 7px;border-radius:99px">Manual</i> retyping or by-hand work</span>
+      <span><i class="tag gain" style="font-size:.72rem;padding:1px 7px;border-radius:99px">Automated</i> done for you</span>
+    </div>
+  </header>
+
+  <section id="today">
+    <span class="eyebrow">Map 1</span>
+    <h2>Today, without the tool</h2>
+    <p class="lede">Exploring with a mix of primitives and semantic tokens is right at this stage. The trouble starts once the colours are settled: every name is worked out from the docs, typed twice, mapped by hand, applied by hand and then handed over as a screenshot.</p>
+    <div class="board" data-flow="today"></div>
+    <div class="board-foot"><span>Names typed by hand: <strong>3 times</strong> (notes, Figma variables, CSS)</span><span>Route back from code: <strong>none</strong>, so drift goes unnoticed</span></div>
+  </section>
+
+  <section id="prd">
+    <span class="eyebrow">Map 2</span>
+    <h2>With the tool as the PRD describes it</h2>
+    <p class="lede">The naming help, the pull request and the review of developer changes are real gains. But the designer has to leave Figma in the middle of building the component, copy the colours across by reading them off the canvas, and then come back and apply the synced variables by hand. The manual work has moved, not gone.</p>
+    <div class="board" data-flow="prd"></div>
+    <div class="board-foot"><span>Names typed by hand: <strong>1 time</strong> (in the tool)</span><span>Colours copied by eye from Figma: <strong>every one</strong></span><span>Re-applying to layers: <strong>still by hand</strong></span></div>
+  </section>
+
+  <section id="proposed">
+    <span class="eyebrow">Map 3</span>
+    <h2>Proposed: create in Figma, record in the tool</h2>
+    <p class="lede">The designer stays in Figma until the component is finished. The plugin scans the light and dark frames, proposes the tokens and where each one is used, creates the variables and binds them back onto the layers. Then it sends the new tokens to the tool, which flags them and pushes them to code. Quick edits to existing tokens still happen in the tool.</p>
+    <div class="board" data-flow="proposed"></div>
+    <div class="board-foot"><span>Names typed by hand: <strong>0</strong>, only edits to suggestions</span><span>Re-applying to layers: <strong>done by the plugin</strong></span><span>Steps 9 and 10 repeat whenever developers tune a value</span></div>
+  </section>
+
+  <section id="compare">
+    <span class="eyebrow">Side by side</span>
+    <h2>Where the effort goes</h2>
+    <div class="tally">
+      <div><h3>Today</h3>
+        <div class="row"><span>Leave Figma to work out names</span><span>Yes</span></div>
+        <div class="row"><span>Variables made by hand</span><span>Yes</span></div>
+        <div class="row"><span>Variables applied by hand</span><span>Yes</span></div>
+        <div class="row"><span>Hand-off to developers</span><span>Screenshot</span></div>
+        <div class="row"><span>History of decisions</span><span>None</span></div>
+      </div>
+      <div><h3>PRD v1</h3>
+        <div class="row"><span>Leave Figma to work out names</span><span>Yes</span></div>
+        <div class="row"><span>Variables made by hand</span><span>No</span></div>
+        <div class="row"><span>Variables applied by hand</span><span>Yes</span></div>
+        <div class="row"><span>Hand-off to developers</span><span>Pull request</span></div>
+        <div class="row"><span>History of decisions</span><span>In the tool</span></div>
+      </div>
+      <div><h3>Proposed</h3>
+        <div class="row"><span>Leave Figma to work out names</span><span>No</span></div>
+        <div class="row"><span>Variables made by hand</span><span>No</span></div>
+        <div class="row"><span>Variables applied by hand</span><span>No</span></div>
+        <div class="row"><span>Hand-off to developers</span><span>Pull request</span></div>
+        <div class="row"><span>History of decisions</span><span>In the tool</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="scan">
+    <span class="eyebrow">What the plugin would show</span>
+    <h2>A scan of a Control component</h2>
+    <p class="lede">Example only, with made-up layers, to test the idea. The plugin groups every layer that uses the same light and dark pair, guesses the category from what the layer is, and proposes a name. Clicking a row would select those layers on the canvas so you can check them.</p>
+    <div class="mock">
+      <div class="mock-head"><strong>Control · Light frame + Dark frame · 9 layers, 5 colour pairs</strong><span style="color:var(--ask)">Mixed: 2 semantic, 3 raw primitives. Rule: use a full component set.</span></div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Used on</th><th>Light</th><th>Dark</th><th>Now</th><th>Proposed token</th></tr></thead>
+          <tbody>
+            <tr><td class="layers">Container fill (State=Default)</td><td><span class="sw"><i style="background:#f2f2f2"></i>neutral-100</span></td><td><span class="sw"><i style="background:#262626"></i>neutral-900</span></td><td class="now-raw">Raw primitive</td><td class="proposed">control-surface-default</td></tr>
+            <tr><td class="layers">Container fill (State=Hover)</td><td><span class="sw"><i style="background:#e0e0e0"></i>neutral-200</span></td><td><span class="sw"><i style="background:#3d3d3d"></i>neutral-800</span></td><td class="now-raw">Raw primitive</td><td class="proposed">control-surface-hover</td></tr>
+            <tr><td class="layers">Label text, Helper text (3 layers)</td><td><span class="sw"><i style="background:#000"></i>black</span></td><td><span class="sw"><i style="background:#fff"></i>white</span></td><td class="now-sem">content-default</td><td class="proposed">control-content-default <span style="color:var(--muted)">→ content-default</span></td></tr>
+            <tr><td class="layers">Container stroke (2 states)</td><td><span class="sw"><i style="background:#8a8a8a"></i>neutral-500</span></td><td><span class="sw"><i style="background:#8a8a8a"></i>neutral-500</span></td><td class="now-raw">Raw primitive</td><td class="proposed">control-line-default</td></tr>
+            <tr><td class="layers">Chevron vector, Check vector</td><td><span class="sw"><i style="background:#000"></i>black</span></td><td><span class="sw"><i style="background:#fff"></i>white</span></td><td class="now-sem">content-default</td><td class="proposed">control-icon-default <span style="color:var(--muted)">→ content-default</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="mock-foot">
+        <span>Semantic tokens already in use stay as references: <code>control-content-default</code> points at <code>content-default</code>, not at black.</span>
+        <span>Category guesses: text → <code>content</code>, stroke → <code>line</code>, vector inside an icon → <code>icon</code>, frame fill → <code>surface</code>. State comes from the variant property. You can rename, merge or split any row before publishing.</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="review">
+    <span class="eyebrow">Review</span>
+    <h2>Will it work in practice?</h2>
+    <p class="lede">Checked against what a Figma plugin can do on the Pro plan and what the tool already has.</p>
+    <div class="checks">
+      <article class="check"><header><h3>Reading the colours on a selection</h3><span class="verdict v-ok">Works</span></header>
+        <p>A plugin can walk every layer in the selected frames and read each fill, stroke and text colour, and whether it is a raw value or bound to a variable. This is standard plugin access, not an Enterprise feature.</p></article>
+      <article class="check"><header><h3>Pairing the light and dark frames</h3><span class="verdict v-rule">Needs a rule</span></header>
+        <p>The plugin has to know which dark layer matches which light layer. This is reliable if the dark frame is a duplicate of the light one, with the same layer structure and names. Anything that does not line up gets flagged for you to pair by hand.</p></article>
+      <article class="check"><header><h3>Guessing category, role and state</h3><span class="verdict v-rule">Needs a rule</span></header>
+        <p>Category can be guessed from the layer type, as in the scan above, and you confirm it. Role and state can only come from variant properties (for example <code>Type=Primary</code>, <code>State=Hover</code>), so those need consistent names on every component.</p></article>
+      <article class="check"><header><h3>Keeping the "never mix" rule</h3><span class="verdict v-ok">Works</span></header>
+        <p>If any layer needs a component token, the plugin proposes a full component set and turns the semantic ones into component tokens that reference them. That matches your Control example and keeps references as references.</p></article>
+      <article class="check"><header><h3>Creating the variables</h3><span class="verdict v-ok">Already built</span></header>
+        <p>Phase 5 already creates variables with light and dark modes, aliases and hidden non-default states. The scan would reuse that code and the same naming rules engine the tool uses, so names are checked the same way in both places.</p></article>
+      <article class="check"><header><h3>Binding the new tokens back onto the layers</h3><span class="verdict v-ok">Works</span></header>
+        <p>A plugin can bind a variable to a fill or stroke, so it can swap each raw colour for its new token in both frames. One catch: layers inside nested instances (an icon component inside the control) become overrides, so the plugin should list those for you to check.</p></article>
+      <article class="check"><header><h3>Sending new tokens to the tool</h3><span class="verdict v-new">New work</span></header>
+        <p>Today the plugin only reads tokens from the tool and reports a sync back. It already signs in with a key, so adding a "send new tokens" route is a modest extension. They arrive in the tool as drafts marked "From Figma", with the component and your name.</p></article>
+      <article class="check"><header><h3>Publishing the Figma library</h3><span class="verdict v-rule">Stays manual</span></header>
+        <p>Plugins cannot press Figma's own library Publish button. The variables exist in the file straight away, but other files only see them after you publish the library, as now.</p></article>
+      <article class="check"><header><h3>Clashes while you work</h3><span class="verdict v-rule">Needs a rule</span></header>
+        <p>Someone could add a token with the same name in the tool, or edit a variable directly in Figma. The tool should flag a name that already exists when the drafts arrive, and the plugin's sync shows any Figma edit that does not match the tool.</p></article>
+      <article class="check"><header><h3>Quick edits to existing tokens</h3><span class="verdict v-ok">No change</span></header>
+        <p>Changing a value, renaming or deprecating stays in the tool, where it is quickest. This plan adds a second way in for new component tokens; it does not replace the tool's creation flow.</p></article>
+    </div>
+  </section>
+
+  <section id="changes">
+    <span class="eyebrow">Effect on the plan</span>
+    <h2>What would change in the PRD</h2>
+    <div class="callout">
+      <strong>Source of truth, reworded</strong>
+      <p>The tool stays the record: nothing reaches code without passing through it, and every decision is logged there. Figma becomes the place where new component tokens are drafted. This keeps the PRD's goals, and drops the line "a token change always starts in the tool".</p>
+    </div>
+    <ul class="plain">
+      <li><strong>End-to-end workflow</strong> gains a second entry route: "Create in Figma, send to the tool" next to "Create in the tool".</li>
+      <li><strong>New feature F10, Scan and tidy</strong>: scan, propose, refine, publish variables, bind them back.</li>
+      <li><strong>New feature F11, Send to the tool</strong>: new tokens arrive as drafts with a "new from Figma" banner, ready to review and push.</li>
+      <li><strong>Phase 5</strong> splits in 2: 5a sync down (built), 5b scan and send up.</li>
+      <li><strong>Hand-off screenshot</strong> is replaced by the pull request and its changelog.</li>
+    </ul>
+  </section>
+
+  <section id="decisions">
+    <span class="eyebrow">For Jane</span>
+    <h2>Decisions before building</h2>
+    <ol class="decisions">
+      <li>Is the dark frame always a duplicate of the light frame, with the same layers? If not, how should the plugin pair them?</li>
+      <li>Which variant property names are standard (for example <code>State</code> and <code>Type</code>), so the plugin can read state and role from them?</li>
+      <li>Should the plugin create variables straight away when you press Publish, or only after the tool has accepted the names?</li>
+      <li>Who reviews tokens that arrive from Figma before they are pushed to code: the same designer, or a second person?</li>
+      <li>Does the scan cover colour only for now? Spacing and the other types still have open naming rules.</li>
+    </ol>
+  </section>
+</div>
+
+<script>
+const LANES = {
+  figma:  { label: "Figma canvas", c: "--figma" },
+  plugin: { label: "Figma plugin", c: "--plugin" },
+  tool:   { label: "Token tool",   c: "--tool" },
+  code:   { label: "Code repo",    c: "--code" },
+  docs:   { label: "Docs and hand-off", c: "--docs" }
+};
+const FLOWS = {
+  today: { lanes: ["figma", "docs", "code"], steps: [
+    { l: "figma", t: "Build and explore", n: "Try colour pairs with primitives, plus some semantic tokens. Messy on purpose." },
+    { l: "figma", t: "Spot the need", n: "Decide the component cannot use the shared semantic layer." },
+    { l: "docs",  t: "Read the naming guide", n: "Open the docs site to work out each name.", tag: "pain", tt: "Leave Figma" },
+    { l: "docs",  t: "Type out every name", n: "Write the list of names by hand.", tag: "pain", tt: "Manual" },
+    { l: "figma", t: "Make the variables", n: "Create each variable, map light and dark primitives.", tag: "pain", tt: "Manual" },
+    { l: "figma", t: "Re-apply to the component", n: "Swap every layer in both frames to the new tokens.", tag: "pain", tt: "Manual, daunting" },
+    { l: "docs",  t: "Screenshot for developers", n: "Share the variables panel as an image.", tag: "pain", tt: "Manual" },
+    { l: "code",  t: "Developer writes CSS", n: "Retypes names and values from the screenshot.", tag: "pain", tt: "Retyping, drift" },
+    { l: "code",  t: "Build, merge, release", n: "Values may be tuned. Nobody tells Figma." },
+    { l: "docs",  t: "Update the docs", n: "If someone remembers." }
+  ], back: [] },
+  prd: { lanes: ["figma", "tool", "code"], steps: [
+    { l: "figma", t: "Build and explore", n: "Same messy exploration as today." },
+    { l: "tool",  t: "Switch to the tool", n: "Read colours off the canvas and enter them.", tag: "pain", tt: "Leave Figma" },
+    { l: "tool",  t: "Name and map", n: "Chips, matrix, light and dark mapping, review checks.", tag: "gain", tt: "Named by the rules" },
+    { l: "code",  t: "Pull request", n: "CSS plus a changelog, opened for you.", tag: "gain", tt: "Automated" },
+    { l: "code",  t: "Build, merge, release", n: "Developers may tune values." },
+    { l: "tool",  t: "Pull and review", n: "Accept or decline each difference, logged.", tag: "gain", tt: "Drift caught" },
+    { l: "figma", t: "Plugin sync down", n: "Variables created or updated in Figma.", tag: "gain", tt: "Automated" },
+    { l: "figma", t: "Re-apply to the component", n: "Still by hand, in both frames.", tag: "pain", tt: "Manual" }
+  ], back: [] },
+  proposed: { lanes: ["figma", "plugin", "tool", "code"], steps: [
+    { l: "figma",  t: "Build and explore", n: "Mix primitives and semantic tokens freely." },
+    { l: "plugin", t: "Select frames, scan", n: "Light and dark frames. Every colour use is listed by layer.", tag: "gain", tt: "Automated" },
+    { l: "plugin", t: "Review proposals", n: "Grouped pairs, guessed category and state, suggested names, layers highlighted.", tag: "gain", tt: "Named by the rules" },
+    { l: "plugin", t: "Refine and confirm", n: "Rename, merge or split. Live naming checks.", tag: "ask", tt: "Your judgement" },
+    { l: "figma",  t: "Publish to the file", n: "Variables created with references, light and dark, then bound back onto the layers.", tag: "gain", tt: "Automated" },
+    { l: "tool",   t: "Send to the tool", n: "Arrive as drafts with a “new from Figma” banner.", tag: "gain", tt: "Automated" },
+    { l: "tool",   t: "Review and push", n: "Check, then open the pull request with changelog.", tag: "ask", tt: "1 click" },
+    { l: "code",   t: "Build, merge, release", n: "Developers may tune values." },
+    { l: "tool",   t: "Pull and review", n: "Accept or decline each difference, logged.", tag: "gain", tt: "Drift caught" },
+    { l: "plugin", t: "Sync down", n: "Accepted changes update Figma variables.", tag: "gain", tt: "Automated" }
+  ], back: [] }
+};
+
+function render(board) {
+  const f = FLOWS[board.dataset.flow];
+  const grid = document.createElement("div");
+  grid.className = "grid";
+  grid.style.gridTemplateColumns = "120px";
+  f.lanes.forEach((key, r) => {
+    const row = document.createElement("div");
+    row.className = "lane-row";
+    row.style.gridRow = r + 1;
+    grid.appendChild(row);
+    const lab = document.createElement("div");
+    lab.className = "lane-label";
+    lab.style.gridRow = r + 1;
+    lab.innerHTML = '<i class="dot" style="margin-top:6px;background:var(' + LANES[key].c + ')"></i><span>' + LANES[key].label + "</span>";
+    grid.appendChild(lab);
+  });
+  const cards = [];
+  f.steps.forEach((s, i) => {
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    cell.style.gridRow = f.lanes.indexOf(s.l) + 1;
+    cell.style.gridColumn = i + 2;
+    const tag = s.tag ? '<span class="tag ' + s.tag + '">' + s.tt + "</span>" : "";
+    cell.innerHTML = '<div class="card" style="--c:var(' + LANES[s.l].c + ')"><span class="n">' + String(i + 1).padStart(2, "0") + "</span><b>" + s.t + '</b><span class="note">' + s.n + "</span>" + tag + "</div>";
+    grid.appendChild(cell);
+    cards.push(cell.firstChild);
+  });
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "wires");
+  svg.setAttribute("aria-hidden", "true");
+  grid.appendChild(svg);
+  board.appendChild(grid);
+  board._draw = () => draw(grid, svg, cards, f.back);
+  board._draw();
+}
+
+function draw(grid, svg, cards, back) {
+  const g = grid.getBoundingClientRect();
+  svg.setAttribute("width", g.width);
+  svg.setAttribute("height", g.height);
+  const box = (el) => { const r = el.getBoundingClientRect(); return { l: r.left - g.left, r: r.right - g.left, t: r.top - g.top, b: r.bottom - g.top, cy: r.top - g.top + r.height / 2, cx: r.left - g.left + r.width / 2 }; };
+  let out = "";
+  for (let i = 0; i < cards.length - 1; i++) {
+    const a = box(cards[i]), b = box(cards[i + 1]);
+    const x1 = a.r, y1 = a.cy, x2 = b.l - 5, y2 = b.cy, mx = (x1 + x2) / 2;
+    out += '<path d="M' + x1 + " " + y1 + " C" + mx + " " + y1 + " " + mx + " " + y2 + " " + x2 + " " + y2 + '"/>';
+    out += '<path class="head" d="M' + (x2 + 5) + " " + y2 + " L" + (x2 - 2) + " " + (y2 - 4) + " L" + (x2 - 2) + " " + (y2 + 4) + ' Z"/>';
+  }
+  back.forEach(([from, to]) => {
+    const a = box(cards[from]), b = box(cards[to]);
+    const x1 = a.cx, y1 = a.b, x2 = b.cx, y2 = b.b;
+    const dip = Math.max(y1, y2) + 12;
+    out += '<path class="back" d="M' + x1 + " " + y1 + " C" + x1 + " " + dip + " " + x2 + " " + dip + " " + x2 + " " + (y2 + 4) + '"/>';
+  });
+  svg.innerHTML = out;
+}
+
+const boards = [...document.querySelectorAll(".board")];
+boards.forEach(render);
+const redraw = () => boards.forEach((b) => b._draw && b._draw());
+window.addEventListener("resize", redraw);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(redraw);
+</script>
