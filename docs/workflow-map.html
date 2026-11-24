@@ -158,9 +158,9 @@ a { color: var(--code); }
   <section id="proposed">
     <span class="eyebrow">Map 3</span>
     <h2>Proposed: create in Figma, record in the tool</h2>
-    <p class="lede">The designer stays in Figma until the component is finished. The plugin scans the light and dark frames, proposes the tokens and where each one is used, creates the variables and binds them back onto the layers. Then it sends the new tokens to the tool, which flags them and pushes them to code. Quick edits to existing tokens still happen in the tool.</p>
+    <p class="lede">The designer stays in Figma until the component is finished. The plugin scans the light and dark frames and proposes the tokens and where each one is used. You accept the names and publish the variables, then apply them to the layers as a separate step. Then it sends the new tokens to the tool, which flags them and pushes them to code. Quick edits to existing tokens still happen in the tool.</p>
     <div class="board" data-flow="proposed"></div>
-    <div class="board-foot"><span>Names typed by hand: <strong>0</strong>, only edits to suggestions</span><span>Re-applying to layers: <strong>done by the plugin</strong></span><span>Steps 9 and 10 repeat whenever developers tune a value</span></div>
+    <div class="board-foot"><span>Names typed by hand: <strong>0</strong>, only edits to suggestions</span><span>Re-applying to layers: <strong>done by the plugin</strong></span><span>Steps 10 and 11 repeat whenever developers tune a value</span></div>
   </section>
 
   <section id="compare">
@@ -223,10 +223,10 @@ a { color: var(--code); }
     <div class="checks">
       <article class="check"><header><h3>Reading the colours on a selection</h3><span class="verdict v-ok">Works</span></header>
         <p>A plugin can walk every layer in the selected frames and read each fill, stroke and text colour, and whether it is a raw value or bound to a variable. This is standard plugin access, not an Enterprise feature.</p></article>
-      <article class="check"><header><h3>Pairing the light and dark frames</h3><span class="verdict v-rule">Needs a rule</span></header>
-        <p>The plugin has to know which dark layer matches which light layer. This is reliable if the dark frame is a duplicate of the light one, with the same layer structure and names. Anything that does not line up gets flagged for you to pair by hand.</p></article>
-      <article class="check"><header><h3>Guessing category, role and state</h3><span class="verdict v-rule">Needs a rule</span></header>
-        <p>Category can be guessed from the layer type, as in the scan above, and you confirm it. Role and state can only come from variant properties (for example <code>Type=Primary</code>, <code>State=Hover</code>), so those need consistent names on every component.</p></article>
+      <article class="check"><header><h3>Pairing the light and dark frames</h3><span class="verdict v-ok">Agreed</span></header>
+        <p>The dark frame is always a duplicate of the light one, with only the colours changed, so the plugin pairs layers by their position in the frame. Anything that does not line up is still flagged, in case a layer was added to 1 frame only.</p></article>
+      <article class="check"><header><h3>Guessing category, role and state</h3><span class="verdict v-rule">Test run needed</span></header>
+        <p>The plugin reuses the tool's naming rules: the 4 categories, the suggested roles and states, and no focus tokens. Category comes from the layer type. Role and state come from variant values that match those lists (for example <code>Hover</code>). A value it does not know is flagged as a possible new state, so a test run on a few real components will show the edge cases.</p></article>
       <article class="check"><header><h3>Keeping the "never mix" rule</h3><span class="verdict v-ok">Works</span></header>
         <p>If any layer needs a component token, the plugin proposes a full component set and turns the semantic ones into component tokens that reference them. That matches your Control example and keeps references as references.</p></article>
       <article class="check"><header><h3>Creating the variables</h3><span class="verdict v-ok">Already built</span></header>
@@ -255,7 +255,7 @@ a { color: var(--code); }
     </div>
     <ul class="plain">
       <li><strong>End-to-end workflow</strong> gains a second entry route: "Create in Figma, send to the tool" next to "Create in the tool".</li>
-      <li><strong>New feature F10, Scan and tidy</strong>: scan, propose, refine, publish variables, bind them back.</li>
+      <li><strong>New feature F10, Scan and tidy</strong>, colour only: scan, propose, accept names, save and publish variables, then apply them to the layers as a separate step.</li>
       <li><strong>New feature F11, Send to the tool</strong>: new tokens arrive as drafts with a "new from Figma" banner, ready to review and push.</li>
       <li><strong>Phase 5</strong> splits in 2: 5a sync down (built), 5b scan and send up.</li>
       <li><strong>Hand-off screenshot</strong> is replaced by the pull request and its changelog.</li>
@@ -263,14 +263,14 @@ a { color: var(--code); }
   </section>
 
   <section id="decisions">
-    <span class="eyebrow">For Jane</span>
-    <h2>Decisions before building</h2>
+    <span class="eyebrow">Agreed 24 Nov 2026</span>
+    <h2>Decisions made</h2>
     <ol class="decisions">
-      <li>Is the dark frame always a duplicate of the light frame, with the same layers? If not, how should the plugin pair them?</li>
-      <li>Which variant property names are standard (for example <code>State</code> and <code>Type</code>), so the plugin can read state and role from them?</li>
-      <li>Should the plugin create variables straight away when you press Publish, or only after the tool has accepted the names?</li>
-      <li>Who reviews tokens that arrive from Figma before they are pushed to code: the same designer, or a second person?</li>
-      <li>Does the scan cover colour only for now? Spacing and the other types still have open naming rules.</li>
+      <li>The dark frame is always a duplicate of the light frame, with only the colours changed.</li>
+      <li>Category, role and state come from the tool's existing naming rules. Edge cases, such as new interactive states, will be found by a test run.</li>
+      <li>You accept the names in the plugin, then save and publish the variables to Figma. Applying them to the layers is a separate step after that.</li>
+      <li>Any designer can review tokens that arrive from Figma before they are pushed to code.</li>
+      <li>The scan covers colour only for now.</li>
     </ol>
   </section>
 </div>
@@ -311,10 +311,11 @@ const FLOWS = {
     { l: "figma",  t: "Build and explore", n: "Mix primitives and semantic tokens freely." },
     { l: "plugin", t: "Select frames, scan", n: "Light and dark frames. Every colour use is listed by layer.", tag: "gain", tt: "Automated" },
     { l: "plugin", t: "Review proposals", n: "Grouped pairs, guessed category and state, suggested names, layers highlighted.", tag: "gain", tt: "Named by the rules" },
-    { l: "plugin", t: "Refine and confirm", n: "Rename, merge or split. Live naming checks.", tag: "ask", tt: "Your judgement" },
-    { l: "figma",  t: "Publish to the file", n: "Variables created with references, light and dark, then bound back onto the layers.", tag: "gain", tt: "Automated" },
+    { l: "plugin", t: "Accept the names", n: "Rename, merge or split, then accept. Live naming checks.", tag: "ask", tt: "Your judgement" },
+    { l: "figma",  t: "Save and publish", n: "Variables created with references, light and dark modes, non-default states hidden.", tag: "gain", tt: "Automated" },
+    { l: "plugin", t: "Apply to the layers", n: "A separate step: check where each token goes, then bind them in both frames.", tag: "gain", tt: "Automated" },
     { l: "tool",   t: "Send to the tool", n: "Arrive as drafts with a “new from Figma” banner.", tag: "gain", tt: "Automated" },
-    { l: "tool",   t: "Review and push", n: "Check, then open the pull request with changelog.", tag: "ask", tt: "1 click" },
+    { l: "tool",   t: "Designer reviews, then pushes", n: "Any designer checks the new tokens, then opens the pull request.", tag: "ask", tt: "Review" },
     { l: "code",   t: "Build, merge, release", n: "Developers may tune values." },
     { l: "tool",   t: "Pull and review", n: "Accept or decline each difference, logged.", tag: "gain", tt: "Drift caught" },
     { l: "plugin", t: "Sync down", n: "Accepted changes update Figma variables.", tag: "gain", tt: "Automated" }
