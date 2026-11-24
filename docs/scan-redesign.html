@@ -1,0 +1,287 @@
+<title>Simpler Component Scan</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a short story column (what changes, what you prepare), then 3 wide plugin window mock-ups, then decisions. Plugin windows keep Figma's own light chrome in both themes. */
+:root {
+  --bg: #f5f6f4; --panel: #ffffff; --fg: #1c1d20; --muted: #60636b; --line: #dcddd8;
+  --accent: #0d6efd; --good: #1d7d3f; --good-bg: #e2f4e8; --warn: #9a6a00; --warn-bg: #fbf1d9; --bad: #c4302b; --bad-bg: #fde9e7;
+  --f-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --f-body: "Inter", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  /* Figma plugin chrome, fixed */
+  --pw-bg: #ffffff; --pw-fg: #1e1e1e; --pw-muted: #6b6b6b; --pw-line: #e6e6e6; --pw-soft: #f5f5f5; --pw-blue: #0d99ff;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #141518; --panel: #1d1f23; --fg: #ececea; --muted: #a3a6ad; --line: #34373d;
+  --accent: #6ea8fe; --good: #6fd394; --good-bg: #15321f; --warn: #f0c35a; --warn-bg: #3a2e12; --bad: #ff7b73; --bad-bg: #3d1a18; color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #141518; --panel: #1d1f23; --fg: #ececea; --muted: #a3a6ad; --line: #34373d;
+  --accent: #6ea8fe; --good: #6fd394; --good-bg: #15321f; --warn: #f0c35a; --warn-bg: #3a2e12; --bad: #ff7b73; --bad-bg: #3d1a18; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 15px; line-height: 1.6; margin: 0; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-block: 40px 80px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 40px; }
+h1, h2, h3 { font-family: var(--f-display); margin: 0; line-height: 1.2; text-wrap: balance; }
+h1 { font-size: 2.1rem; }
+h2 { font-size: 1.45rem; }
+h3 { font-size: 1.02rem; }
+p { margin: 0; max-width: 70ch; }
+code { font-family: var(--f-mono); font-size: 0.86em; }
+.eyebrow { font-family: var(--f-mono); font-size: 0.74rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.muted { color: var(--muted); }
+section { display: grid; gap: 14px; }
+
+.fixes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 760px) { .fixes { grid-template-columns: minmax(0, 1fr); } }
+.fix { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 6px; min-width: 0; }
+.fix .was { font-size: 0.88rem; color: var(--bad); }
+.fix .now { font-size: 0.92rem; }
+
+.prep { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 10px; }
+.prep ol { margin: 0; padding-left: 1.3em; display: grid; gap: 8px; max-width: 72ch; }
+.prep .not { font-size: 0.9rem; color: var(--muted); }
+
+/* Plugin window mock-ups */
+.shot { display: grid; gap: 10px; }
+.scroller { overflow-x: auto; padding-bottom: 6px; }
+.pw { width: 880px; background: var(--pw-bg); color: var(--pw-fg); border: 1px solid #cfcfcf; border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,.12); font: 12px/1.45 var(--f-body); overflow: hidden; }
+.pw-top { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--pw-line); }
+.pw-top b { font-size: 12.5px; }
+.steps { display: flex; gap: 6px; }
+.steps span { padding: 3px 10px; border-radius: 99px; background: var(--pw-soft); color: var(--pw-muted); font-weight: 500; }
+.steps span.on { background: #1e1e1e; color: #fff; }
+.steps span.done { background: #e5f4ea; color: #1d7d3f; }
+.pw-body { padding: 16px; display: grid; gap: 14px; }
+.pw h4 { margin: 0; font: 600 13px/1.3 var(--f-body); }
+.pw .hint { color: var(--pw-muted); }
+.pw-foot { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--pw-line); background: #fafafa; }
+.btn { border: 1px solid #cfcfcf; background: #fff; color: #1e1e1e; border-radius: 6px; padding: 6px 12px; font: 500 12px var(--f-body); }
+.btn.primary { background: var(--pw-blue); border-color: var(--pw-blue); color: #fff; }
+.btn.small { padding: 3px 8px; font-size: 11px; }
+.mono { font-family: var(--f-mono); font-size: 11px; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 10.5px; font-weight: 600; }
+.pill.ok { background: #e5f4ea; color: #1d7d3f; }
+.pill.warn { background: #fbf1d9; color: #8a5d00; }
+.pill.grey { background: var(--pw-soft); color: var(--pw-muted); }
+
+/* Screen 1 */
+.pair { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: stretch; }
+.side { border: 1px solid var(--pw-line); border-radius: 8px; padding: 12px; display: grid; gap: 10px; }
+.side .label { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.side .src { color: var(--pw-muted); }
+.stage { border-radius: 6px; padding: 14px; display: flex; gap: 14px; justify-content: center; }
+.stage.light { background: #ffffff; border: 1px solid var(--pw-line); }
+.stage.dark { background: #121212; }
+.vcol { display: grid; gap: 4px; justify-items: center; font-size: 10px; }
+.stage.light .vcol { color: #6b6b6b; }
+.stage.dark .vcol { color: #a8a8a8; }
+.ib { width: 38px; height: 38px; border-radius: 6px; border: 1.5px solid; display: grid; place-items: center; }
+.swap { align-self: center; }
+.field { display: grid; gap: 4px; }
+.field input { font: 500 13px var(--f-body); padding: 6px 8px; border: 1px solid #cfcfcf; border-radius: 6px; width: 240px; color: #1e1e1e; background: #fff; }
+.row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { border: 1px solid #cfcfcf; border-radius: 99px; padding: 2px 10px; font-weight: 500; }
+.chip.known::before { content: "✓ "; color: #1d7d3f; }
+.callout { border-radius: 6px; padding: 8px 10px; background: #f0f7ff; color: #1e1e1e; }
+
+/* Screen 2: token map */
+.map { width: 100%; border-collapse: separate; border-spacing: 0; }
+.map th { text-align: left; font-weight: 600; color: var(--pw-muted); font-size: 11px; padding: 6px 8px; border-bottom: 1px solid var(--pw-line); }
+.map th.state { text-align: left; }
+.map td { padding: 6px; border-bottom: 1px solid var(--pw-line); vertical-align: top; }
+.map td.part { font-weight: 600; width: 96px; padding-top: 12px; }
+.map td.part small { display: block; font-weight: 400; color: var(--pw-muted); }
+.cell { border: 1px solid var(--pw-line); border-radius: 6px; padding: 7px; display: grid; gap: 5px; min-height: 92px; }
+.cell.sel { outline: 2px solid var(--pw-blue); outline-offset: -1px; }
+.cell.reused { background: #fafafa; }
+.cell .tok { font-family: var(--f-mono); font-size: 10.5px; font-weight: 500; overflow-wrap: anywhere; }
+.cell.reused .tok { color: var(--pw-muted); }
+.ld { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.ld div { display: flex; align-items: center; gap: 4px; font-size: 10.5px; min-width: 0; }
+.ld i { width: 14px; height: 14px; border-radius: 3px; border: 1px solid #d0d0d0; flex: none; }
+.ld i.clear { background: repeating-conic-gradient(#ddd 0 25%, #fff 0 50%) 0 0 / 6px 6px; }
+.ld span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.was { font-size: 10px; color: var(--pw-muted); }
+.split { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 14px; }
+.detail { border: 1px solid var(--pw-line); border-radius: 8px; padding: 12px; display: grid; gap: 10px; align-content: start; background: #fcfcfc; }
+.detail .k { color: var(--pw-muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; }
+.detail select, .detail input { font: 12px var(--f-body); padding: 4px 6px; border: 1px solid #cfcfcf; border-radius: 5px; width: 100%; background: #fff; color: #1e1e1e; }
+.cmp { display: grid; grid-template-columns: auto 1fr 1fr; gap: 4px 8px; align-items: center; font-size: 11px; }
+.cmp .h { color: var(--pw-muted); font-size: 10px; }
+.sw { display: inline-flex; align-items: center; gap: 4px; }
+.sw i { width: 14px; height: 14px; border-radius: 3px; border: 1px solid #d0d0d0; display: inline-block; }
+.legend { display: flex; gap: 14px; color: var(--pw-muted); font-size: 11px; flex-wrap: wrap; }
+
+/* Screen 3 */
+.finish { display: grid; gap: 10px; }
+.fstep { display: grid; grid-template-columns: 26px 1fr auto; gap: 10px; align-items: center; border: 1px solid var(--pw-line); border-radius: 8px; padding: 12px; }
+.fstep .n { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-weight: 600; background: var(--pw-soft); }
+.fstep.done .n { background: #e5f4ea; color: #1d7d3f; }
+.fstep .t { display: grid; gap: 2px; }
+.fstep .t b { font-size: 12.5px; }
+
+ol.decide { margin: 0; padding-left: 1.3em; display: grid; gap: 10px; max-width: 76ch; }
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:10px">
+    <span class="eyebrow">Component scan · proposal · 24 Nov 2026</span>
+    <h1>A simpler component scan</h1>
+    <p class="muted">Today the plugin asks you to prepare too much, uses 8 small steps, and labels things in ways that are hard to read. This proposal keeps what works (reading your light and dark components, drafting the tokens, applying them back) and cuts it to 3 clear screens in a wider window. The screens below use your Control example. Colours are sample values.</p>
+  </header>
+
+  <section>
+    <span class="eyebrow">What you found confusing, and the fix</span>
+    <div class="fixes">
+      <div class="fix"><span class="was">Not clear what to select, or whether to move things</span><span class="now">Select the 2 component sets, light and dark, wherever they are. Nothing to move, wrap or rename.</span></div>
+      <div class="fix"><span class="was">Naming them "light" and "dark" made the tokens start with "light-"</span><span class="now">The plugin takes the component name from the set, drops words such as light, dark and copy, and lets you edit it. Every token name updates as you type.</span></div>
+      <div class="fix"><span class="was">The plugin guessed which one was dark from names and modes</span><span class="now">It shows both side by side with a picture of each and asks you to check. If it guessed wrong, press Swap. It remembers your answer.</span></div>
+      <div class="fix"><span class="was">"L" and "D" labels</span><span class="now">Every colour is shown as a full "Light" and "Dark" pair, with the swatch, the primitive name and what the layer used before.</span></div>
+      <div class="fix"><span class="was">Layers had to be named surface, line, content or icon</span><span class="now">The plugin works out the part from the layer itself (frame fill, stroke, text, icon) and you can change it from a menu. No renaming in Figma.</span></div>
+      <div class="fix"><span class="was">8 steps, and the result was hard to picture</span><span class="now">3 screens: Check, Token map, Finish. The token map is 1 grid of parts against states, like the matrix in the token namer.</span></div>
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">Before you open the plugin</span>
+    <div class="prep">
+      <h3>The only thing to prepare</h3>
+      <ol>
+        <li>Make the component a component set with a <code>State</code> property: Default, Hover, Pressed, Disabled and so on. This is the one thing the plugin cannot guess.</li>
+        <li>Duplicate the set for dark and change only the colours. Its name does not matter.</li>
+      </ol>
+      <p class="not">No layer renaming, no wrapping frames, no special names, no modes to set.</p>
+    </div>
+  </section>
+
+  <section class="shot">
+    <span class="eyebrow">Screen 1 of 3</span>
+    <h2>Check: which is light, which is dark, and what is it called</h2>
+    <p class="muted">You select both sets and open the plugin. It reads them straight away; there is no separate Scan button.</p>
+    <div class="scroller"><div class="pw" role="img" aria-label="Mock-up of the Check screen">
+      <div class="pw-top"><b>Token Library · Scan component</b><div class="steps"><span class="on">1 Check</span><span>2 Token map</span><span>3 Finish</span></div></div>
+      <div class="pw-body">
+        <div class="pair">
+          <div class="side">
+            <div class="label">☀ Light <span class="pill grey">Control light</span></div>
+            <div class="stage light" id="stage-light"></div>
+          </div>
+          <button class="btn swap" type="button">⇄ Swap</button>
+          <div class="side">
+            <div class="label">☾ Dark <span class="pill grey">Control dark</span></div>
+            <div class="stage dark" id="stage-dark"></div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field"><span class="hint">Component name</span><input id="mock-name" value="Control" aria-label="Component name"></div>
+          <div class="hint" style="padding-bottom:7px">Tokens will be called <span class="mono">control-surface-default</span>, <span class="mono">control-content-hover</span> and so on.</div>
+        </div>
+        <div class="field">
+          <span class="hint">States found in the State property</span>
+          <div class="chips"><span class="chip known">Default</span><span class="chip known">Hover</span><span class="chip known">Pressed</span><span class="chip known">Disabled</span></div>
+        </div>
+        <div class="callout">✓ Both sets have the same 4 variants and the same layers, so every light colour has a dark partner.</div>
+      </div>
+      <div class="pw-foot"><span class="hint">Something wrong? Fix it in Figma; this screen updates as you go.</span><button class="btn primary" type="button">See the token map</button></div>
+    </div></div>
+  </section>
+
+  <section class="shot">
+    <span class="eyebrow">Screen 2 of 3</span>
+    <h2>Token map: every colour, light and dark, before and after</h2>
+    <p class="muted">Rows are the parts of the component, columns are the states. Each box is 1 token, with its light and dark colour and what the layers used before. Grey boxes reuse the Default token because they look the same. Click a box to see its layers on the canvas and to change anything on the right.</p>
+    <div class="scroller"><div class="pw" role="img" aria-label="Mock-up of the Token map screen">
+      <div class="pw-top"><b>Token Library · Scan component</b><div class="steps"><span class="done">✓ Check</span><span class="on">2 Token map</span><span>3 Finish</span></div></div>
+      <div class="pw-body">
+        <div class="legend"><span><span class="pill warn">Needs a component token</span> Control uses primitives in some parts, so all its parts get their own tokens.</span><span>8 tokens · 3 published, 5 hidden</span></div>
+        <div class="split">
+          <table class="map" id="map"></table>
+          <aside class="detail">
+            <div><div class="k">Selected</div><div class="mono" style="font-size:12px;font-weight:600">control-surface-hover</div><div class="hint">Surface · Hover · hidden from publishing</div></div>
+            <div class="cmp">
+              <span></span><span class="h">☀ Light</span><span class="h">☾ Dark</span>
+              <span class="h">Before</span><span class="sw"><i style="background:#E0E0E0"></i>neutral-200</span><span class="sw"><i style="background:#555555"></i>neutral-600</span>
+              <span class="h">After</span><span class="sw"><i style="background:#E0E0E0"></i>neutral-200</span><span class="sw"><i style="background:#555555"></i>neutral-600</span>
+            </div>
+            <label class="field"><span class="k">Name</span><input value="control-surface-hover" aria-label="Token name"></label>
+            <label class="field"><span class="k">Part</span><select aria-label="Part"><option>Surface (frame fill)</option><option>Line</option><option>Content</option><option>Icon</option></select></label>
+            <div class="hint">Used on 1 layer in each theme: the Hover frame fill.</div>
+            <button class="btn small" type="button">Show on canvas</button>
+          </aside>
+        </div>
+      </div>
+      <div class="pw-foot"><button class="btn" type="button">Back</button><button class="btn primary" type="button">Accept 8 tokens</button></div>
+    </div></div>
+  </section>
+
+  <section class="shot">
+    <span class="eyebrow">Screen 3 of 3</span>
+    <h2>Finish: 3 actions, in order, on 1 screen</h2>
+    <p class="muted">Each action still has its own button, as you asked, so you can check Figma between them. You can stop after any of them and come back later.</p>
+    <div class="scroller"><div class="pw" role="img" aria-label="Mock-up of the Finish screen">
+      <div class="pw-top"><b>Token Library · Scan component</b><div class="steps"><span class="done">✓ Check</span><span class="done">✓ Token map</span><span class="on">3 Finish</span></div></div>
+      <div class="pw-body finish">
+        <div class="fstep done"><span class="n">✓</span><span class="t"><b>Create 8 variables</b><span class="hint">In Colour tokens / Interactive / Control. 3 published, 5 hidden. Done.</span></span><span class="pill ok">Done</span></div>
+        <div class="fstep"><span class="n">2</span><span class="t"><b>Apply them to the layers</b><span class="hint">Swaps 11 colours in Control light and 11 in Control dark for the new tokens. Both still look the same. You can undo this in Figma.</span></span><button class="btn primary" type="button">Apply</button></div>
+        <div class="fstep"><span class="n">3</span><span class="t"><b>Send to Token Library</b><span class="hint">A designer checks them there before they go to code.</span></span><button class="btn" type="button" disabled>Send</button></div>
+      </div>
+      <div class="pw-foot"><span class="hint">Then publish the library from the Assets panel, as usual.</span><button class="btn" type="button">Scan another component</button></div>
+    </div></div>
+  </section>
+
+  <section>
+    <span class="eyebrow">For Jane</span>
+    <h2>Decisions before I build it</h2>
+    <ol class="decide">
+      <li>Is the 3-screen flow right, with the token map as a grid of parts against states?</li>
+      <li>How should the plugin know which set is dark: guess and show Swap (recommended), or always ask you to pick?</li>
+      <li>If a component set has no State property yet, should the plugin let you name each variant's state inside the plugin and add the property for you?</li>
+      <li>Is a window about 880 by 640 pixels a good size?</li>
+    </ol>
+  </section>
+</div>
+
+<script>
+const C = { transparent: "transparent", "neutral-100": "#F2F2F2", "neutral-200": "#E0E0E0", "neutral-400": "#9E9E9E", "neutral-600": "#555555", "neutral-700": "#3D3D3D", black: "#000000", white: "#FFFFFF" };
+const STATES = ["Default", "Hover", "Pressed", "Disabled"];
+const LIGHT = { Default: ["transparent", "neutral-700", "black"], Hover: ["neutral-200", "neutral-700", "black"], Pressed: ["neutral-600", "neutral-700", "white"], Disabled: ["transparent", "neutral-400", "neutral-400"] };
+const DARK = { Default: ["transparent", "neutral-100", "white"], Hover: ["neutral-600", "neutral-100", "white"], Pressed: ["neutral-200", "neutral-100", "black"], Disabled: ["transparent", "neutral-400", "neutral-400"] };
+const chevron = (c) => '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M4 5.5l3 3 3-3" fill="none" stroke="' + c + '" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function stage(id, set) {
+  const el = document.getElementById(id);
+  el.innerHTML = STATES.map((s) => {
+    const [bg, line, ic] = set[s];
+    return '<div class="vcol"><div class="ib" style="background:' + C[bg] + ';border-color:' + C[line] + '">' + chevron(C[ic]) + "</div>" + s + "</div>";
+  }).join("");
+}
+stage("stage-light", LIGHT);
+stage("stage-dark", DARK);
+
+const PARTS = [
+  { key: "surface", label: "Surface", sub: "frame fill", i: 0, was: { Default: "transparent", Hover: "neutral-200", Pressed: "neutral-600", Disabled: "transparent" } },
+  { key: "line", label: "Line", sub: "frame stroke", i: 1, was: { Default: "line-default", Hover: "line-default", Pressed: "line-default", Disabled: "line-disabled" } },
+  { key: "content", label: "Content", sub: "arrow in icon", i: 2, was: { Default: "content-default", Hover: "content-default", Pressed: "content-on-inverse", Disabled: "neutral-400" } },
+];
+const swatch = (n) => '<i class="' + (n === "transparent" ? "clear" : "") + '" style="' + (n === "transparent" ? "" : "background:" + C[n]) + '"></i>';
+const map = document.getElementById("map");
+let html = '<thead><tr><th>Part</th>' + STATES.map((s) => '<th class="state">' + s + "</th>").join("") + "</tr></thead><tbody>";
+for (const p of PARTS) {
+  html += '<tr><td class="part">' + p.label + "<small>" + p.sub + "</small></td>";
+  const def = LIGHT.Default[p.i] + "|" + DARK.Default[p.i];
+  for (const s of STATES) {
+    const l = LIGHT[s][p.i], d = DARK[s][p.i];
+    const reused = s !== "Default" && l + "|" + d === def;
+    const name = "control-" + p.key + "-" + (reused ? "default" : s.toLowerCase());
+    const sel = p.key === "surface" && s === "Hover" ? " sel" : "";
+    html += '<td><div class="cell' + (reused ? " reused" : "") + sel + '"><span class="tok">' + name + "</span>" +
+      '<div class="ld"><div>' + swatch(l) + "<span>☀ " + l + "</span></div><div>" + swatch(d) + "<span>☾ " + d + "</span></div></div>" +
+      '<span class="was">' + (reused ? "Same as Default" : "Before: " + p.was[s]) + "</span></div></td>";
+  }
+  html += "</tr>";
+}
+map.innerHTML = html + "</tbody>";
+</script>
