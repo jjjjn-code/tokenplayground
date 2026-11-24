@@ -149,21 +149,34 @@ async function readVariables(api: ScanVariablesApi, boundIds: string[], opts: Sc
 const isSymbol = (x: unknown): x is symbol => typeof x === "symbol";
 
 /**
- * Which of 2 selected layers is the dark copy: the one with "dark" in its
- * name, or else the one set to the dark mode of Colour tokens. Null when
- * the plugin cannot tell.
+ * Which of 2 selected layers is the dark copy. In order: the one with
+ * "dark" in its name; the one that is not the component set (the dark copy
+ * is often plain frames); the one set to dark mode; the one not set to
+ * light mode. Null when the plugin cannot tell. Learnt from the first
+ * read-only scan of the UAL UI Sandbox file, 24 Nov 2026.
  */
-export function whichIsDark(nodes: [NodeLike, NodeLike], darkModeIds: string[] = []): 0 | 1 | null {
-  const named = nodes.map((n) => /\bdark\b/i.test(n.name));
-  if (named[0] !== named[1]) return named[0] ? 0 : 1;
-  const moded = nodes.map((n) => Object.values(n.explicitVariableModes ?? {}).some((m) => darkModeIds.includes(m)));
-  if (moded[0] !== moded[1]) return moded[0] ? 0 : 1;
-  return null;
+export function whichIsDark(
+  nodes: [NodeLike, NodeLike],
+  darkModeIds: string[] = [],
+  opts: { lightModeIds?: string[]; hasSet?: [boolean, boolean] } = {},
+): 0 | 1 | null {
+  const decide = (flags: boolean[]) => (flags[0] !== flags[1] ? (flags[0] ? 0 : 1) : undefined);
+  const modes = (n: NodeLike) => Object.values(n.explicitVariableModes ?? {});
+  return (
+    decide(nodes.map((n) => /\bdark\b/i.test(n.name))) ??
+    (opts.hasSet ? decide(opts.hasSet.map((x) => !x)) : undefined) ??
+    decide(nodes.map((n) => modes(n).some((m) => darkModeIds.includes(m)))) ??
+    decide(nodes.map((n) => !modes(n).some((m) => (opts.lightModeIds ?? []).includes(m)))) ??
+    null
+  );
 }
+
+/** The dark copy's variants: its children, leaving out text layers, which are notes. */
+const darkVariantsOf = (dark: NodeLike) => (dark.children ?? []).filter((c) => c.type !== "TEXT");
 
 /** The dark copy's variant for a light variant: the one with the same name, or else the one in the same position. */
 function darkVariantFor(dark: NodeLike, light: NodeLike, index: number, lightCount: number): NodeLike | null {
-  const kids = dark.children ?? [];
+  const kids = darkVariantsOf(dark);
   const byName = kids.filter((k) => k.name === light.name);
   if (byName.length === 1) return byName[0];
   return kids.length === lightCount ? (kids[index] ?? null) : null;
@@ -203,7 +216,7 @@ export async function readComponentSet(api: ScanVariablesApi, set: ComponentSetL
   const paints: ScannedPaint[] = [];
   const lightVariants = set.children.filter((c) => c.type === "COMPONENT");
   if (darkRoot) {
-    const darkCount = (darkRoot.children ?? []).length;
+    const darkCount = darkVariantsOf(darkRoot).length;
     if (darkCount !== lightVariants.length) {
       issues.push(issue("warning", "scan.dark-variants", `${set.name} has ${lightVariants.length} variants and ${darkRoot.name} has ${darkCount}. Make the dark copy a duplicate of the component set, with only the colours changed.`));
     }

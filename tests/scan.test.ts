@@ -513,6 +513,25 @@ describe("component scan: the structure of the real control (UAL UI Sandbox, 23 
       expect(whichIsDark([c, a], ["M-dark"])).toBe(0);
       expect(whichIsDark([a, { ...a, id: "4" }])).toBeNull();
     });
+
+    it("handles the sandbox file's layout: a frame holding the set in light mode, and plain frames with a text note", async () => {
+      // From the read-only scan of the UAL UI Sandbox file (24 Nov 2026).
+      const light = { id: "L", name: "UI fine tune", type: "FRAME", explicitVariableModes: { C: "M-light" } };
+      const dark = { id: "D", name: "Frame 5", type: "FRAME" };
+      expect(whichIsDark([light, dark], ["M-dark"], { lightModeIds: ["M-light"] })).toBe(1);
+      expect(whichIsDark([dark, light], [], { hasSet: [false, true] })).toBe(0);
+
+      const fig = await file();
+      const copy = realControl(fig, "Frame 5", DARK_ROWS);
+      const frames = copy.children.map((c) => ({ ...c, type: "FRAME", name: "Icon button", variantProperties: undefined }));
+      const note: NodeLike = { id: `N:${++n}`, name: "hover:bg: neutral-600", type: "TEXT", fills: [paint(fig, "#000000")] };
+      const darkFrame: NodeLike = { id: `N:${++n}`, name: "Frame 5", type: "FRAME", children: [...frames, note] };
+      const input = await readComponentSet(fig, realControl(fig), { dark: darkFrame });
+      expect(input.issues).toEqual([]);
+      const r = scanComponent(input);
+      expect(r.layers.some((l) => l.noMatch)).toBe(false);
+      expect(r.tokens).toEqual(withChoices(r.tokens, DARK));
+    });
   });
 
   it("flags a state the naming rules do not know, and skips focus", async () => {

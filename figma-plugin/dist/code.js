@@ -1357,22 +1357,28 @@
     return out;
   }
   var isSymbol = (x) => typeof x === "symbol";
-  function whichIsDark(nodes, darkModeIds2 = []) {
-    const named = nodes.map((n) => /\bdark\b/i.test(n.name));
-    if (named[0] !== named[1]) return named[0] ? 0 : 1;
-    const moded = nodes.map((n) => {
-      var _a;
-      return Object.values((_a = n.explicitVariableModes) != null ? _a : {}).some((m) => darkModeIds2.includes(m));
-    });
-    if (moded[0] !== moded[1]) return moded[0] ? 0 : 1;
-    return null;
+  function whichIsDark(nodes, darkModeIds = [], opts = {}) {
+    var _a, _b, _c, _d;
+    const decide = (flags) => flags[0] !== flags[1] ? flags[0] ? 0 : 1 : void 0;
+    const modes = (n) => {
+      var _a2;
+      return Object.values((_a2 = n.explicitVariableModes) != null ? _a2 : {});
+    };
+    return (_d = (_c = (_b = (_a = decide(nodes.map((n) => /\bdark\b/i.test(n.name)))) != null ? _a : opts.hasSet ? decide(opts.hasSet.map((x) => !x)) : void 0) != null ? _b : decide(nodes.map((n) => modes(n).some((m) => darkModeIds.includes(m))))) != null ? _c : decide(nodes.map((n) => !modes(n).some((m) => {
+      var _a2;
+      return ((_a2 = opts.lightModeIds) != null ? _a2 : []).includes(m);
+    })))) != null ? _d : null;
   }
+  var darkVariantsOf = (dark) => {
+    var _a;
+    return ((_a = dark.children) != null ? _a : []).filter((c) => c.type !== "TEXT");
+  };
   function darkVariantFor(dark, light, index, lightCount) {
-    var _a, _b;
-    const kids = (_a = dark.children) != null ? _a : [];
+    var _a;
+    const kids = darkVariantsOf(dark);
     const byName = kids.filter((k) => k.name === light.name);
     if (byName.length === 1) return byName[0];
-    return kids.length === lightCount ? (_b = kids[index]) != null ? _b : null : null;
+    return kids.length === lightCount ? (_a = kids[index]) != null ? _a : null : null;
   }
   function darkChild(d, n, index, count) {
     var _a;
@@ -1383,7 +1389,7 @@
     return k && k.type === n.type ? k : null;
   }
   async function readComponentSet(api2, set, opts = {}) {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
+    var _a, _b, _c, _d, _e, _f, _g;
     const darkRoot = (_a = opts.dark) != null ? _a : null;
     const issues = [];
     const defs = Object.entries((_b = set.componentPropertyDefinitions) != null ? _b : {}).filter(([, d]) => d.type === "VARIANT");
@@ -1403,15 +1409,15 @@
     const paints = [];
     const lightVariants = set.children.filter((c) => c.type === "COMPONENT");
     if (darkRoot) {
-      const darkCount = ((_d = darkRoot.children) != null ? _d : []).length;
+      const darkCount = darkVariantsOf(darkRoot).length;
       if (darkCount !== lightVariants.length) {
         issues.push(issue3("warning", "scan.dark-variants", `${set.name} has ${lightVariants.length} variants and ${darkRoot.name} has ${darkCount}. Make the dark copy a duplicate of the component set, with only the colours changed.`));
       }
     }
     for (const [vi, node] of lightVariants.entries()) {
-      const props = (_e = node.variantProperties) != null ? _e : {};
-      const state = stateProp ? slug((_f = props[stateProp]) != null ? _f : "") : "";
-      const role = roleProp ? slug((_g = props[roleProp]) != null ? _g : "") || void 0 : void 0;
+      const props = (_d = node.variantProperties) != null ? _d : {};
+      const state = stateProp ? slug((_e = props[stateProp]) != null ? _e : "") : "";
+      const role = roleProp ? slug((_f = props[roleProp]) != null ? _f : "") || void 0 : void 0;
       if (stateProp && !state) issues.push(issue3("error", "scan.state-value", `The variant ${node.name} has no State value. Give it a State value.`));
       variants.push({ id: node.id, name: node.name, state, role });
       const darkVariant = darkRoot ? darkVariantFor(darkRoot, node, vi, lightVariants.length) : null;
@@ -1457,7 +1463,7 @@
         kids.forEach((c, i) => walk(c, darkChild(d, c, i, kids.length), inside));
       };
       read(node, darkVariant, "variant frame", (field) => field === "fills" ? "surface" : "line");
-      const top = (_h = node.children) != null ? _h : [];
+      const top = (_g = node.children) != null ? _g : [];
       top.forEach((c, i) => walk(c, darkChild(darkVariant, c, i, top.length), null));
     }
     if (stateProp && !variants.some((v) => v.state === "default")) {
@@ -1874,12 +1880,22 @@ ${BLOCK_END}`;
     while (n && n.type !== "COMPONENT_SET") n = n.parent;
     return n != null ? n : null;
   }
-  async function darkModeIds() {
+  async function modeIds() {
     const cs = await figma.variables.getLocalVariableCollectionsAsync();
-    return cs.flatMap((c) => c.modes.filter((m) => /dark/i.test(m.name)).map((m) => m.modeId));
+    const of = (re) => cs.flatMap((c) => c.modes.filter((m) => re.test(m.name)).map((m) => m.modeId));
+    return { dark: of(/dark/i), light: of(/light/i) };
+  }
+  function setFor(node) {
+    const around = setOf(node);
+    if (around) return around;
+    if (typeof node.findAllWithCriteria === "function") {
+      const inside = node.findAllWithCriteria({ types: ["COMPONENT_SET"] });
+      if (inside.length === 1) return inside[0];
+    }
+    return null;
   }
   async function picked() {
-    var _a;
+    var _a, _b;
     const sel = figma.currentPage.selection;
     if (!sel.length) return { set: null, dark: null, message: "Select the component set and its dark copy on the canvas." };
     const tops = [];
@@ -1889,14 +1905,16 @@ ${BLOCK_END}`;
     }
     if (tops.length > 2) return { set: null, dark: null, message: "Select only the component set and its dark copy." };
     if (tops.length === 1) {
-      const t = tops[0];
-      return t.type === "COMPONENT_SET" ? { set: t, dark: null } : { set: null, dark: null, message: "This is not a component set. Select a component set, for example Control, and its dark copy." };
+      const set2 = setFor(tops[0]);
+      return set2 ? { set: set2, dark: null } : { set: null, dark: null, message: "This is not a component set. Select a component set, for example Control, and its dark copy." };
     }
-    const i = whichIsDark([tops[0], tops[1]], await darkModeIds());
+    const sets = [setFor(tops[0]), setFor(tops[1])];
+    const ids = await modeIds();
+    const i = whichIsDark([tops[0], tops[1]], ids.dark, { lightModeIds: ids.light, hasSet: [!!sets[0], !!sets[1]] });
     if (i === null) return { set: null, dark: null, message: `The plugin cannot tell which copy is the dark one. Add "dark" to the dark copy's name, for example "Control dark".` };
-    const set = tops[1 - i];
-    if (set.type !== "COMPONENT_SET") return { set: null, dark: null, message: `${set.name} is not a component set. Select the component set and its dark copy.` };
-    return { set, dark: tops[i] };
+    const set = sets[1 - i];
+    if (!set) return { set: null, dark: null, message: `${tops[1 - i].name} has no component set. Select the component set and its dark copy.` };
+    return { set, dark: (_b = setFor(tops[i])) != null ? _b : tops[i] };
   }
   function countColouredLayers(set) {
     let count = 0;

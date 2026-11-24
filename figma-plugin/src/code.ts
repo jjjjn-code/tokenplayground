@@ -32,10 +32,22 @@ function setOf(node: any): any {
   return n ?? null;
 }
 
-/** Dark mode ids of every local collection, to tell which selected copy is the dark one. */
-async function darkModeIds(): Promise<string[]> {
+/** Dark and light mode ids of every local collection, to tell which selected copy is the dark one. */
+async function modeIds(): Promise<{ dark: string[]; light: string[] }> {
   const cs = await figma.variables.getLocalVariableCollectionsAsync();
-  return cs.flatMap((c: any) => c.modes.filter((m: any) => /dark/i.test(m.name)).map((m: any) => m.modeId));
+  const of = (re: RegExp) => cs.flatMap((c: any) => c.modes.filter((m: any) => re.test(m.name)).map((m: any) => m.modeId));
+  return { dark: of(/dark/i), light: of(/light/i) };
+}
+
+/** The component set a selected layer stands for: itself, the set around it, or the only set inside a frame. */
+function setFor(node: any): any {
+  const around = setOf(node);
+  if (around) return around;
+  if (typeof node.findAllWithCriteria === "function") {
+    const inside = node.findAllWithCriteria({ types: ["COMPONENT_SET"] });
+    if (inside.length === 1) return inside[0];
+  }
+  return null;
 }
 
 interface Picked {
@@ -46,7 +58,7 @@ interface Picked {
 
 /**
  * The selection: 1 component set, or the component set and its dark copy
- * (24 Nov 2026). The dark copy has "dark" in its name or is set to dark mode.
+ * (24 Nov 2026). Either can be selected through the frame that holds it.
  */
 async function picked(): Promise<Picked> {
   const sel = figma.currentPage.selection;
@@ -58,16 +70,19 @@ async function picked(): Promise<Picked> {
   }
   if (tops.length > 2) return { set: null, dark: null, message: "Select only the component set and its dark copy." };
   if (tops.length === 1) {
-    const t = tops[0];
-    return t.type === "COMPONENT_SET"
-      ? { set: t, dark: null }
+    const set = setFor(tops[0]);
+    return set
+      ? { set, dark: null }
       : { set: null, dark: null, message: "This is not a component set. Select a component set, for example Control, and its dark copy." };
   }
-  const i = whichIsDark([tops[0], tops[1]], await darkModeIds());
+  const sets = [setFor(tops[0]), setFor(tops[1])];
+  const ids = await modeIds();
+  const i = whichIsDark([tops[0], tops[1]], ids.dark, { lightModeIds: ids.light, hasSet: [!!sets[0], !!sets[1]] });
   if (i === null) return { set: null, dark: null, message: 'The plugin cannot tell which copy is the dark one. Add "dark" to the dark copy\'s name, for example "Control dark".' };
-  const set = tops[1 - i];
-  if (set.type !== "COMPONENT_SET") return { set: null, dark: null, message: `${set.name} is not a component set. Select the component set and its dark copy.` };
-  return { set, dark: tops[i] };
+  const set = sets[1 - i];
+  if (!set) return { set: null, dark: null, message: `${tops[1 - i].name} has no component set. Select the component set and its dark copy.` };
+  // The dark copy is a copy of the component set, or of the frames inside it.
+  return { set, dark: setFor(tops[i]) ?? tops[i] };
 }
 
 function countColouredLayers(set: NodeLike): number {
